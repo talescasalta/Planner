@@ -1,0 +1,109 @@
+import type { PageServerLoad, Actions } from './$types';
+import { getUserHouseholdId } from '$lib/server/household';
+import { validateTransactionRelations } from '$lib/server/access';
+import { loadCategoriesForUser } from '$lib/server/categories';
+import { fail } from '@sveltejs/kit';
+
+export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession } }) => {
+	const { user } = await safeGetSession();
+	if (!user) return { rules: [], categories: [], profiles: [] };
+
+	const householdId = await getUserHouseholdId(supabase, user.id);
+	if (!householdId) return { rules: [], categories: [], profiles: [] };
+
+	const [{ data: rules }, categories, { data: profiles }] = await Promise.all([
+		supabase
+			.from('classification_rules')
+			.select(`
+				*,
+				category:categories ( id, name ),
+				subcategory:categories!classification_rules_subcategory_id_fkey ( id, name ),
+				owner_profile:financial_profiles ( id, name )
+			`)
+			.eq('household_id', householdId)
+			.order('created_at', { ascending: false }),
+		loadCategoriesForUser(supabase, householdId, user.id),
+		supabase.from('financial_profiles').select('id, name').eq('household_id', householdId).order('name')
+	]);
+
+	return {
+		rules: rules ?? [],
+		categories,
+		profiles: profiles ?? []
+	};
+};
+
+export const actions: Actions = {
+	create: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const formData = await request.formData();
+		const pattern = formData.get('pattern') as string;
+		const patternType = formData.get('pattern_type') as string;
+		const categoryId = formData.get('category_id') as string;
+		const subcategoryId = formData.get('subcategory_id') as string;
+		const ownerProfileId = formData.get('owner_profile_id') as string;
+		const confidence = parseFloat((formData.get('confidence') as string) ?? '0.95');
+
+		if (!pattern || !patternType) {
+			return fail(400, { success: false, message: 'Preencha todos os campos obrigatórios' });
+		}
+
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId) return fail(400, { success: false, message: 'Sem grupo' });
+
+		const relationError = await validateTransactionRelations(supabase, householdId, {
+			category_id: categoryId || null,
+			subcategory_id: categoryId ? subcategoryId || null : null,
+			owner_profile_id: ownerProfileId || null
+		}, user.id);
+		if (relationError) {
+			return fail(400, { success: false, message: relationError });
+		}
+
+		const { error } = await supabase.from('classification_rules').insert({
+			household_id: householdId,
+			pattern,
+			pattern_type: patternType,
+			category_id: categoryId || null,
+			subcategory_id: categoryId ? subcategoryId || null : null,
+			owner_profile_id: ownerProfileId || null,
+			confidence,
+			created_by_user_id: user.id,
+			active: true
+		});
+
+		if (error) return fail(500, { success: false, message: error.message });
+		return { success: true };
+	},
+
+	toggle: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const formData = await request.formData();
+		const ruleId = formData.get('rule_id') as string;
+		const active = formData.get('active') === 'true';
+
+		if (!ruleId) return fail(400, { success: false, message: 'ID ausente' });
+
+		const { error } = await supabase.from('classification_rules').update({ active }).eq('id', ruleId);
+		if (error) return fail(500, { success: false, message: error.message });
+		return { success: true };
+	},
+
+	delete: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const formData = await request.formData();
+		const ruleId = formData.get('rule_id') as string;
+
+		if (!ruleId) return fail(400, { success: false, message: 'ID ausente' });
+
+		const { error } = await supabase.from('classification_rules').delete().eq('id', ruleId);
+		if (error) return fail(500, { success: false, message: error.message });
+		return { success: true };
+	}
+};
