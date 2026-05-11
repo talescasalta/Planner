@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
 import { getUserHouseholdId, attachPayerProfiles } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
-import { validateTransactionRelations } from '$lib/server/access';
+import { getReadableTransactionIds, validateTransactionRelations } from '$lib/server/access';
 import { learnFromTransactionAdjustment } from '$lib/server/learning';
 import { filterCategoriesForUser } from '$lib/server/gabarito';
 import { loadUserCategoryExclusions } from '$lib/server/categories';
@@ -93,11 +93,16 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 	const from = page * PAGE_SIZE;
 	const to = from + PAGE_SIZE;
 	const requestedMonth = url.searchParams.get('month') ?? '';
+	const readableTransactionIds = await getReadableTransactionIds(supabase, user.id);
+	if (readableTransactionIds.length === 0) {
+		return { ...emptyPage(), page };
+	}
 
 	const { data: monthRows } = await supabaseAdmin
 		.from('transactions')
 		.select('reference_month, date')
 		.eq('household_id', householdId)
+		.in('id', readableTransactionIds)
 		.order('reference_month', { ascending: false, nullsFirst: false })
 		.order('date', { ascending: false });
 
@@ -125,6 +130,7 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 				owner_profile:financial_profiles ( id, name, type )
 			`)
 			.eq('household_id', householdId)
+			.in('id', readableTransactionIds)
 			.order('date', { ascending: false })
 			.range(from, to);
 			if (selectedMonth && selectedMonth !== ALL_MONTHS) query = query.eq('reference_month', selectedMonth);
@@ -134,7 +140,8 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 			let query = supabaseAdmin
 				.from('transactions')
 				.select('amount')
-				.eq('household_id', householdId);
+				.eq('household_id', householdId)
+				.in('id', readableTransactionIds);
 			if (selectedMonth && selectedMonth !== ALL_MONTHS) query = query.eq('reference_month', selectedMonth);
 			return query;
 		})(),

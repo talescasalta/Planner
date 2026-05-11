@@ -133,8 +133,6 @@ export const actions: Actions = {
 		const newRows = rows.filter((r) => !existingKeys.has(buildDuplicateKey(r)));
 
 		if (newRows.length > 0) {
-			const householdMembers = await getHouseholdMembers(supabaseAdmin, householdId);
-
 			const txInserts = newRows.map((r) => ({
 				household_id: householdId,
 				date: r.date,
@@ -160,14 +158,12 @@ export const actions: Actions = {
 
 			const accessRows: { transaction_id: string; user_id: string; can_read: boolean; can_edit: boolean }[] = [];
 			for (const tx of insertedTxs ?? []) {
-				for (const memberId of householdMembers) {
-					accessRows.push({
-						transaction_id: tx.id,
-						user_id: memberId,
-						can_read: true,
-						can_edit: true
-					});
-				}
+				accessRows.push({
+					transaction_id: tx.id,
+					user_id: user.id,
+					can_read: true,
+					can_edit: true
+				});
 			}
 
 			if (accessRows.length > 0) {
@@ -204,14 +200,9 @@ export const actions: Actions = {
 			return fail(403, { success: false, message: 'Apenas administradores podem reparar acessos' });
 		}
 
-		const members = await getHouseholdMembers(supabaseAdmin, householdId);
-		if (members.length === 0) {
-			return fail(500, { success: false, message: 'Nenhum membro encontrado' });
-		}
-
 		const { data: txs, error: txErr } = await supabaseAdmin
 			.from('transactions')
-			.select('id')
+			.select('id, created_by_user_id, owner_profile:financial_profiles!transactions_owner_profile_id_fkey ( type, user_id )')
 			.eq('household_id', householdId);
 		if (txErr) return fail(500, { success: false, message: txErr.message });
 
@@ -227,11 +218,23 @@ export const actions: Actions = {
 
 		const existingSet = new Set((existing ?? []).map((r) => `${r.transaction_id}|${r.user_id}`));
 
+		const householdMembers = await getHouseholdMembers(supabaseAdmin, householdId);
 		const toInsert: { transaction_id: string; user_id: string; can_read: boolean; can_edit: boolean }[] = [];
-		for (const tid of txIds) {
-			for (const memberId of members) {
-				if (existingSet.has(`${tid}|${memberId}`)) continue;
-				toInsert.push({ transaction_id: tid, user_id: memberId, can_read: true, can_edit: true });
+		for (const tx of txs ?? []) {
+			const profile = tx.owner_profile as { type?: string; user_id?: string | null } | null;
+			const targetUserIds =
+				profile?.type === 'shared'
+					? householdMembers
+					: Array.from(new Set([tx.created_by_user_id, profile?.user_id].filter((id): id is string => !!id)));
+
+			for (const targetUserId of targetUserIds) {
+				if (existingSet.has(`${tx.id}|${targetUserId}`)) continue;
+				toInsert.push({
+					transaction_id: tx.id,
+					user_id: targetUserId,
+					can_read: true,
+					can_edit: targetUserId === tx.created_by_user_id || profile?.type === 'shared'
+				});
 			}
 		}
 

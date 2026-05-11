@@ -8,6 +8,25 @@ export const actions: Actions = {
 		const email = formData.get('email') as string;
 		const password = formData.get('password') as string;
 
+		if (action === 'google') {
+			const { data, error } = await supabase.auth.signInWithOAuth({
+				provider: 'google',
+				options: {
+					redirectTo: `${url.origin}/auth/confirm?next=/app`
+				}
+			});
+
+			if (error) {
+				return { success: false, message: error.message };
+			}
+
+			if (data.url) {
+				redirect(303, data.url);
+			}
+
+			return { success: false, message: 'Não foi possível iniciar o login com Google.' };
+		}
+
 		if (action === 'signup') {
 			const { error } = await supabase.auth.signUp({
 				email,

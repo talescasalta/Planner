@@ -1,6 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
 import { transactionUpdateSchema } from '$lib/schemas/transaction';
-import { canEditTransaction, validateTransactionRelations } from '$lib/server/access';
+import { canEditTransaction, canReadTransaction, validateTransactionRelations } from '$lib/server/access';
 import { getUserHouseholdId, attachPayerProfiles } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { learnFromTransactionAdjustment } from '$lib/server/learning';
@@ -13,6 +13,8 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 
 	const householdId = await getUserHouseholdId(supabase, user.id);
 	if (!householdId) redirect(303, '/app/groups');
+	const readable = await canReadTransaction(supabase, params.id, user.id);
+	if (!readable) redirect(303, '/app/transactions');
 
 	const { data: txRow, error } = await supabaseAdmin
 		.from('transactions')

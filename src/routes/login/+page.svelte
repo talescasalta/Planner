@@ -57,6 +57,27 @@
 			<p class="text-sm text-green-600 text-center">{form.message}</p>
 		{/if}
 
+		{#if !isSignUp}
+			<div class="relative">
+				<div class="absolute inset-0 flex items-center" aria-hidden="true">
+					<div class="w-full border-t border-gray-300"></div>
+				</div>
+				<div class="relative flex justify-center">
+					<span class="bg-gray-50 px-2 text-sm text-gray-500">ou</span>
+				</div>
+			</div>
+
+			<form method="POST">
+				<input type="hidden" name="action" value="google" />
+				<button
+					type="submit"
+					class="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+				>
+					Entrar com Google
+				</button>
+			</form>
+		{/if}
+
 		<div class="text-center">
 			<button
 				type="button"
@@ -66,5 +87,13 @@
 				{isSignUp ? 'Já tem conta? Entrar' : 'Não tem conta? Cadastrar'}
 			</button>
 		</div>
+
+		{#if !isSignUp}
+			<div class="text-center">
+				<a href="/forgot-password" class="text-sm text-gray-600 hover:text-indigo-700">
+					Esqueci minha senha
+				</a>
+			</div>
+		{/if}
 	</div>
 </div>

@@ -1,7 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import { getUserHouseholdId, attachPayerProfiles } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
-import { validateTransactionRelations } from '$lib/server/access';
+import { canEditTransaction, getReadableTransactionIds, validateTransactionRelations } from '$lib/server/access';
 import { learnFromTransactionAdjustment } from '$lib/server/learning';
 import { filterCategoriesForUser } from '$lib/server/gabarito';
 import { loadUserCategoryExclusions } from '$lib/server/categories';
@@ -13,6 +13,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 
 	const householdId = await getUserHouseholdId(supabase, user.id);
 	if (!householdId) return { transactions: [], categories: [], profiles: [] };
+	const readableTransactionIds = await getReadableTransactionIds(supabase, user.id);
+	if (readableTransactionIds.length === 0) return { transactions: [], categories: [], profiles: [] };
 
 	const { data: transactions } = await supabaseAdmin
 		.from('transactions')
@@ -23,6 +25,7 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 			owner_profile:financial_profiles ( id, name )
 		`)
 		.eq('household_id', householdId)
+		.in('id', readableTransactionIds)
 		.eq('review_status', 'needs_review')
 		.order('date', { ascending: false })
 		.limit(200);
@@ -65,6 +68,11 @@ export const actions: Actions = {
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
 		if (!householdId) return fail(400, { success: false, message: 'Sem grupo' });
+
+		const editable = await canEditTransaction(supabase, transactionId, user.id);
+		if (!editable) {
+			return fail(403, { success: false, message: 'Voce nao tem permissao para editar esta transacao.' });
+		}
 
 		const relationError = await validateTransactionRelations(supabase, householdId, {
 			category_id: categoryId || null,

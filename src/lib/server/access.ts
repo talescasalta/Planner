@@ -31,6 +31,26 @@ export async function canReadTransaction(
 	return !error && !!data;
 }
 
+export async function getReadableTransactionIds(
+	supabase: SupabaseClient<Database>,
+	userId: string,
+	options: { canEdit?: boolean } = {}
+): Promise<string[]> {
+	let query = supabase
+		.from('transaction_access')
+		.select('transaction_id')
+		.eq('user_id', userId)
+		.eq('can_read', true);
+
+	if (options.canEdit) {
+		query = query.eq('can_edit', true);
+	}
+
+	const { data, error } = await query;
+	if (error || !data) return [];
+	return data.map((row) => row.transaction_id);
+}
+
 type TransactionRelationInput = {
 	category_id?: string | null;
 	subcategory_id?: string | null;
