@@ -2,6 +2,7 @@ import type { PageServerLoad } from './$types';
 import { getUserHouseholdId } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { loadCategoriesForUser } from '$lib/server/categories';
+import { getReadableTransactionIds } from '$lib/server/access';
 
 export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSession } }) => {
 	const { user } = await safeGetSession();
@@ -14,6 +15,19 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 	const profileId = url.searchParams.get('profile') ?? '';
 	const categoryId = url.searchParams.get('category') ?? '';
 	const reviewStatus = url.searchParams.get('review_status') ?? '';
+	const readableTransactionIds = await getReadableTransactionIds(supabase, user.id);
+	if (readableTransactionIds.length === 0) {
+		const categories = await loadCategoriesForUser(supabaseAdmin, householdId, user.id);
+		const { data: profiles } = await supabaseAdmin.from('financial_profiles').select('id, name').eq('household_id', householdId).order('name');
+		return {
+			totalsByProfile: [],
+			totalsByCategory: [],
+			totalsByPayer: [],
+			filters: { month, profileId, categoryId, reviewStatus },
+			profiles: profiles ?? [],
+			categories: categories.filter((c) => !c.parent_id)
+		};
+	}
 
 	// Load all visible transactions with joins
 	let query = supabaseAdmin
@@ -28,10 +42,11 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 			owner_profile:financial_profiles ( id, name ),
 			category:categories!transactions_category_id_fkey ( id, name )
 		`)
-		.eq('household_id', householdId);
+		.eq('household_id', householdId)
+		.in('id', readableTransactionIds);
 
 	if (month) {
-		query = query.gte('date', `${month}-01`).lt('date', getNextMonthFirstDay(month));
+		query = query.eq('reference_month', month);
 	}
 	if (profileId) {
 		query = query.eq('owner_profile_id', profileId);
@@ -113,9 +128,3 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		categories: categories.filter((c) => !c.parent_id)
 	};
 };
-
-function getNextMonthFirstDay(yyyyMm: string): string {
-	const [y, m] = yyyyMm.split('-').map(Number);
-	const next = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`;
-	return next;
-}
