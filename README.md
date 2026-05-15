@@ -2,7 +2,7 @@
 
 Personal finance planner built with SvelteKit and Supabase.
 
-The app lets a household import card statements, classify transactions with categories/subcategories, review LLM suggestions, ignore non-expense statement payments, and improve personal classification rules over time.
+The app lets a household import credit card or bank account statements, classify transactions with categories/subcategories, review LLM suggestions, ignore non-expense statement payments, and improve personal classification rules over time. The dashboard at `/app` shows a category treemap (click a cell to drill down into its transactions), receitas-vs-despesas trend, and per-member contribution bars in `/app/groups`.
 
 ## Stack
 
@@ -95,8 +95,8 @@ After applying migrations:
 
 1. Create a user through the app login/signup flow, or directly in Supabase Auth.
 2. Create or use a household/group in the app.
-3. Import a CSV credit card statement from **Importar fatura**.
-4. Review classifications in **Transações**. Manual category/subcategory corrections are saved as personal rules and help classify future imports.
+3. Import a CSV statement from **Importar fatura**. Pick **Cartão de crédito** (Nubank/Itaú-style files where charges are positive) or **Conta corrente** (charges already negative) — the parser flips signs accordingly and drops the bill-payment row when the description matches `pagamento`/`pagto`.
+4. Review classifications in **Transações**. Manual category/subcategory corrections are saved as personal rules and increase confidence over repeated reinforcements, so future imports classify automatically once a merchant is confirmed enough times.
 
 ## Environment Variables
 
@@ -115,6 +115,7 @@ After applying migrations:
 ```bash
 npm run dev
 npm run check
+npm test
 npm run build
 npx supabase db push
 ```
