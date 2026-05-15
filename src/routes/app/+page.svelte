@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { AlertTriangle, ArrowDownRight, ArrowUpRight, CircleDollarSign, ReceiptText, SlidersHorizontal } from 'lucide-svelte';
+	import { AlertTriangle, ArrowDownRight, ArrowUpRight, CircleDollarSign, ReceiptText, SlidersHorizontal, X } from 'lucide-svelte';
 	import CategoryTreemap from '$lib/components/charts/CategoryTreemap.svelte';
+	import type { TreemapSelection } from '$lib/components/charts/CategoryTreemap.svelte';
 	import MonthlyTrendChart from '$lib/components/charts/MonthlyTrendChart.svelte';
 
 	let { data } = $props();
@@ -17,8 +18,32 @@
 	let profiles = $derived(data.profiles ?? []);
 	let categories = $derived(data.categories ?? []);
 	let filters = $derived(data.filters ?? { profileId: '', categoryId: '', reviewStatus: '' });
+	let filteredTransactions = $derived(data.filteredTransactions ?? []);
 	let hasActiveSecondaryFilter = $derived(!!(filters.profileId || filters.categoryId || filters.reviewStatus));
 	let showFilters = $state(false);
+	let selection = $state<TreemapSelection | null>(null);
+
+	const UNCATEGORIZED_ID = '__uncategorized__';
+	const UNSPECIFIED_SUB_ID = '__unspecified__';
+
+	let drillDownTx = $derived.by(() => {
+		const sel = selection;
+		if (!sel) return [] as typeof filteredTransactions;
+		return filteredTransactions
+			.filter((tx) => {
+				const txCat = tx.category_id ?? UNCATEGORIZED_ID;
+				const txSub = tx.subcategory_id ?? UNSPECIFIED_SUB_ID;
+				if (txCat !== sel.categoryId) return false;
+				// Self-leaf (no real subcategory under that category)
+				if (sel.subcategoryId.endsWith('-self')) {
+					return tx.subcategory_id === null;
+				}
+				return txSub === sel.subcategoryId;
+			})
+			.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+	});
+
+	let drillDownTotal = $derived(drillDownTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0));
 
 	let expenseDelta = $derived(summary.expenses - previousSummary.expenses);
 	let expenseDeltaPercent = $derived(
@@ -208,12 +233,54 @@
 			<div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
 				<div>
 					<h3 class="text-sm font-semibold text-gray-900">Para onde foi o dinheiro</h3>
-					<p class="text-xs text-gray-500">Despesas por categoria e subcategoria.</p>
+					<p class="text-xs text-gray-500">{selection ? 'Clique fora ou em outro item para mudar o foco' : 'Clique em um item para ver as transações.'}</p>
 				</div>
 				<p class="text-lg font-semibold text-gray-900">{formatCurrency(totalExpenses)}</p>
 			</div>
-			<div class="mt-4">
-				<CategoryTreemap nodes={expenseHierarchy} height={460} />
+			<div class={`mt-4 grid gap-4 ${selection ? 'lg:grid-cols-[1fr_360px]' : 'grid-cols-1'}`}>
+				<div>
+					<CategoryTreemap nodes={expenseHierarchy} height={460} selected={selection} onSelect={(s) => (selection = s)} />
+				</div>
+				{#if selection}
+					<aside class="flex h-[460px] flex-col rounded-md border border-gray-200 bg-gray-50">
+						<div class="flex items-start justify-between border-b border-gray-200 bg-white px-4 py-3">
+							<div class="min-w-0">
+								<p class="text-[11px] uppercase tracking-wide text-gray-500">{selection.categoryName}</p>
+								<p class="truncate text-sm font-semibold text-gray-900">{selection.subcategoryName === selection.categoryName ? 'Sem subcategoria' : selection.subcategoryName}</p>
+								<p class="mt-0.5 text-xs text-gray-500">{drillDownTx.length} {drillDownTx.length === 1 ? 'transação' : 'transações'} · {formatCurrency(drillDownTotal)}</p>
+							</div>
+							<button
+								type="button"
+								onclick={() => (selection = null)}
+								class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+								aria-label="Fechar"
+							>
+								<X class="h-4 w-4" />
+							</button>
+						</div>
+						<div class="flex-1 overflow-y-auto">
+							{#if drillDownTx.length === 0}
+								<p class="p-4 text-xs text-gray-500">Nenhuma transação para este item.</p>
+							{:else}
+								<ul class="divide-y divide-gray-100">
+									{#each drillDownTx as tx}
+										<li>
+											<a href={`/app/transactions/${tx.id}`} class="flex items-start justify-between gap-3 px-4 py-2.5 text-sm hover:bg-white">
+												<div class="min-w-0">
+													<p class="truncate font-medium text-gray-900">{tx.description}</p>
+													<p class="text-[11px] text-gray-500">{tx.date}</p>
+												</div>
+												<span class={`shrink-0 text-sm font-medium ${tx.amount < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+													{formatCurrency(tx.amount, tx.currency ?? 'BRL')}
+												</span>
+											</a>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						</div>
+					</aside>
+				{/if}
 			</div>
 		</section>
 

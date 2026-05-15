@@ -5,23 +5,31 @@ import { getReadableTransactionIds, isHouseholdAdmin } from '$lib/server/access'
 import { findAuthUserByEmail } from '$lib/server/auth-admin';
 import { fail, redirect } from '@sveltejs/kit';
 
+type MemberContribution = {
+	user_id: string;
+	display_name: string;
+	expense_total: number;
+	credit_total: number;
+	count: number;
+	share: number;
+};
+
 type GroupTransaction = {
 	id: string;
 	date: string;
 	description: string;
 	amount: number;
 	currency: string | null;
-	reference_month: string | null;
-	review_status: string;
-	category: { name: string | null } | null;
-	subcategory: { name: string | null } | null;
-	owner_profile: { name: string | null } | null;
+	category_name: string | null;
+	subcategory_name: string | null;
+	paid_by_user_id: string | null;
 };
 
 type GroupActivity = {
 	monthOptions: string[];
 	selectedMonth: string;
 	summary: { count: number; expenses: number; credits: number; balance: number };
+	contributions: MemberContribution[];
 	transactions: GroupTransaction[];
 };
 
@@ -36,6 +44,7 @@ function emptyGroupActivity(selectedMonth = ''): GroupActivity {
 		monthOptions: [],
 		selectedMonth,
 		summary: { count: 0, expenses: 0, credits: 0, balance: 0 },
+		contributions: [],
 		transactions: []
 	};
 }
@@ -115,55 +124,107 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 				).sort((a, b) => b.localeCompare(a));
 				const selectedMonth = url.searchParams.get(`month_${group.id}`) ?? url.searchParams.get('month') ?? monthOptions[0] ?? '';
 
-				const [{ data: transactionRows }, { data: amountRows }] = await Promise.all([
+				const [{ data: amountRows }, { data: txRows }] = await Promise.all([
 					(() => {
-						let query = supabaseAdmin
+						let q = supabaseAdmin
+							.from('transactions')
+							.select('amount, paid_by_user_id')
+							.eq('household_id', group.id)
+							.in('id', readableTransactionIds)
+							.in('owner_profile_id', sharedProfileIds)
+							.neq('review_status', 'ignored');
+						if (selectedMonth) q = q.eq('reference_month', selectedMonth);
+						return q;
+					})(),
+					(() => {
+						let q = supabaseAdmin
 							.from('transactions')
 							.select(`
-							id,
-							date,
-							description,
-							amount,
-							currency,
-							reference_month,
-							review_status,
-							category:categories!transactions_category_id_fkey ( name ),
-							subcategory:categories!transactions_subcategory_id_fkey ( name ),
-							owner_profile:financial_profiles ( name )
-						`)
+								id,
+								date,
+								description,
+								amount,
+								currency,
+								paid_by_user_id,
+								category:categories!transactions_category_id_fkey ( name ),
+								subcategory:categories!transactions_subcategory_id_fkey ( name )
+							`)
 							.eq('household_id', group.id)
 							.in('id', readableTransactionIds)
 							.in('owner_profile_id', sharedProfileIds)
 							.neq('review_status', 'ignored')
-							.order('date', { ascending: false })
-							.limit(25);
-						if (selectedMonth) query = query.eq('reference_month', selectedMonth);
-						return query;
-					})(),
-					(() => {
-						let query = supabaseAdmin
-							.from('transactions')
-							.select('amount')
-							.eq('household_id', group.id)
-							.in('id', readableTransactionIds)
-							.neq('review_status', 'ignored');
-						query = query.in('owner_profile_id', sharedProfileIds);
-						if (selectedMonth) query = query.eq('reference_month', selectedMonth);
-						return query;
+							.order('date', { ascending: false });
+						if (selectedMonth) q = q.eq('reference_month', selectedMonth);
+						return q;
 					})()
 				]);
-
 				const amounts = amountRows ?? [];
+				const transactions: GroupTransaction[] = (txRows ?? []).map((t) => {
+					const rawCat = t.category as unknown as { name: string | null } | { name: string | null }[] | null;
+					const rawSub = t.subcategory as unknown as { name: string | null } | { name: string | null }[] | null;
+					const cat = Array.isArray(rawCat) ? rawCat[0] ?? null : rawCat;
+					const sub = Array.isArray(rawSub) ? rawSub[0] ?? null : rawSub;
+					return {
+						id: t.id,
+						date: t.date,
+						description: t.description,
+						amount: Number(t.amount),
+						currency: t.currency,
+						category_name: cat?.name ?? null,
+						subcategory_name: sub?.name ?? null,
+						paid_by_user_id: t.paid_by_user_id
+					};
+				});
+
+				const expenses = amounts.filter((r) => Number(r.amount) < 0).reduce((s, r) => s + Math.abs(Number(r.amount)), 0);
+				const credits = amounts.filter((r) => Number(r.amount) > 0).reduce((s, r) => s + Number(r.amount), 0);
+				const balance = amounts.reduce((s, r) => s + Number(r.amount), 0);
+
+				// Aggregate per payer
+				const byPayer = new Map<string, { expense: number; credit: number; count: number }>();
+				for (const row of amounts) {
+					const key = row.paid_by_user_id ?? 'unknown';
+					const bucket = byPayer.get(key) ?? { expense: 0, credit: 0, count: 0 };
+					const amt = Number(row.amount);
+					if (amt < 0) bucket.expense += Math.abs(amt);
+					else bucket.credit += amt;
+					bucket.count += 1;
+					byPayer.set(key, bucket);
+				}
+
+				const contributions: MemberContribution[] = (members ?? []).map((m) => {
+					const bucket = byPayer.get(m.user_id) ?? { expense: 0, credit: 0, count: 0 };
+					return {
+						user_id: m.user_id,
+						display_name:
+							displayNameByUserId.get(m.user_id) ??
+							(m.user_id === user.id ? profile?.display_name ?? user.email ?? 'Você' : 'Sem nome'),
+						expense_total: bucket.expense,
+						credit_total: bucket.credit,
+						count: bucket.count,
+						share: expenses > 0 ? (bucket.expense / expenses) * 100 : 0
+					};
+				});
+				// Include any payer that isn't currently a member (left the group but txs remain).
+				for (const [userId, bucket] of byPayer.entries()) {
+					if (userId === 'unknown') continue;
+					if (contributions.some((c) => c.user_id === userId)) continue;
+					contributions.push({
+						user_id: userId,
+						display_name: displayNameByUserId.get(userId) ?? 'Ex-membro',
+						expense_total: bucket.expense,
+						credit_total: bucket.credit,
+						count: bucket.count,
+						share: expenses > 0 ? (bucket.expense / expenses) * 100 : 0
+					});
+				}
+
 				activity = {
 					monthOptions,
 					selectedMonth,
-					summary: {
-						count: amounts.length,
-						expenses: amounts.filter((row) => Number(row.amount) < 0).reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0),
-						credits: amounts.filter((row) => Number(row.amount) > 0).reduce((sum, row) => sum + Number(row.amount), 0),
-						balance: amounts.reduce((sum, row) => sum + Number(row.amount), 0)
-					},
-					transactions: (transactionRows ?? []) as unknown as GroupTransaction[]
+					summary: { count: amounts.length, expenses, credits, balance },
+					contributions,
+					transactions
 				};
 			}
 

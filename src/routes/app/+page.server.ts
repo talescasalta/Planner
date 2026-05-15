@@ -20,10 +20,47 @@ type TransactionRow = {
 	subcategory_id: string | null;
 	owner_profile_id: string | null;
 	paid_by_user_id: string | null;
-	category: { id: string | null; name: string | null } | null;
-	subcategory: { id: string | null; name: string | null } | null;
+	category: { id: string | null; name: string | null; parent_id: string | null } | null;
+	subcategory: { id: string | null; name: string | null; parent_id: string | null } | null;
 	owner_profile: { id: string | null; name: string | null } | null;
 };
+
+type CategoryRef = { id: string; name: string };
+type CategoryMap = Map<string, { id: string; name: string; parent_id: string | null }>;
+
+function resolveTaxonomy(
+	tx: TransactionRow,
+	categoryMap: CategoryMap
+): { category: CategoryRef | null; subcategory: CategoryRef | null } {
+	const rawCat = tx.category;
+	const rawSub = tx.subcategory;
+
+	// Resolve the transaction's `category` to its top-level ancestor. If the
+	// transaction accidentally has a subcategory in the `category_id` slot,
+	// hoist it up so the hierarchy renders under the correct parent.
+	let category: CategoryRef | null = null;
+	let derivedSub: CategoryRef | null = null;
+	if (rawCat && rawCat.id) {
+		if (rawCat.parent_id) {
+			const parent = categoryMap.get(rawCat.parent_id);
+			if (parent) {
+				category = { id: parent.id, name: parent.name ?? 'Sem categoria' };
+				derivedSub = { id: rawCat.id, name: rawCat.name ?? 'Sem subcategoria' };
+			} else {
+				category = { id: rawCat.id, name: rawCat.name ?? 'Sem categoria' };
+			}
+		} else {
+			category = { id: rawCat.id, name: rawCat.name ?? 'Sem categoria' };
+		}
+	}
+
+	let subcategory: CategoryRef | null = derivedSub;
+	if (rawSub && rawSub.id && rawSub.id !== category?.id) {
+		subcategory = { id: rawSub.id, name: rawSub.name ?? 'Sem subcategoria' };
+	}
+
+	return { category, subcategory };
+}
 
 function monthFromDate(date: string | null | undefined) {
 	return date?.slice(0, 7) || NO_MONTH;
@@ -50,7 +87,7 @@ function summarize(rows: TransactionRow[]) {
 	return { count: rows.length, expenses, credits, balance, needsReview, uncategorized };
 }
 
-function buildHierarchy(rows: TransactionRow[]) {
+function buildHierarchy(rows: TransactionRow[], categoryMap: CategoryMap) {
 	type Child = { id: string; name: string; total: number };
 	type Node = { id: string; name: string; total: number; children: Child[] };
 	const map = new Map<string, Node>();
@@ -58,16 +95,17 @@ function buildHierarchy(rows: TransactionRow[]) {
 		const amount = Number(tx.amount);
 		if (!(amount < 0)) continue;
 		const expense = Math.abs(amount);
-		const catId = tx.category?.id ?? UNCATEGORIZED_ID;
-		const catName = tx.category?.name ?? 'Sem categoria';
+		const { category, subcategory } = resolveTaxonomy(tx, categoryMap);
+		const catId = category?.id ?? UNCATEGORIZED_ID;
+		const catName = category?.name ?? 'Sem categoria';
 		let node = map.get(catId);
 		if (!node) {
 			node = { id: catId, name: catName, total: 0, children: [] };
 			map.set(catId, node);
 		}
 		node.total += expense;
-		const subId = tx.subcategory?.id ?? UNCATEGORIZED_SUB_ID;
-		const subName = tx.subcategory?.name ?? 'Sem subcategoria';
+		const subId = subcategory?.id ?? UNCATEGORIZED_SUB_ID;
+		const subName = subcategory?.name ?? 'Sem subcategoria';
 		let child = node.children.find((c) => c.id === subId);
 		if (!child) {
 			child = { id: subId, name: subName, total: 0 };
@@ -124,6 +162,15 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		totalExpenses: 0,
 		byProfile: [] as ReturnType<typeof aggregateBy>,
 		byPayer: [] as ReturnType<typeof aggregateBy>,
+		filteredTransactions: [] as {
+			id: string;
+			date: string;
+			description: string;
+			amount: number;
+			currency: string | null;
+			category_id: string | null;
+			subcategory_id: string | null;
+		}[],
 		recentTransactions: [] as TransactionRow[],
 		profiles: [] as { id: string; name: string }[],
 		categories: [] as { id: string; name: string }[],
@@ -157,8 +204,8 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 			subcategory_id,
 			owner_profile_id,
 			paid_by_user_id,
-			category:categories!transactions_category_id_fkey ( id, name ),
-			subcategory:categories!transactions_subcategory_id_fkey ( id, name ),
+			category:categories!transactions_category_id_fkey ( id, name, parent_id ),
+			subcategory:categories!transactions_subcategory_id_fkey ( id, name, parent_id ),
 			owner_profile:financial_profiles ( id, name )
 		`)
 		.eq('household_id', householdId)
@@ -201,6 +248,25 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		loadCategoriesForUser(supabaseAdmin, householdId, user.id)
 	]);
 
+	const categoryMap: CategoryMap = new Map();
+	for (const c of categoriesData ?? []) {
+		if (c.id) categoryMap.set(c.id, { id: c.id, name: c.name ?? '', parent_id: c.parent_id ?? null });
+	}
+
+	const hierarchy = buildHierarchy(filtered, categoryMap);
+	const resolvedFiltered = filtered.map((t) => {
+		const { category, subcategory } = resolveTaxonomy(t, categoryMap);
+		return {
+			id: t.id,
+			date: t.date,
+			description: t.description,
+			amount: Number(t.amount),
+			currency: t.currency,
+			category_id: category?.id ?? null,
+			subcategory_id: subcategory?.id ?? null
+		};
+	});
+
 	return {
 		monthOptions,
 		selectedMonth,
@@ -208,8 +274,8 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		summary: summarize(filtered),
 		previousSummary: summarize(previousRows),
 		monthlyTrend: buildMonthlyTrend(visibleAllMonths),
-		expenseHierarchy: buildHierarchy(filtered),
-		totalExpenses: buildHierarchy(filtered).reduce((s, n) => s + n.total, 0),
+		expenseHierarchy: hierarchy,
+		totalExpenses: hierarchy.reduce((s, n) => s + n.total, 0),
 		byProfile: aggregateBy(filtered, (t) => ({
 			id: t.owner_profile?.id ?? 'unknown',
 			name: t.owner_profile?.name ?? 'Sem atribuição'
@@ -218,6 +284,7 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 			id: t.paid_by_user_id ?? 'unknown',
 			name: t.paid_by_user_id ? payerNameById.get(t.paid_by_user_id) ?? 'Sem nome' : 'Sem pagador'
 		})),
+		filteredTransactions: resolvedFiltered,
 		recentTransactions: filtered.slice(0, 8),
 		profiles: profilesData ?? [],
 		categories: (categoriesData ?? []).filter((c) => !c.parent_id),
