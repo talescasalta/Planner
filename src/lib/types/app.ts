@@ -1,17 +1,36 @@
-export type ClassificationMethod = 'manual' | 'rule' | 'llm' | 'imported' | 'unknown';
+export type ClassificationMethod = 'manual' | 'rule' | 'llm' | 'system' | 'imported' | 'unknown';
 export type ReviewStatus = 'needs_review' | 'confirmed' | 'ignored';
 export type ImportStatus = 'uploaded' | 'parsed' | 'classified' | 'reviewed' | 'failed';
 export type PatternType = 'merchant_contains' | 'description_contains' | 'exact_merchant' | 'regex';
 export type FinancialProfileType = 'individual' | 'shared';
 
-export interface ClassificationSuggestion {
+export interface SuccessfulClassificationSuggestion {
+	type?: 'classification';
 	category: string;
 	subcategory?: string | null;
-	owner_profile: string;
+	owner_profile?: string | null;
 	confidence: number;
 	needs_review: boolean;
 	reason_code?: string;
 }
+
+export interface ErrorClassificationSuggestion {
+	type?: 'error';
+	error: string;
+	raw?: string;
+	message?: string;
+}
+
+export interface IgnoredClassificationSuggestion {
+	type?: 'ignored';
+	ignored_reason: string;
+	reason_code?: string;
+}
+
+export type ClassificationSuggestion =
+	| SuccessfulClassificationSuggestion
+	| ErrorClassificationSuggestion
+	| IgnoredClassificationSuggestion;
 
 export interface Profile {
 	id: string;
@@ -106,6 +125,7 @@ export interface ClassificationRule {
 	subcategory_id: string | null;
 	owner_profile_id: string | null;
 	confidence: number;
+	reinforcement_count: number;
 	created_by_user_id: string;
 	active: boolean;
 	created_at: string;

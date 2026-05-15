@@ -14,7 +14,9 @@
 
 	let selectedFile: File | null = $state(null);
 	let isDragging = $state(false);
+	let isConfirming = $state(false);
 	let confirmFileInput: HTMLInputElement | null = $state(null);
+	let sourceType: 'credit_card' | 'bank_account' = $state('credit_card');
 
 	// Mirror the selected file into the confirm form's hidden input as soon
 	// as both are available, so the browser-native `required` check passes
@@ -69,6 +71,14 @@
 		if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
 		return `${(n / 1024 / 1024).toFixed(1)} MB`;
 	}
+
+	function enhanceConfirm() {
+		isConfirming = true;
+		return async ({ update }: { update: () => Promise<void> }) => {
+			await update();
+			isConfirming = false;
+		};
+	}
 </script>
 
 <div class="max-w-3xl mx-auto space-y-6">
@@ -97,6 +107,40 @@
 				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2"
 			/>
 			<p class="mt-1 text-xs text-gray-500">Mês ao qual esta fatura se refere. As transações serão agrupadas por este mês.</p>
+		</div>
+
+		<div>
+			<span class="block text-sm font-medium text-gray-700">Tipo de origem</span>
+			<div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+				<label class={`flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm ${sourceType === 'credit_card' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+					<input
+						type="radio"
+						name="source_type"
+						value="credit_card"
+						checked={sourceType === 'credit_card'}
+						onchange={() => (sourceType = 'credit_card')}
+						class="mt-0.5"
+					/>
+					<span>
+						<span class="block font-medium text-gray-900">Cartão de crédito</span>
+						<span class="block text-xs text-gray-500">Valores no CSV são positivos para gastos (Nubank, Itaú, etc.)</span>
+					</span>
+				</label>
+				<label class={`flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm ${sourceType === 'bank_account' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+					<input
+						type="radio"
+						name="source_type"
+						value="bank_account"
+						checked={sourceType === 'bank_account'}
+						onchange={() => (sourceType = 'bank_account')}
+						class="mt-0.5"
+					/>
+					<span>
+						<span class="block font-medium text-gray-900">Conta corrente</span>
+						<span class="block text-xs text-gray-500">Valores no CSV já trazem despesas como negativas.</span>
+					</span>
+				</label>
+			</div>
 		</div>
 
 		<div>
@@ -170,11 +214,13 @@
 			<form
 				method="POST"
 				action="?/confirm"
-				use:enhance
+				use:enhance={enhanceConfirm}
 				enctype="multipart/form-data"
 				class="pt-4"
+				aria-busy={isConfirming}
 			>
 				<input type="hidden" name="reference_month" value={form?.reference_month ?? currentMonth} />
+				<input type="hidden" name="source_type" value={form?.source_type ?? sourceType} />
 				<input
 					bind:this={confirmFileInput}
 					name="file"
@@ -189,14 +235,30 @@
 						Recarregamos a página? Volte para a etapa anterior e selecione o arquivo novamente.
 					</p>
 				{/if}
-				<div class="flex items-center justify-between">
-					<a href="/app/imports" class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a>
+				{#if isConfirming}
+					<p class="mb-3 rounded border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
+						Importando e classificando transações. Isso pode levar alguns instantes.
+					</p>
+				{/if}
+				<div class="flex items-center justify-between gap-3">
+					<a
+						href="/app/imports"
+						class={`text-sm ${isConfirming ? 'pointer-events-none text-gray-300' : 'text-gray-600 hover:text-gray-900'}`}
+						aria-disabled={isConfirming}
+					>
+						Cancelar
+					</a>
 					<button
 						type="submit"
-						disabled={!selectedFile}
-						class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+						disabled={!selectedFile || isConfirming}
+						class="inline-flex min-w-44 items-center justify-center gap-2 rounded-md border border-transparent bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
 					>
-						Confirmar importação
+						{#if isConfirming}
+							<span class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true"></span>
+							Processando...
+						{:else}
+							Confirmar importação
+						{/if}
 					</button>
 				</div>
 			</form>

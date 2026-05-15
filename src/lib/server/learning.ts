@@ -11,6 +11,12 @@ type TransactionForLearning = {
 	household_id: string;
 };
 
+export function confidenceForReinforcement(count: number): number {
+	if (count <= 1) return 0.65;
+	if (count === 2) return 0.72;
+	return 0.85;
+}
+
 export type ClassificationLearningInput = {
 	householdId: string;
 	userId: string;
@@ -38,6 +44,8 @@ export async function learnFromTransactionAdjustment(
 	supabase: SupabaseClient<Database>,
 	input: ClassificationLearningInput
 ): Promise<void> {
+	if (!input.categoryId) return;
+
 	const { data: tx } = await supabase
 		.from('transactions')
 		.select('id, description, clean_description, merchant, household_id')
@@ -50,17 +58,16 @@ export async function learnFromTransactionAdjustment(
 	const chosen = choosePattern(tx);
 	if (!chosen) return;
 
-	const patch = {
+	const basePatch = {
 		category_id: input.categoryId,
 		subcategory_id: input.subcategoryId,
 		owner_profile_id: input.ownerProfileId,
-		confidence: 0.98,
 		active: true
 	};
 
 	const { data: existing } = await supabase
 		.from('classification_rules')
-		.select('id')
+		.select('id, reinforcement_count')
 		.eq('household_id', input.householdId)
 		.eq('created_by_user_id', input.userId)
 		.eq('pattern_type', chosen.patternType)
@@ -68,16 +75,29 @@ export async function learnFromTransactionAdjustment(
 		.maybeSingle();
 
 	if (existing?.id) {
-		await supabase.from('classification_rules').update(patch).eq('id', existing.id);
+		const reinforcementCount = Math.max(1, Number(existing.reinforcement_count ?? 1)) + 1;
+		await supabase
+			.from('classification_rules')
+			.update({
+				...basePatch,
+				reinforcement_count: reinforcementCount,
+				confidence: confidenceForReinforcement(reinforcementCount)
+			})
+			.eq('id', existing.id)
+			.eq('household_id', input.householdId)
+			.eq('created_by_user_id', input.userId);
 		return;
 	}
 
+	const reinforcementCount = 1;
 	await supabase.from('classification_rules').insert({
 		household_id: input.householdId,
 		created_by_user_id: input.userId,
 		pattern: chosen.pattern,
 		pattern_type: chosen.patternType,
-		...patch
+		...basePatch,
+		reinforcement_count: reinforcementCount,
+		confidence: confidenceForReinforcement(reinforcementCount)
 	});
 }
 
@@ -93,6 +113,7 @@ export async function buildPersonalGabaritoPromptSection(
 		.eq('household_id', householdId)
 		.eq('created_by_user_id', userId)
 		.eq('active', true)
+		.not('category_id', 'is', null)
 		.order('created_at', { ascending: false })
 		.limit(100);
 

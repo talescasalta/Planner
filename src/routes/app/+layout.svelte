@@ -16,7 +16,6 @@
 				<a href="/app/imports" class="text-sm text-gray-600 hover:text-gray-900">Importar fatura</a>
 				<a href="/app/review" class="text-sm text-gray-600 hover:text-gray-900">Revisão</a>
 				<a href="/app/rules" class="text-sm text-gray-600 hover:text-gray-900">Regras</a>
-				<a href="/app/reports" class="text-sm text-gray-600 hover:text-gray-900">Relatórios</a>
 				<a href="/app/settings" class="text-sm text-gray-600 hover:text-gray-900">Configurações</a>
 				<form method="POST" action="/logout" use:enhance class="inline">
 					<button type="submit" class="text-sm text-red-600 hover:text-red-800">Sair</button>

@@ -58,6 +58,15 @@ type TransactionRelationInput = {
 	paid_by_user_id?: string | null;
 };
 
+type TransactionPatch = {
+	category_id?: string | null;
+	subcategory_id?: string | null;
+	owner_profile_id?: string | null;
+	paid_by_user_id?: string | null;
+	review_status?: string;
+	updated_at?: string;
+};
+
 export async function validateTransactionRelations(
 	supabase: SupabaseClient<Database>,
 	householdId: string,
@@ -148,4 +157,18 @@ export async function canEditTransaction(
 		.eq('can_edit', true)
 		.maybeSingle();
 	return !error && !!data;
+}
+
+export async function updateTransactionForHousehold(
+	supabase: SupabaseClient<Database>,
+	transactionId: string,
+	householdId: string,
+	patch: TransactionPatch
+): Promise<{ error: { message: string } | null }> {
+	const { error } = await supabase
+		.from('transactions')
+		.update(patch)
+		.eq('id', transactionId)
+		.eq('household_id', householdId);
+	return { error };
 }

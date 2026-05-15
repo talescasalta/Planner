@@ -11,10 +11,21 @@
 Configure na Vercel:
 
 - `PUBLIC_SUPABASE_URL`
-- `PUBLIC_SUPABASE_PUBLISHABLE_KEY` (ou legacy `PUBLIC_SUPABASE_ANON_KEY`)
-- `SUPABASE_SECRET_KEY` (ou legacy `SUPABASE_SERVICE_ROLE_KEY`)
+- `PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SECRET_KEY`
 - `SUPABASE_DB_URL`
 - `OPENAI_API_KEY` ou `OPENROUTER_API_KEY`
+- `LLM_MODEL`
+
+O código atualmente lê exatamente `PUBLIC_SUPABASE_ANON_KEY` e `SUPABASE_SECRET_KEY`, então use esses nomes na Vercel. `SUPABASE_SECRET_KEY` deve ser a chave `service_role`: ela bypassa RLS e precisa ficar restrita ao ambiente server-side. Mesmo com RLS, as rotas server-side devem manter filtros explícitos de `household_id`.
+
+Exemplo com OpenRouter:
+
+```bash
+OPENROUTER_API_KEY=<openrouter-key>
+OPENAI_API_KEY=
+LLM_MODEL=xiaomi/mimo-v2.5-pro
+```
 
 ## Banco de Dados
 
@@ -41,10 +52,6 @@ Ou conecte o repositório Git na Vercel para deploy automático.
 ## Pós-deploy
 
 1. Crie um usuário via `/login` (se signup estiver habilitado) ou diretamente no Supabase Auth.
-2. Crie uma household manualmente e adicione o usuário em `household_members`.
-3. Execute as funções de seed:
-   ```sql
-   SELECT seed_default_categories('<household_id>');
-   SELECT seed_default_financial_profiles('<household_id>');
-   ```
-4. Atualize `financial_profiles` vinculando `user_id` dos perfis individuais aos usuários correspondentes.
+2. Crie ou entre em um grupo/household no app.
+3. Importe uma fatura CSV em `/app/imports`.
+4. Revise as classificações em `/app/transactions`.

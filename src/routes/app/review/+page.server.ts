@@ -1,7 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import { getUserHouseholdId, attachPayerProfiles } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
-import { canEditTransaction, getReadableTransactionIds, validateTransactionRelations } from '$lib/server/access';
+import { canEditTransaction, getReadableTransactionIds, updateTransactionForHousehold, validateTransactionRelations } from '$lib/server/access';
 import { learnFromTransactionAdjustment } from '$lib/server/learning';
 import { filterCategoriesForUser } from '$lib/server/gabarito';
 import { loadUserCategoryExclusions } from '$lib/server/categories';
@@ -83,16 +83,18 @@ export const actions: Actions = {
 			return fail(400, { success: false, message: relationError });
 		}
 
-		const { error: updateError } = await supabase
-			.from('transactions')
-			.update({
+		const { error: updateError } = await updateTransactionForHousehold(
+			supabase,
+			transactionId,
+			householdId,
+			{
 				category_id: categoryId || null,
 				subcategory_id: categoryId ? subcategoryId || null : null,
 				owner_profile_id: ownerProfileId || null,
 				review_status: 'confirmed',
 				updated_at: new Date().toISOString()
-			})
-			.eq('id', transactionId);
+			}
+		);
 
 		if (updateError) {
 			return fail(500, { success: false, message: updateError.message });
