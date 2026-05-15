@@ -47,7 +47,7 @@
 		<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
 			<div>
 				<label for="rule-category" class="block text-xs font-medium text-gray-700">Categoria</label>
-				<select id="rule-category" name="category_id" bind:value={selectedCategoryId} onchange={() => (selectedSubcategoryId = '')} class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm px-2 py-1">
+				<select id="rule-category" name="category_id" required bind:value={selectedCategoryId} onchange={() => (selectedSubcategoryId = '')} class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm px-2 py-1">
 					<option value="">Selecione...</option>
 					{#each parentCategories as c}
 						<option value={c.id}>{c.name}</option>

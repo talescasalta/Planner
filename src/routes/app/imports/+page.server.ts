@@ -1,7 +1,18 @@
 import type { PageServerLoad, Actions } from './$types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
-import { parseCsvBuffer, buildDuplicateKey, detectMapping, type ParsedRow } from '$lib/server/csv-parser';
+import {
+	parseCsvBuffer,
+	buildImportDedupKey,
+	detectMapping,
+	type CsvSourceType,
+	type ParsedRow
+} from '$lib/server/csv-parser';
+
+function readSourceType(formData: FormData): CsvSourceType {
+	const raw = formData.get('source_type');
+	return raw === 'credit_card' ? 'credit_card' : 'bank_account';
+}
 import { getUserHouseholdId, getHouseholdMembers } from '$lib/server/household';
 import { classifyTransactions } from '$lib/server/classifier';
 import { supabaseAdmin } from '$lib/server/supabase';
@@ -22,13 +33,19 @@ async function loadExistingKeysForRange(
 	}
 	const { data } = await supabase
 		.from('transactions')
-		.select('date, description, amount')
+		.select('import_dedup_key')
 		.eq('household_id', householdId)
 		.gte('date', minDate)
 		.lte('date', maxDate);
-	return new Set(
-		(data ?? []).map((t) => `${t.date}|${t.description?.toUpperCase().trim() ?? ''}|${t.amount}`)
-	);
+	return new Set((data ?? []).map((t) => t.import_dedup_key).filter((key): key is string => !!key));
+}
+
+async function markImportFailed(importId: string, message: string) {
+	console.error('[imports/confirm]', message);
+	await supabaseAdmin
+		.from('transaction_imports')
+		.update({ status: 'failed' })
+		.eq('id', importId);
 }
 
 export const load: PageServerLoad = async () => {
@@ -43,6 +60,7 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const file = formData.get('file') as File;
 		const referenceMonth = formData.get('reference_month') as string;
+		const sourceType = readSourceType(formData);
 
 		if (!file || file.size === 0) {
 			return fail(400, { success: false, message: 'Arquivo não enviado' });
@@ -58,7 +76,7 @@ export const actions: Actions = {
 			amountColumn: 'amount',
 			currency: 'BRL'
 		};
-		const rows = parseCsvBuffer(buffer, mapping);
+		const rows = parseCsvBuffer(buffer, mapping, { sourceType });
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
 		if (!householdId) {
@@ -69,16 +87,17 @@ export const actions: Actions = {
 
 		const previewRows = rows.slice(0, 10).map((r) => ({
 			...r,
-			duplicate: existingKeys.has(buildDuplicateKey(r))
+			duplicate: existingKeys.has(buildImportDedupKey(r))
 		}));
 
 		return {
 			success: true,
 			preview: previewRows,
 			total: rows.length,
-			duplicates: rows.filter((r) => existingKeys.has(buildDuplicateKey(r))).length,
+			duplicates: rows.filter((r) => existingKeys.has(buildImportDedupKey(r))).length,
 			filename: file.name,
-			reference_month: referenceMonth
+			reference_month: referenceMonth,
+			source_type: sourceType
 		};
 	},
 
@@ -89,6 +108,7 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const file = formData.get('file') as File;
 		const referenceMonth = formData.get('reference_month') as string;
+		const sourceType = readSourceType(formData);
 
 		if (!file || file.size === 0) {
 			return fail(400, { success: false, message: 'Arquivo não enviado' });
@@ -104,7 +124,7 @@ export const actions: Actions = {
 			amountColumn: 'amount',
 			currency: 'BRL'
 		};
-		const rows = parseCsvBuffer(buffer, mapping);
+		const rows = parseCsvBuffer(buffer, mapping, { sourceType });
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
 		if (!householdId) {
@@ -130,8 +150,9 @@ export const actions: Actions = {
 
 		const existingKeys = await loadExistingKeysForRange(supabase, householdId, rows);
 
-		const newRows = rows.filter((r) => !existingKeys.has(buildDuplicateKey(r)));
+		const newRows = rows.filter((r) => !existingKeys.has(buildImportDedupKey(r)));
 
+		let insertedCount = 0;
 		if (newRows.length > 0) {
 			const txInserts = newRows.map((r) => ({
 				household_id: householdId,
@@ -141,6 +162,7 @@ export const actions: Actions = {
 				amount: r.amount,
 				currency: r.currency,
 				reference_month: referenceMonth,
+				import_dedup_key: buildImportDedupKey(r),
 				classification_method: 'imported',
 				review_status: 'needs_review',
 				created_by_user_id: user.id
@@ -148,13 +170,28 @@ export const actions: Actions = {
 
 			const { data: insertedTxs, error: txError } = await supabaseAdmin
 				.from('transactions')
-				.insert(txInserts)
+				.upsert(txInserts, {
+					onConflict: 'household_id,reference_month,import_dedup_key',
+					ignoreDuplicates: true
+				})
 				.select('id, amount, date, description, clean_description');
 
 			if (txError) {
-				console.error('[imports/confirm] transactions insert failed', txError);
+				await markImportFailed(importRecord.id, `transactions insert failed: ${txError.message}`);
 				return fail(500, { success: false, message: txError.message });
 			}
+
+			if (!insertedTxs) {
+				await markImportFailed(
+					importRecord.id,
+					`transactions insert returned no rows for ${txInserts.length} requested rows`
+				);
+				return fail(500, {
+					success: false,
+					message: 'A importação não conseguiu confirmar as transações gravadas. Tente novamente.'
+				});
+			}
+			insertedCount = insertedTxs.length;
 
 			const accessRows: { transaction_id: string; user_id: string; can_read: boolean; can_edit: boolean }[] = [];
 			for (const tx of insertedTxs ?? []) {
@@ -169,20 +206,44 @@ export const actions: Actions = {
 			if (accessRows.length > 0) {
 				const { error: accessError } = await supabaseAdmin.from('transaction_access').insert(accessRows);
 				if (accessError) {
-					console.error('[imports/confirm] transaction_access insert failed', accessError);
+					await markImportFailed(importRecord.id, `transaction_access insert failed: ${accessError.message}`);
 					return fail(500, { success: false, message: accessError.message });
 				}
 			}
 
 			const insertedIds = (insertedTxs ?? []).map((t) => t.id);
 			if (insertedIds.length > 0) {
-				await classifyTransactions(supabaseAdmin, householdId, insertedIds, user.id);
+				const { count: persistedCount, error: persistedError } = await supabaseAdmin
+					.from('transactions')
+					.select('id', { count: 'exact', head: true })
+					.in('id', insertedIds)
+					.eq('household_id', householdId);
+				if (persistedError || persistedCount !== insertedIds.length) {
+					await markImportFailed(
+						importRecord.id,
+						`persisted transaction count mismatch: ${persistedCount ?? 0}/${insertedIds.length}`
+					);
+					return fail(500, {
+						success: false,
+						message: 'A importação não encontrou as transações recém-gravadas. Nada foi classificado.'
+					});
+				}
+
+				try {
+					await classifyTransactions(supabaseAdmin, householdId, insertedIds, user.id);
+				} catch (classificationError) {
+					await markImportFailed(importRecord.id, `classification failed: ${String(classificationError)}`);
+					return fail(500, {
+						success: false,
+						message: 'As transações foram importadas, mas a classificação automática falhou. Tente classificar novamente.'
+					});
+				}
 			}
 		}
 
 		await supabaseAdmin
 			.from('transaction_imports')
-			.update({ status: 'classified', row_count: newRows.length })
+			.update({ status: 'classified', row_count: insertedCount })
 			.eq('id', importRecord.id);
 
 		redirect(303, '/app/transactions');

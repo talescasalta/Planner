@@ -5,9 +5,22 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let groups = $derived(data.groups ?? []);
 	let showCreateForm = $state(false);
+
+	function formatCurrency(value: number, currency = 'BRL') {
+		return value.toLocaleString('pt-BR', { style: 'currency', currency });
+	}
+
+	function formatMonth(month: string) {
+		const [year, monthNumber] = month.split('-').map(Number);
+		if (!year || !monthNumber) return month || 'Sem mês';
+		return new Date(year, monthNumber - 1, 1).toLocaleDateString('pt-BR', {
+			month: 'long',
+			year: 'numeric'
+		});
+	}
 </script>
 
-<div class="max-w-3xl mx-auto space-y-6">
+<div class="max-w-5xl mx-auto space-y-6">
 	<div class="flex items-center justify-between">
 		<h2 class="text-xl font-semibold text-gray-900">Grupos</h2>
 		<button
@@ -95,6 +108,88 @@
 					/>
 					<button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">Adicionar</button>
 				</form>
+			</div>
+
+			<div class="border-t pt-4 space-y-4">
+				<div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+					<div>
+						<h4 class="text-sm font-semibold text-gray-700">Transações do grupo</h4>
+						<p class="text-xs text-gray-500">Resumo das transações que você pode visualizar.</p>
+					</div>
+					<form method="GET" class="flex items-end gap-2">
+						<label for="month-{group.id}" class="text-xs font-medium text-gray-600">
+							Mês
+							<select
+								id="month-{group.id}"
+								name="month_{group.id}"
+								class="mt-1 block w-48 rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+								onchange={(event) => event.currentTarget.form?.requestSubmit()}
+							>
+								{#if group.activity.monthOptions.length === 0}
+									<option value="">Sem transações</option>
+								{/if}
+								{#each group.activity.monthOptions as month}
+									<option value={month} selected={month === group.activity.selectedMonth}>{formatMonth(month)}</option>
+								{/each}
+							</select>
+						</label>
+					</form>
+				</div>
+
+				<div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+					<div class="rounded-md bg-gray-50 p-3">
+						<p class="text-xs text-gray-500">Transações</p>
+						<p class="text-sm font-semibold text-gray-900">{group.activity.summary.count}</p>
+					</div>
+					<div class="rounded-md bg-red-50 p-3">
+						<p class="text-xs text-red-700">Despesas</p>
+						<p class="text-sm font-semibold text-red-800">{formatCurrency(group.activity.summary.expenses)}</p>
+					</div>
+					<div class="rounded-md bg-green-50 p-3">
+						<p class="text-xs text-green-700">Créditos</p>
+						<p class="text-sm font-semibold text-green-800">{formatCurrency(group.activity.summary.credits)}</p>
+					</div>
+					<div class="rounded-md bg-gray-50 p-3">
+						<p class="text-xs text-gray-500">Saldo</p>
+						<p class="text-sm font-semibold text-gray-900">{formatCurrency(group.activity.summary.balance)}</p>
+					</div>
+				</div>
+
+				{#if group.activity.transactions.length === 0}
+					<p class="text-sm text-gray-500">Nenhuma transação encontrada para este mês.</p>
+				{:else}
+					<div class="overflow-x-auto rounded-md border border-gray-100">
+						<table class="min-w-full divide-y divide-gray-100 text-sm">
+							<thead class="bg-gray-50">
+								<tr>
+									<th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Data</th>
+									<th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Descrição</th>
+									<th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Classificação</th>
+									<th class="px-3 py-2 text-right text-xs font-medium uppercase text-gray-500">Valor</th>
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-gray-100">
+								{#each group.activity.transactions as transaction}
+									<tr>
+										<td class="whitespace-nowrap px-3 py-2 text-gray-700">{transaction.date}</td>
+										<td class="px-3 py-2 text-gray-900">
+											<a href="/app/transactions/{transaction.id}" class="hover:text-indigo-700">{transaction.description}</a>
+										</td>
+										<td class="px-3 py-2 text-gray-600">
+											{transaction.category?.name ?? 'Sem categoria'}
+											{#if transaction.subcategory?.name}
+												<span class="text-gray-400">/</span> {transaction.subcategory.name}
+											{/if}
+										</td>
+										<td class={`whitespace-nowrap px-3 py-2 text-right font-medium ${transaction.amount < 0 ? 'text-red-700' : 'text-green-700'}`}>
+											{formatCurrency(transaction.amount, transaction.currency ?? 'BRL')}
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
 			</div>
 		</div>
 	{/each}

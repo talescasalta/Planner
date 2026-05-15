@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
+	import { ArrowDown, ArrowUp, ArrowUpDown, Ban, Check, Plus, Search, Undo2, X } from 'lucide-svelte';
 	import type { TransactionsPageData } from '$lib/types/page-data';
 	import type { Transaction } from '$lib/types/app';
 
@@ -15,7 +17,39 @@
 	let editCategoryId = $state('');
 	let editSubcategoryId = $state('');
 	let editOwnerProfileId = $state('');
+	let newSubcategoryName = $state('');
+	let savingId = $state<string | null>(null);
+	let confirmingId = $state<string | null>(null);
+	let statusChangingId = $state<string | null>(null);
+	let creatingSubcategoryForId = $state<string | null>(null);
 	let editSubcategories = $derived(editCategoryId ? categories.filter((c) => c.parent_id === editCategoryId) : []);
+
+	let searchTerm = $state('');
+	let amountSort = $state<'none' | 'desc' | 'asc'>('none');
+
+	let visibleTransactions = $derived.by(() => {
+		const term = searchTerm.trim().toLowerCase();
+		let list = transactions;
+		if (term) {
+			list = list.filter((tx) => {
+				const desc = (tx.description ?? '').toLowerCase();
+				const clean = (tx.clean_description ?? '').toLowerCase();
+				const cat = (tx.category_display_name ?? '').toLowerCase();
+				const sub = (tx.subcategory_display_name ?? '').toLowerCase();
+				return desc.includes(term) || clean.includes(term) || cat.includes(term) || sub.includes(term);
+			});
+		}
+		if (amountSort === 'desc') {
+			list = [...list].sort((a, b) => Number(b.amount) - Number(a.amount));
+		} else if (amountSort === 'asc') {
+			list = [...list].sort((a, b) => Number(a.amount) - Number(b.amount));
+		}
+		return list;
+	});
+
+	function cycleAmountSort() {
+		amountSort = amountSort === 'none' ? 'desc' : amountSort === 'desc' ? 'asc' : 'none';
+	}
 
 	$effect(() => {
 		if (editSubcategoryId && !editSubcategories.some((sub) => sub.id === editSubcategoryId)) {
@@ -42,7 +76,7 @@
 	}
 
 	function setAllVisible(checked: boolean) {
-		selectedForDelete = checked ? transactions.map((tx) => tx.id) : [];
+		selectedForDelete = checked ? visibleTransactions.map((tx) => tx.id) : [];
 	}
 
 	function startEdit(tx: Transaction) {
@@ -50,6 +84,7 @@
 		editCategoryId = tx.category_id ?? '';
 		editSubcategoryId = tx.subcategory_id ?? '';
 		editOwnerProfileId = tx.owner_profile_id ?? '';
+		newSubcategoryName = '';
 	}
 
 	function cancelEdit() {
@@ -57,6 +92,7 @@
 		editCategoryId = '';
 		editSubcategoryId = '';
 		editOwnerProfileId = '';
+		newSubcategoryName = '';
 	}
 
 	function classificationText(tx: Transaction) {
@@ -80,6 +116,59 @@
 		}
 		return 'border-emerald-100 bg-emerald-50 text-emerald-900 hover:bg-emerald-100';
 	}
+
+	function keepScrollOnEditSubmit(transactionId: string, submitter: HTMLElement | null) {
+		const scrollY = window.scrollY;
+		const isCreatingSubcategory =
+			submitter instanceof HTMLButtonElement && submitter.formAction.includes('create_subcategory');
+		if (isCreatingSubcategory) {
+			creatingSubcategoryForId = transactionId;
+		} else {
+			savingId = transactionId;
+		}
+
+		return async ({ result, update }: { result: { type: string; data?: Record<string, unknown> }; update: () => Promise<void> }) => {
+			await update();
+			requestAnimationFrame(() => {
+				if (isCreatingSubcategory && result.type === 'success') {
+					const createdSubcategoryId = result.data?.createdSubcategoryId;
+					if (typeof createdSubcategoryId === 'string') {
+						editSubcategoryId = createdSubcategoryId;
+						newSubcategoryName = '';
+					}
+				}
+				window.scrollTo({ top: scrollY });
+				savingId = null;
+				creatingSubcategoryForId = null;
+			});
+		};
+	}
+
+	function keepScrollOnConfirm(transactionId: string) {
+		const scrollY = window.scrollY;
+		confirmingId = transactionId;
+
+		return async ({ update }: { update: () => Promise<void> }) => {
+			await update();
+			requestAnimationFrame(() => {
+				window.scrollTo({ top: scrollY });
+				confirmingId = null;
+			});
+		};
+	}
+
+	function keepScrollOnStatusChange(transactionId: string) {
+		const scrollY = window.scrollY;
+		statusChangingId = transactionId;
+
+		return async ({ update }: { update: () => Promise<void> }) => {
+			await update();
+			requestAnimationFrame(() => {
+				window.scrollTo({ top: scrollY });
+				statusChangingId = null;
+			});
+		};
+	}
 </script>
 
 <div class="space-y-4">
@@ -95,25 +184,51 @@
 
 	<div class="bg-white shadow rounded-lg p-4 space-y-4">
 		<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-			<div>
-				<label for="month-filter" class="block text-xs font-medium uppercase tracking-wider text-gray-500">Mês da fatura</label>
-				<select
-					id="month-filter"
-					class="mt-1 w-64 rounded-md border-gray-300 shadow-sm text-sm px-3 py-2"
-					value={selectedMonth}
-					onchange={(event) => {
-						const value = event.currentTarget.value;
-						window.location.href = monthHref(value);
-					}}
-				>
-					{#if !selectedMonth}
-						<option value="">Sem meses</option>
-					{/if}
-					<option value="all">Todos os meses</option>
-					{#each monthOptions as month}
-						<option value={month}>{formatMonth(month)}</option>
-					{/each}
-				</select>
+			<div class="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end">
+				<div>
+					<label for="month-filter" class="block text-xs font-medium uppercase tracking-wider text-gray-500">Mês da fatura</label>
+					<select
+						id="month-filter"
+						class="mt-1 w-56 rounded-md border-gray-300 shadow-sm text-sm px-3 py-2"
+						value={selectedMonth}
+						onchange={(event) => {
+							const value = event.currentTarget.value;
+							window.location.href = monthHref(value);
+						}}
+					>
+						{#if !selectedMonth}
+							<option value="">Sem meses</option>
+						{/if}
+						<option value="all">Todos os meses</option>
+						{#each monthOptions as month}
+							<option value={month}>{formatMonth(month)}</option>
+						{/each}
+					</select>
+				</div>
+
+				<div class="flex-1">
+					<label for="tx-search" class="block text-xs font-medium uppercase tracking-wider text-gray-500">Buscar</label>
+					<div class="relative mt-1">
+						<Search class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+						<input
+							id="tx-search"
+							type="search"
+							bind:value={searchTerm}
+							placeholder="Descrição, categoria, subcategoria..."
+							class="w-full rounded-md border-gray-300 pl-8 pr-8 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+						/>
+						{#if searchTerm}
+							<button
+								type="button"
+								onclick={() => (searchTerm = '')}
+								class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+								aria-label="Limpar busca"
+							>
+								<X class="h-4 w-4" />
+							</button>
+						{/if}
+					</div>
+				</div>
 			</div>
 
 			<div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -196,12 +311,28 @@
 						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
 						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Classificação</th>
 						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Atribuir a</th>
-						<th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
+						<th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+						<button
+							type="button"
+							onclick={cycleAmountSort}
+							class="inline-flex items-center gap-1 hover:text-gray-900 {amountSort !== 'none' ? 'text-indigo-700' : ''}"
+							title={amountSort === 'none' ? 'Ordenar por valor' : amountSort === 'desc' ? 'Maior para menor' : 'Menor para maior'}
+						>
+							Valor
+							{#if amountSort === 'desc'}
+								<ArrowDown class="h-3.5 w-3.5" />
+							{:else if amountSort === 'asc'}
+								<ArrowUp class="h-3.5 w-3.5" />
+							{:else}
+								<ArrowUpDown class="h-3.5 w-3.5 text-gray-400" />
+							{/if}
+						</button>
+					</th>
 						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-gray-200">
-					{#each transactions as tx}
+					{#each visibleTransactions as tx}
 						<tr class={editingId === tx.id ? 'bg-indigo-50/40' : ''}>
 							<td class="px-4 py-3 align-top">
 								<input
@@ -220,7 +351,13 @@
 
 							{#if editingId === tx.id}
 								<td class="px-4 py-3 text-sm text-gray-600 align-top" colspan="2">
-									<form method="POST" action="?/update_single_classification" class="flex flex-wrap items-end gap-2">
+									<form
+										method="POST"
+										action="?/update_single_classification"
+										use:enhance={({ submitter }) => keepScrollOnEditSubmit(tx.id, submitter)}
+										data-sveltekit-noscroll
+										class="flex flex-wrap items-end gap-2"
+									>
 										<input type="hidden" name="transaction_id" value={tx.id} />
 										<input type="hidden" name="month" value={selectedMonth} />
 										<input type="hidden" name="page" value={data.page} />
@@ -253,6 +390,29 @@
 											</select>
 										</label>
 										<label class="min-w-44 text-xs font-medium text-gray-600">
+											Nova subcategoria
+											<div class="mt-1 flex w-56 gap-1">
+												<input
+													name="new_subcategory_name"
+													type="text"
+													bind:value={newSubcategoryName}
+													disabled={!editCategoryId || creatingSubcategoryForId === tx.id}
+													placeholder="Criar aqui"
+													class="block min-w-0 flex-1 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
+												/>
+												<button
+													type="submit"
+													formaction="?/create_subcategory"
+													disabled={!editCategoryId || !newSubcategoryName.trim() || creatingSubcategoryForId === tx.id}
+													class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-green-600 text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+													title="Criar subcategoria"
+													aria-label="Criar subcategoria"
+												>
+													<Plus class="h-4 w-4" />
+												</button>
+											</div>
+										</label>
+										<label class="min-w-44 text-xs font-medium text-gray-600">
 											Atribuir a
 											<select
 												name="owner_profile_id"
@@ -265,8 +425,12 @@
 												{/each}
 											</select>
 										</label>
-										<button type="submit" class="px-3 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
-											Salvar
+										<button
+											type="submit"
+											disabled={savingId === tx.id}
+											class="inline-flex min-w-20 items-center justify-center px-3 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+										>
+											{savingId === tx.id ? 'Salvando...' : 'Salvar'}
 										</button>
 										<button
 											type="button"
@@ -311,9 +475,65 @@
 							</td>
 							<td class="px-4 py-3 whitespace-nowrap text-sm align-top">
 								{#if tx.review_status === 'needs_review'}
-									<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">Revisar</span>
+									<div class="flex items-center gap-2">
+										<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">Revisar</span>
+										<form method="POST" action="?/confirm_single" use:enhance={() => keepScrollOnConfirm(tx.id)} data-sveltekit-noscroll>
+											<input type="hidden" name="transaction_id" value={tx.id} />
+											<button
+												type="submit"
+												disabled={confirmingId === tx.id}
+												class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-green-600 text-white shadow-sm hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-green-300"
+												title="Confirmar transação"
+												aria-label="Confirmar transação"
+											>
+												<Check class="h-4 w-4" />
+											</button>
+										</form>
+										<form method="POST" action="?/ignore_single" use:enhance={() => keepScrollOnStatusChange(tx.id)} data-sveltekit-noscroll>
+											<input type="hidden" name="transaction_id" value={tx.id} />
+											<button
+												type="submit"
+												disabled={statusChangingId === tx.id}
+												class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-gray-600 text-white shadow-sm hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+												title="Ignorar transação nos totais"
+												aria-label="Ignorar transação nos totais"
+											>
+												<Ban class="h-4 w-4" />
+											</button>
+										</form>
+									</div>
 								{:else if tx.review_status === 'confirmed'}
-									<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Confirmado</span>
+									<div class="flex items-center gap-2">
+										<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Confirmado</span>
+										<form method="POST" action="?/ignore_single" use:enhance={() => keepScrollOnStatusChange(tx.id)} data-sveltekit-noscroll>
+											<input type="hidden" name="transaction_id" value={tx.id} />
+											<button
+												type="submit"
+												disabled={statusChangingId === tx.id}
+												class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-gray-600 text-white shadow-sm hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+												title="Ignorar transação nos totais"
+												aria-label="Ignorar transação nos totais"
+											>
+												<Ban class="h-4 w-4" />
+											</button>
+										</form>
+									</div>
+								{:else if tx.review_status === 'ignored'}
+									<div class="flex items-center gap-2">
+										<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">Ignorado</span>
+										<form method="POST" action="?/restore_single" use:enhance={() => keepScrollOnStatusChange(tx.id)} data-sveltekit-noscroll>
+											<input type="hidden" name="transaction_id" value={tx.id} />
+											<button
+												type="submit"
+												disabled={statusChangingId === tx.id}
+												class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-gray-700 shadow-sm ring-1 ring-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
+												title="Voltar para revisão"
+												aria-label="Voltar para revisão"
+											>
+												<Undo2 class="h-4 w-4" />
+											</button>
+										</form>
+									</div>
 								{:else}
 									<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">{tx.review_status}</span>
 								{/if}

@@ -9,7 +9,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 			getAll: () => event.cookies.getAll(),
 			setAll: (cookiesToSet) => {
 				cookiesToSet.forEach(({ name, value, options }) => {
-					event.cookies.set(name, value, { ...options, path: '/' });
+					try {
+						event.cookies.set(name, value, { ...options, path: '/' });
+					} catch {
+						// Supabase auth subscribers may fire after the response is sent
+						// (e.g. token refresh on a stale request). Ignoring is safe — the
+						// next request will refresh cookies normally.
+					}
 				});
 			}
 		}

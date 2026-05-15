@@ -1,6 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
 import { transactionUpdateSchema } from '$lib/schemas/transaction';
-import { canEditTransaction, canReadTransaction, validateTransactionRelations } from '$lib/server/access';
+import { canEditTransaction, canReadTransaction, updateTransactionForHousehold, validateTransactionRelations } from '$lib/server/access';
 import { getUserHouseholdId, attachPayerProfiles } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { learnFromTransactionAdjustment } from '$lib/server/learning';
@@ -104,10 +104,7 @@ export const actions: Actions = {
 			updated_at: new Date().toISOString()
 		};
 
-		const { error } = await supabase
-			.from('transactions')
-			.update(patch)
-			.eq('id', params.id);
+		const { error } = await updateTransactionForHousehold(supabase, params.id, householdId, patch);
 
 		if (error) {
 			return fail(500, { success: false, message: error.message });

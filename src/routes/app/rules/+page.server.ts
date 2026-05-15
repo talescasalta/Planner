@@ -2,6 +2,7 @@ import type { PageServerLoad, Actions } from './$types';
 import { getUserHouseholdId } from '$lib/server/household';
 import { validateTransactionRelations } from '$lib/server/access';
 import { loadCategoriesForUser } from '$lib/server/categories';
+import { deleteRuleForHousehold, updateRuleActiveForHousehold } from '$lib/server/rules';
 import { fail } from '@sveltejs/kit';
 
 export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession } }) => {
@@ -46,8 +47,8 @@ export const actions: Actions = {
 		const ownerProfileId = formData.get('owner_profile_id') as string;
 		const confidence = parseFloat((formData.get('confidence') as string) ?? '0.95');
 
-		if (!pattern || !patternType) {
-			return fail(400, { success: false, message: 'Preencha todos os campos obrigatórios' });
+		if (!pattern || !patternType || !categoryId) {
+			return fail(400, { success: false, message: 'Informe padrão, tipo e categoria' });
 		}
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
@@ -88,7 +89,10 @@ export const actions: Actions = {
 
 		if (!ruleId) return fail(400, { success: false, message: 'ID ausente' });
 
-		const { error } = await supabase.from('classification_rules').update({ active }).eq('id', ruleId);
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId) return fail(400, { success: false, message: 'Sem grupo' });
+
+		const { error } = await updateRuleActiveForHousehold(supabase, householdId, ruleId, active);
 		if (error) return fail(500, { success: false, message: error.message });
 		return { success: true };
 	},
@@ -102,7 +106,10 @@ export const actions: Actions = {
 
 		if (!ruleId) return fail(400, { success: false, message: 'ID ausente' });
 
-		const { error } = await supabase.from('classification_rules').delete().eq('id', ruleId);
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId) return fail(400, { success: false, message: 'Sem grupo' });
+
+		const { error } = await deleteRuleForHousehold(supabase, householdId, ruleId);
 		if (error) return fail(500, { success: false, message: error.message });
 		return { success: true };
 	}

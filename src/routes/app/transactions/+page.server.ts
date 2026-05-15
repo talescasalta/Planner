@@ -6,7 +6,7 @@ import { supabaseAdmin } from '$lib/server/supabase';
 import { getReadableTransactionIds, validateTransactionRelations } from '$lib/server/access';
 import { learnFromTransactionAdjustment } from '$lib/server/learning';
 import { filterCategoriesForUser } from '$lib/server/gabarito';
-import { loadUserCategoryExclusions } from '$lib/server/categories';
+import { loadCategoriesForUser, loadUserCategoryExclusions } from '$lib/server/categories';
 import { fail, redirect } from '@sveltejs/kit';
 
 const PAGE_SIZE = 100;
@@ -24,6 +24,10 @@ type TransactionWithDisplay = {
 	subcategory_id?: string | null;
 	classification_suggestion?: ClassificationSuggestionLike | null;
 };
+
+function cleanName(value: FormDataEntryValue | null): string {
+	return String(value ?? '').trim().replace(/\s+/g, ' ');
+}
 
 function emptyPage() {
 	return {
@@ -141,7 +145,8 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 				.from('transactions')
 				.select('amount')
 				.eq('household_id', householdId)
-				.in('id', readableTransactionIds);
+				.in('id', readableTransactionIds)
+				.neq('review_status', 'ignored');
 			if (selectedMonth && selectedMonth !== ALL_MONTHS) query = query.eq('reference_month', selectedMonth);
 			return query;
 		})(),
@@ -275,6 +280,158 @@ export const actions: Actions = {
 		if (page && page !== '0') params.set('page', page);
 		const query = params.toString();
 		redirect(303, `/app/transactions${query ? `?${query}` : ''}`);
+	},
+
+	confirm_single: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const formData = await request.formData();
+		const transactionId = String(formData.get('transaction_id') ?? '').trim();
+		if (!transactionId) return fail(400, { success: false, message: 'Transação inválida' });
+
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+
+		const editableSet = await getEditableTransactionIds(supabase, user.id, [transactionId]);
+		if (!editableSet.has(transactionId)) {
+			return fail(403, { success: false, message: 'Sem permissão para editar essa transação' });
+		}
+
+		const { error } = await supabaseAdmin
+			.from('transactions')
+			.update({
+				review_status: 'confirmed',
+				updated_at: new Date().toISOString()
+			})
+			.eq('id', transactionId)
+			.eq('household_id', householdId);
+
+		if (error) return fail(500, { success: false, message: error.message });
+		return { success: true };
+	},
+
+	ignore_single: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const formData = await request.formData();
+		const transactionId = String(formData.get('transaction_id') ?? '').trim();
+		if (!transactionId) return fail(400, { success: false, message: 'Transação inválida' });
+
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+
+		const editableSet = await getEditableTransactionIds(supabase, user.id, [transactionId]);
+		if (!editableSet.has(transactionId)) {
+			return fail(403, { success: false, message: 'Sem permissão para editar essa transação' });
+		}
+
+		const { error } = await supabaseAdmin
+			.from('transactions')
+			.update({
+				review_status: 'ignored',
+				classification_method: 'manual',
+				updated_at: new Date().toISOString()
+			})
+			.eq('id', transactionId)
+			.eq('household_id', householdId);
+
+		if (error) return fail(500, { success: false, message: error.message });
+		return { success: true };
+	},
+
+	restore_single: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const formData = await request.formData();
+		const transactionId = String(formData.get('transaction_id') ?? '').trim();
+		if (!transactionId) return fail(400, { success: false, message: 'Transação inválida' });
+
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+
+		const editableSet = await getEditableTransactionIds(supabase, user.id, [transactionId]);
+		if (!editableSet.has(transactionId)) {
+			return fail(403, { success: false, message: 'Sem permissão para editar essa transação' });
+		}
+
+		const { error } = await supabaseAdmin
+			.from('transactions')
+			.update({
+				review_status: 'needs_review',
+				updated_at: new Date().toISOString()
+			})
+			.eq('id', transactionId)
+			.eq('household_id', householdId);
+
+		if (error) return fail(500, { success: false, message: error.message });
+		return { success: true };
+	},
+
+	create_subcategory: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const formData = await request.formData();
+		const transactionId = cleanName(formData.get('transaction_id'));
+		const parentId = cleanName(formData.get('category_id'));
+		const name = cleanName(formData.get('new_subcategory_name'));
+		if (!transactionId || !parentId || !name) {
+			return fail(400, { success: false, message: 'Informe categoria e nome da subcategoria' });
+		}
+
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+
+		const editableSet = await getEditableTransactionIds(supabase, user.id, [transactionId]);
+		if (!editableSet.has(transactionId)) {
+			return fail(403, { success: false, message: 'Sem permissão para editar essa transação' });
+		}
+
+		const visibleCategories = await loadCategoriesForUser(supabaseAdmin, householdId, user.id);
+		const parent = visibleCategories.find((category) => category.id === parentId && !category.parent_id);
+		if (!parent) return fail(400, { success: false, message: 'Categoria pai inválida' });
+
+		const existing = visibleCategories.find(
+			(category) =>
+				category.parent_id === parentId &&
+				category.name.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR')
+		);
+		if (existing) {
+			return {
+				success: true,
+				message: 'Subcategoria já existia',
+				createdSubcategoryId: existing.id,
+				parentId,
+				transactionId
+			};
+		}
+
+		const { data: created, error } = await supabaseAdmin
+			.from('categories')
+			.insert({
+				household_id: householdId,
+				name,
+				parent_id: parentId,
+				created_by_user_id: user.id,
+				is_default: false
+			})
+			.select('id')
+			.single();
+
+		if (error || !created) {
+			return fail(500, { success: false, message: error?.message ?? 'Erro ao criar subcategoria' });
+		}
+
+		return {
+			success: true,
+			message: 'Subcategoria criada',
+			createdSubcategoryId: created.id,
+			parentId,
+			transactionId
+		};
 	},
 
 	update_classification: async ({ request, locals: { supabase, safeGetSession } }) => {

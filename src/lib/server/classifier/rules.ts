@@ -20,7 +20,8 @@ export async function loadActiveRules(
 		.from('classification_rules')
 		.select('*')
 		.eq('household_id', householdId)
-		.eq('active', true);
+		.eq('active', true)
+		.not('category_id', 'is', null);
 
 	if (userId) {
 		query = query.eq('created_by_user_id', userId);
@@ -41,7 +42,8 @@ export function applyRules(
 	const searchMerchant = (merchant ?? '').trim().toUpperCase();
 	const searchDesc = (cleanDescription ?? description ?? '').trim().toUpperCase();
 
-	for (const rule of rules) {
+	const sortedRules = [...rules].sort(compareRulesBySpecificity);
+	for (const rule of sortedRules) {
 		const pattern = rule.pattern.trim().toUpperCase();
 		let matched = false;
 
@@ -77,4 +79,29 @@ export function applyRules(
 	}
 
 	return null;
+}
+
+function patternLength(rule: ClassificationRule): number {
+	return rule.pattern.trim().length;
+}
+
+function ruleRank(rule: ClassificationRule): number {
+	switch (rule.pattern_type) {
+		case 'exact_merchant':
+			return 0;
+		case 'regex':
+			return 1;
+		case 'merchant_contains':
+			return 2;
+		case 'description_contains':
+			return 2;
+		default:
+			return 4;
+	}
+}
+
+export function compareRulesBySpecificity(a: ClassificationRule, b: ClassificationRule): number {
+	const rankDiff = ruleRank(a) - ruleRank(b);
+	if (rankDiff !== 0) return rankDiff;
+	return patternLength(b) - patternLength(a);
 }

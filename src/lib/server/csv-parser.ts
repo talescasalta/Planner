@@ -1,10 +1,16 @@
 import Papa from 'papaparse';
 
+export type CsvSourceType = 'credit_card' | 'bank_account';
+
 export interface CsvColumnMapping {
 	dateColumn: string;
 	descriptionColumn: string;
 	amountColumn: string;
 	currency?: string;
+}
+
+export interface ParseOptions {
+	sourceType?: CsvSourceType;
 }
 
 export interface ParsedRow {
@@ -43,13 +49,19 @@ export function detectMapping(buffer: Buffer): CsvColumnMapping | null {
 	return { dateColumn, descriptionColumn, amountColumn, currency: 'BRL' };
 }
 
-export function parseCsvBuffer(buffer: Buffer, mapping: CsvColumnMapping): ParsedRow[] {
+export function parseCsvBuffer(
+	buffer: Buffer,
+	mapping: CsvColumnMapping,
+	options: ParseOptions = {}
+): ParsedRow[] {
 	const csvString = buffer.toString('utf-8');
 	const parseResult = Papa.parse<Record<string, string>>(csvString, {
 		header: true,
 		skipEmptyLines: true,
 		dynamicTyping: false
 	});
+
+	const sourceType: CsvSourceType = options.sourceType ?? 'bank_account';
 
 	const rows: ParsedRow[] = [];
 	for (const record of parseResult.data) {
@@ -59,8 +71,23 @@ export function parseCsvBuffer(buffer: Buffer, mapping: CsvColumnMapping): Parse
 
 		if (!rawDate || !rawDescription || rawAmount === undefined) continue;
 
-		const amount = parseFloat(rawAmount.replace(',', '.'));
-		if (Number.isNaN(amount)) continue;
+		const parsedAmount = parseFloat(rawAmount.replace(',', '.'));
+		if (Number.isNaN(parsedAmount)) continue;
+
+		// On credit card statements the bill payment shows up as a negative
+		// entry (a credit to the card balance) and the description usually
+		// mentions "pagamento". Skip it — it's just reconciliation, not a
+		// transaction. We require both signals so a legitimate refund
+		// ("estorno de ...", also negative) isn't dropped by mistake.
+		if (sourceType === 'credit_card' && parsedAmount < 0 && isCreditCardPayment(rawDescription)) {
+			continue;
+		}
+
+		// Credit card statements typically list charges as positive numbers.
+		// Flip the sign so charges become negative (expenses) and payments to
+		// the card become positive (credits), matching the bank-account
+		// convention used everywhere else in the app.
+		const amount = sourceType === 'credit_card' ? -parsedAmount : parsedAmount;
 
 		const date = normalizeDate(rawDate);
 		if (!date) continue;
@@ -89,6 +116,10 @@ function normalizeDate(raw: string): string | null {
 	return null;
 }
 
+function isCreditCardPayment(description: string): boolean {
+	return /\bpag(amento|to)\b/i.test(description);
+}
+
 function cleanDescription(desc: string): string {
 	return desc
 		.replace(/\s+/g, ' ')
@@ -99,5 +130,10 @@ function cleanDescription(desc: string): string {
 }
 
 export function buildDuplicateKey(row: ParsedRow): string {
-	return `${row.date}|${row.clean_description}|${row.amount}`;
+	return buildImportDedupKey(row);
+}
+
+export function buildImportDedupKey(row: Pick<ParsedRow, 'date' | 'clean_description' | 'amount' | 'currency'>): string {
+	const cleanDescription = row.clean_description.trim().replace(/\s+/g, ' ').toUpperCase();
+	return `${row.date}|${cleanDescription}|${row.amount.toFixed(2)}|${row.currency || 'BRL'}`;
 }

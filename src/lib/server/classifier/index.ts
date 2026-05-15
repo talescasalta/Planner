@@ -13,7 +13,6 @@ import { loadUserCategoryExclusions } from '$lib/server/categories';
 
 const CONFIDENCE_THRESHOLD = 0.7;
 const LLM_BATCH_SIZE = 30;
-const DB_PARALLELISM = 10;
 
 type TxRow = {
 	id: string;
@@ -34,6 +33,21 @@ function normalizeClassificationName(value: string | null | undefined): string {
 		.trim()
 		.replace(/\s+/g, ' ')
 		.toLocaleLowerCase('pt-BR');
+}
+
+function normalizeDescription(value: string | null | undefined): string {
+	return (value ?? '')
+		.normalize('NFD')
+		.replace(/\p{Diacritic}/gu, '')
+		.toLocaleLowerCase('pt-BR');
+}
+
+function isCardStatementPayment(tx: TxRow): boolean {
+	if (Number(tx.amount) <= 0) return false;
+	const text = normalizeDescription(`${tx.clean_description ?? tx.description} ${tx.merchant ?? ''}`);
+	const hasPaymentWord = /\b(pagamento|pagto|pgto|liquidacao|liq)\b/.test(text);
+	const hasStatementWord = /\b(fatura|cartao|cartao de credito|cc)\b/.test(text);
+	return hasPaymentWord && hasStatementWord;
 }
 
 export async function classifyTransactions(
@@ -68,6 +82,26 @@ export async function classifyTransactions(
 	const uncategorizedTxs: TxRow[] = [];
 
 	for (const tx of transactions) {
+		if (isCardStatementPayment(tx)) {
+			updates.push({
+				id: tx.id,
+				patch: {
+					category_id: null,
+					subcategory_id: null,
+					classification_method: 'system',
+					classification_confidence: 1,
+					review_status: 'ignored',
+					classification_suggestion: {
+						type: 'ignored',
+						ignored_reason: 'card_statement_payment',
+						reason_code: 'card_statement_payment'
+					}
+				}
+			});
+			results.push({ id: tx.id, method: 'system', needs_review: false });
+			continue;
+		}
+
 		const ruleMatch = applyRules(rules, tx.merchant, tx.description, tx.clean_description);
 		if (ruleMatch) {
 			const needsReview = ruleMatch.confidence < CONFIDENCE_THRESHOLD;
@@ -116,7 +150,7 @@ export async function classifyTransactions(
 		}
 	}
 
-	await runUpdates(supabase, updates);
+	await runUpdates(supabase, householdId, updates);
 	return results;
 }
 
@@ -152,8 +186,12 @@ ${gabaritoSection}
 - Use the EXACT category and subcategory names listed above.
 - "subcategory" is optional. Use it only when one of the listed subcategories clearly applies.
 - DO NOT guess an owner — never return owner_profile. Owner assignment is the user's responsibility.
-- Negative amount = expense. Positive amount = income/credit.
-- If you cannot confidently pick a category, return needs_review=true and confidence below 0.5; you may set category=null.`;
+- First, infer from the existing gabarito sections, personal examples, active rules, and available taxonomy.
+- If the gabarito is not enough, reason from the merchant/description using general Brazilian financial context and likely merchant type, then choose the closest listed category.
+- Classify primarily from the description/merchant. In Brazilian credit-card exports, purchases may appear as positive amounts.
+- Treat explicit card payments, refunds, chargebacks, estornos, "volta", and IOF reversals as credits/adjustments when the description says so.
+- Prefer a broad category with needs_review=true and confidence between 0.45 and 0.69 when it is plausible.
+- Return category=null only when the description is truly impossible to classify into any listed broad category.`;
 
 	const txDescriptions = chunk
 		.map(
@@ -204,7 +242,7 @@ ${txDescriptions}`;
 						classification_method: 'llm',
 						classification_confidence: 0,
 						review_status: 'needs_review',
-						classification_suggestion: { error: 'invalid_response', raw: rawContent }
+						classification_suggestion: { type: 'error', error: 'invalid_response', raw: rawContent }
 					}
 				});
 				continue;
@@ -252,13 +290,14 @@ ${txDescriptions}`;
 					classification_method: 'llm',
 					classification_confidence: 0,
 					review_status: 'needs_review',
-					classification_suggestion: { error: 'missing_in_response' }
+					classification_suggestion: { type: 'error', error: 'missing_in_response' }
 				}
 			});
 		}
 
 		return out;
 	} catch (e) {
+		console.error('[classifier] LLM classification failed', e);
 		return chunk.map((tx) => ({
 			id: tx.id,
 			needs_review: true,
@@ -266,7 +305,7 @@ ${txDescriptions}`;
 				classification_method: 'llm',
 				classification_confidence: 0,
 				review_status: 'needs_review',
-				classification_suggestion: { error: 'llm_error', message: String(e) }
+				classification_suggestion: { type: 'error', error: 'llm_error', message: String(e) }
 			}
 		}));
 	}
@@ -286,12 +325,28 @@ function extractResultsArray(parsed: unknown): unknown[] {
 
 async function runUpdates(
 	supabase: SupabaseClient<Database>,
+	householdId: string,
 	updates: Array<{ id: string; patch: TxUpdate }>
 ): Promise<void> {
-	for (let i = 0; i < updates.length; i += DB_PARALLELISM) {
-		const slice = updates.slice(i, i + DB_PARALLELISM);
-		await Promise.all(
-			slice.map((u) => supabase.from('transactions').update(u.patch).eq('id', u.id))
-		);
+	const payload = updates.map((u) => ({
+		id: u.id,
+		household_id: householdId,
+		category_id: u.patch.category_id ?? null,
+		subcategory_id: u.patch.subcategory_id ?? null,
+		owner_profile_id: u.patch.owner_profile_id ?? null,
+		classification_method: u.patch.classification_method ?? 'unknown',
+		classification_confidence: u.patch.classification_confidence ?? null,
+		review_status: u.patch.review_status ?? 'needs_review',
+		classification_suggestion: u.patch.classification_suggestion ?? null
+	}));
+	const { data, error } = await supabase.rpc('apply_transaction_classification_updates', {
+		updates: payload
+	});
+	if (error) {
+		console.error('[classifier] batch classification update failed', error);
+		throw error;
+	}
+	if (Number(data ?? 0) !== payload.length) {
+		throw new Error(`Batch classification update mismatch: ${data ?? 0}/${payload.length}`);
 	}
 }
