@@ -43,8 +43,10 @@ The app lets a household import credit card or bank account statements, classify
    ```bash
    PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
    PUBLIC_SUPABASE_ANON_KEY=<anon-public-key>
+   PUBLIC_APP_URL=http://localhost:5173
    SUPABASE_SECRET_KEY=<service-role-secret-key>
    SUPABASE_DB_URL=postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres
+   CRON_SECRET=<long-random-secret>
    ```
 
    You can find `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SECRET_KEY` in Supabase under **Project Settings -> API**. `SUPABASE_SECRET_KEY` must be the Supabase `service_role` key, is used only on the server, and bypasses RLS. Keep explicit `household_id` filters in server code even when RLS exists.
@@ -104,8 +106,10 @@ After applying migrations:
 | --- | --- | --- |
 | `PUBLIC_SUPABASE_URL` | Yes | Supabase project URL. Exposed to the browser. |
 | `PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon public key. Exposed to the browser. |
+| `PUBLIC_APP_URL` | Recommended | Public app origin used for OAuth/email redirects. Use the Vercel production URL online. |
 | `SUPABASE_SECRET_KEY` | Yes | Supabase `service_role` key for server-side admin operations. It bypasses RLS; never expose publicly. |
 | `SUPABASE_DB_URL` | Recommended | Direct Postgres connection string, useful for Supabase CLI/database workflows. |
+| `CRON_SECRET` | Production cron only | Long random secret used by Vercel Cron to authorize `/api/health/supabase`. |
 | `OPENROUTER_API_KEY` | One LLM key required | Uses OpenRouter when set. |
 | `OPENAI_API_KEY` | One LLM key required | Used only when `OPENROUTER_API_KEY` is empty. |
 | `LLM_MODEL` | Recommended | Model id sent to the selected provider. |
