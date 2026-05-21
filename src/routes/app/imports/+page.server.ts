@@ -2,12 +2,11 @@ import type { PageServerLoad, Actions } from './$types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
 import {
-	parseCsvBuffer,
 	buildImportDedupKey,
-	detectMapping,
 	type CsvSourceType,
 	type ParsedRow
 } from '$lib/server/csv-parser';
+import { resolveImportMapping } from '$lib/server/import-mapping';
 
 function readSourceType(formData: FormData): CsvSourceType {
 	const raw = formData.get('source_type');
@@ -70,13 +69,15 @@ export const actions: Actions = {
 		}
 
 		const buffer = Buffer.from(await file.arrayBuffer());
-		const mapping = detectMapping(buffer) ?? {
-			dateColumn: 'date',
-			descriptionColumn: 'title',
-			amountColumn: 'amount',
-			currency: 'BRL'
-		};
-		const rows = parseCsvBuffer(buffer, mapping, { sourceType });
+		const resolved = await resolveImportMapping(buffer, sourceType);
+		const rows = resolved.rows;
+		if (rows.length === 0) {
+			return fail(400, {
+				success: false,
+				message:
+					'Não foi possível identificar linhas válidas na fatura. Verifique se o CSV tem colunas de data, descrição e valor.'
+			});
+		}
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
 		if (!householdId) {
@@ -97,7 +98,10 @@ export const actions: Actions = {
 			duplicates: rows.filter((r) => existingKeys.has(buildImportDedupKey(r))).length,
 			filename: file.name,
 			reference_month: referenceMonth,
-			source_type: sourceType
+			source_type: resolved.sourceType,
+			mapping_source: resolved.mappingSource,
+			mapping_confidence: resolved.confidence,
+			mapping_notes: resolved.notes
 		};
 	},
 
@@ -118,13 +122,15 @@ export const actions: Actions = {
 		}
 
 		const buffer = Buffer.from(await file.arrayBuffer());
-		const mapping = detectMapping(buffer) ?? {
-			dateColumn: 'date',
-			descriptionColumn: 'title',
-			amountColumn: 'amount',
-			currency: 'BRL'
-		};
-		const rows = parseCsvBuffer(buffer, mapping, { sourceType });
+		const resolved = await resolveImportMapping(buffer, sourceType);
+		const rows = resolved.rows;
+		if (rows.length === 0) {
+			return fail(400, {
+				success: false,
+				message:
+					'Não foi possível identificar linhas válidas na fatura. Verifique se o CSV tem colunas de data, descrição e valor.'
+			});
+		}
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
 		if (!householdId) {

@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
+import { publicUrl } from '$lib/server/public-url';
 
 export const actions: Actions = {
 	default: async ({ request, url, locals: { supabase } }) => {
@@ -12,7 +13,7 @@ export const actions: Actions = {
 			const { data, error } = await supabase.auth.signInWithOAuth({
 				provider: 'google',
 				options: {
-					redirectTo: `${url.origin}/auth/confirm?next=/app`
+					redirectTo: publicUrl(url.origin, '/auth/confirm?next=/app')
 				}
 			});
 
@@ -32,7 +33,7 @@ export const actions: Actions = {
 				email,
 				password,
 				options: {
-					emailRedirectTo: `${url.origin}/auth/confirm`
+					emailRedirectTo: publicUrl(url.origin, '/auth/confirm')
 				}
 			});
 

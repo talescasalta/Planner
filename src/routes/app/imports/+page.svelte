@@ -7,6 +7,9 @@
 	let total = $derived(form?.total ?? 0);
 	let duplicates = $derived(form?.duplicates ?? 0);
 	let filename = $derived(form?.filename ?? '');
+	let mappingSource = $derived(form?.mapping_source ?? 'deterministic');
+	let mappingConfidence = $derived(form?.mapping_confidence ?? 1);
+	let mappingNotes = $derived(form?.mapping_notes ?? '');
 	let showConfirm = $derived(form?.success === true && total > 0);
 
 	const now = new Date();
@@ -181,6 +184,14 @@
 				<h3 class="text-lg font-medium text-gray-900">Preview: {filename}</h3>
 				<span class="text-sm text-gray-600">{total} linhas ({duplicates} duplicatas detectadas)</span>
 			</div>
+			{#if mappingSource === 'llm'}
+				<div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+					O formato da fatura foi interpretado com IA antes do preview. Confiança: {(mappingConfidence * 100).toFixed(0)}%.
+					{#if mappingNotes}
+						<span class="block text-amber-800">{mappingNotes}</span>
+					{/if}
+				</div>
+			{/if}
 
 			<div class="overflow-x-auto">
 				<table class="min-w-full divide-y divide-gray-200">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildImportDedupKey, parseCsvBuffer } from './csv-parser';
+import { buildImportDedupKey, parseAmount, parseCsvBuffer } from './csv-parser';
 
 describe('buildImportDedupKey', () => {
 	it('normalizes description whitespace, amount precision, and currency', () => {
@@ -48,5 +48,24 @@ describe('parseCsvBuffer credit card payment filter', () => {
 		const rows = parseCsvBuffer(bufferOf(csv), mapping, { sourceType: 'bank_account' });
 		expect(rows).toHaveLength(1);
 		expect(rows[0].amount).toBe(-500);
+	});
+
+	it('parses Brazilian currency values and dash-separated dates', () => {
+		const csv = ['date,title,amount', '01-04-2026,Mercado Central,"R$ 1.234,56"'].join('\n');
+		const rows = parseCsvBuffer(bufferOf(csv), mapping, { sourceType: 'bank_account' });
+
+		expect(rows).toHaveLength(1);
+		expect(rows[0].date).toBe('2026-04-01');
+		expect(rows[0].amount).toBe(1234.56);
+	});
+});
+
+describe('parseAmount', () => {
+	it('supports common decimal and thousands separators', () => {
+		expect(parseAmount('1,23')).toBe(1.23);
+		expect(parseAmount('1.23')).toBe(1.23);
+		expect(parseAmount('1.234,56')).toBe(1234.56);
+		expect(parseAmount('1,234.56')).toBe(1234.56);
+		expect(parseAmount('R$ -1.234,56')).toBe(-1234.56);
 	});
 });

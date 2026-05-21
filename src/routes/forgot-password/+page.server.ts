@@ -1,4 +1,5 @@
 import type { Actions } from './$types';
+import { publicUrl } from '$lib/server/public-url';
 
 export const actions: Actions = {
 	default: async ({ request, url, locals: { supabase } }) => {
@@ -10,7 +11,7 @@ export const actions: Actions = {
 		}
 
 		const { error } = await supabase.auth.resetPasswordForEmail(email, {
-			redirectTo: `${url.origin}/auth/confirm?next=/reset-password`
+			redirectTo: publicUrl(url.origin, '/auth/confirm?next=/reset-password')
 		});
 
 		if (error) {

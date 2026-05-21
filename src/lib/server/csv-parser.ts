@@ -23,7 +23,7 @@ export interface ParsedRow {
 
 const DATE_CANDIDATES = ['date', 'data', 'data lançamento', 'data lancamento', 'dt', 'fecha'];
 const DESCRIPTION_CANDIDATES = ['title', 'description', 'descrição', 'descricao', 'historico', 'histórico', 'lançamento', 'lancamento', 'estabelecimento', 'memo'];
-const AMOUNT_CANDIDATES = ['amount', 'valor', 'value', 'montante', 'quantia'];
+const AMOUNT_CANDIDATES = ['amount', 'valor', 'valor r$', 'valor (r$)', 'value', 'montante', 'quantia'];
 
 function pickColumn(headers: string[], candidates: string[]): string | null {
 	const lowerHeaders = headers.map((h) => h.toLowerCase().trim());
@@ -71,7 +71,7 @@ export function parseCsvBuffer(
 
 		if (!rawDate || !rawDescription || rawAmount === undefined) continue;
 
-		const parsedAmount = parseFloat(rawAmount.replace(',', '.'));
+		const parsedAmount = parseAmount(rawAmount);
 		if (Number.isNaN(parsedAmount)) continue;
 
 		// On credit card statements the bill payment shows up as a negative
@@ -105,15 +105,38 @@ export function parseCsvBuffer(
 }
 
 function normalizeDate(raw: string): string | null {
+	const trimmed = raw.trim();
 	// Try yyyy-mm-dd first
-	if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-	// Try dd/mm/yyyy
-	const parts = raw.split('/');
+	if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+	// Try dd/mm/yyyy or dd-mm-yyyy
+	const parts = trimmed.split(/[/-]/);
 	if (parts.length === 3) {
 		const [d, m, y] = parts;
+		if (y.length !== 4) return null;
 		return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
 	}
 	return null;
+}
+
+export function parseAmount(raw: string): number {
+	const value = raw
+		.trim()
+		.replace(/\s/g, '')
+		.replace(/^R\$/i, '')
+		.replace(/[^\d,.-]/g, '');
+	if (!value) return Number.NaN;
+
+	const lastComma = value.lastIndexOf(',');
+	const lastDot = value.lastIndexOf('.');
+	if (lastComma >= 0 && lastDot >= 0) {
+		const decimalSeparator = lastComma > lastDot ? ',' : '.';
+		const thousandsSeparator = decimalSeparator === ',' ? '.' : ',';
+		return Number(value.replaceAll(thousandsSeparator, '').replace(decimalSeparator, '.'));
+	}
+	if (lastComma >= 0) {
+		return Number(value.replaceAll('.', '').replace(',', '.'));
+	}
+	return Number(value.replaceAll(',', ''));
 }
 
 function isCreditCardPayment(description: string): boolean {
