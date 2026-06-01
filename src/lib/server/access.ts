@@ -63,6 +63,7 @@ type TransactionPatch = {
 	subcategory_id?: string | null;
 	owner_profile_id?: string | null;
 	paid_by_user_id?: string | null;
+	split_method?: string;
 	review_status?: string;
 	updated_at?: string;
 };

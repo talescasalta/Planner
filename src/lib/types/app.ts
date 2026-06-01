@@ -3,6 +3,7 @@ export type ReviewStatus = 'needs_review' | 'confirmed' | 'ignored';
 export type ImportStatus = 'uploaded' | 'parsed' | 'classified' | 'reviewed' | 'failed';
 export type PatternType = 'merchant_contains' | 'description_contains' | 'exact_merchant' | 'regex';
 export type FinancialProfileType = 'individual' | 'shared';
+export type SplitMethod = 'income_proportional' | 'equal';
 
 export interface SuccessfulClassificationSuggestion {
 	type?: 'classification';
@@ -50,6 +51,7 @@ export interface HouseholdMember {
 	household_id: string;
 	user_id: string;
 	role: string;
+	monthly_income: number;
 	created_at: string;
 	display_name?: string | null;
 	profiles?: { display_name: string | null };
@@ -87,6 +89,7 @@ export interface Transaction {
 	reference_month: string | null;
 	paid_by_user_id: string | null;
 	owner_profile_id: string | null;
+	split_method: SplitMethod;
 	category_id: string | null;
 	subcategory_id: string | null;
 	classification_method: ClassificationMethod;

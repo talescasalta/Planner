@@ -105,9 +105,17 @@
 			</div>
 
 			<div>
-				<label for="source_name" class="block text-sm font-medium text-gray-700">Fonte</label>
-				<input id="source_name" name="source_name" type="text" value={tx.source_name ?? ''} disabled={!editable} class="mt-1 block w-full rounded-md border-gray-300 shadow-sm px-3 py-2 disabled:bg-gray-100" />
+				<label for="split_method" class="block text-sm font-medium text-gray-700">Divisão</label>
+				<select id="split_method" name="split_method" disabled={!editable} class="mt-1 block w-full rounded-md border-gray-300 shadow-sm px-3 py-2 disabled:bg-gray-100">
+					<option value="income_proportional" selected={tx.split_method === 'income_proportional'}>Por renda</option>
+					<option value="equal" selected={tx.split_method === 'equal'}>50/50</option>
+				</select>
 			</div>
+		</div>
+
+		<div>
+			<label for="source_name" class="block text-sm font-medium text-gray-700">Fonte</label>
+			<input id="source_name" name="source_name" type="text" value={tx.source_name ?? ''} disabled={!editable} class="mt-1 block w-full rounded-md border-gray-300 shadow-sm px-3 py-2 disabled:bg-gray-100" />
 		</div>
 
 		<div>
