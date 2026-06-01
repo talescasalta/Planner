@@ -1,5 +1,8 @@
-import { OPENAI_API_KEY, OPENROUTER_API_KEY, LLM_MODEL } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 
+const OPENROUTER_API_KEY = env.OPENROUTER_API_KEY;
+const OPENAI_API_KEY = env.OPENAI_API_KEY;
+const LLM_MODEL = env.LLM_MODEL;
 const API_KEY = OPENROUTER_API_KEY || OPENAI_API_KEY;
 const API_URL = OPENROUTER_API_KEY
 	? 'https://openrouter.ai/api/v1/chat/completions'
