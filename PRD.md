@@ -38,6 +38,8 @@ Construir um app SvelteKit seguro e manutenivel que permita:
 - classificar por categoria e subcategoria;
 - atribuir gastos ao grupo ou a membros individuais;
 - distinguir quem pagou de quem e dono do gasto;
+- dividir despesas compartilhadas proporcionalmente a renda mensal ou 50/50;
+- calcular o acerto necessario entre membros para despesas em comum;
 - revisar e corrigir classificacoes;
 - aprender automaticamente com ajustes manuais do usuario;
 - filtrar transacoes por mes da fatura;
@@ -107,7 +109,8 @@ Campos importantes:
 
 - `user_id`;
 - `household_id`;
-- `role`.
+- `role`;
+- `monthly_income`.
 
 Roles esperados:
 
@@ -115,6 +118,8 @@ Roles esperados:
 - `member`.
 
 Somente admin pode administrar membros do grupo.
+
+`monthly_income` e informado manualmente na tela de grupo e usado para calcular a divisao proporcional das despesas compartilhadas. Se todas as rendas estiverem zeradas, a divisao proporcional deve cair para uma divisao igual entre membros.
 
 ### 6.4 Financial Profile
 
@@ -142,6 +147,7 @@ Campos funcionais:
 - fonte/cartao;
 - quem pagou;
 - a quem o gasto foi atribuido;
+- regra de divisao para despesas compartilhadas;
 - categoria;
 - subcategoria;
 - metodo de classificacao;
@@ -258,6 +264,9 @@ Criterios:
 
 - campos de data, descricao, valor, pagador, atribuicao, categoria e subcategoria;
 - validacao de IDs contra o household;
+- cadastro em lote com varias linhas antes de registrar;
+- linhas totalmente vazias sao ignoradas;
+- usuario pode informar pagador, atribuicao e regra de divisao por linha;
 - acesso criado conforme regra de privacidade;
 - ajuste manual alimenta aprendizado pessoal.
 
@@ -353,6 +362,13 @@ Criterios:
 
 - somente `role = admin` adiciona ou remove membros;
 - membro comum nao administra household;
+- membros podem informar renda mensal manual para calculo de divisao;
+- despesas compartilhadas mostram quem desembolsou;
+- despesas compartilhadas usam divisao proporcional a renda por padrao;
+- usuario pode marcar despesa compartilhada como 50/50;
+- receitas e despesas individuais nao entram no acerto compartilhado;
+- tela mostra quanto cada membro pagou, quanto deveria pagar e saldo liquido;
+- tela mostra o acerto final necessario entre membros;
 - RLS deve refletir essa restricao;
 - funcoes de reparo/acesso nao podem conceder privilegio indevido.
 
@@ -408,7 +424,10 @@ Rotas esperadas:
 - `household_id uuid`;
 - `user_id uuid`;
 - `role text`;
+- `monthly_income numeric`;
 - `created_at timestamptz`.
+
+`monthly_income` deve ser nao negativo e representa a renda mensal atual usada no calculo proporcional da tela de grupos.
 
 ### 9.4 financial_profiles
 
@@ -458,6 +477,7 @@ Registra categorias/subcategorias sugeridas que o usuario ocultou do seu gabarit
 - `reference_month text`;
 - `paid_by_user_id uuid null`;
 - `owner_profile_id uuid null`;
+- `split_method text`;
 - `category_id uuid null`;
 - `subcategory_id uuid null`;
 - `classification_method text`;
@@ -469,6 +489,13 @@ Registra categorias/subcategorias sugeridas que o usuario ocultou do seu gabarit
 - `updated_at timestamptz`.
 
 `reference_month` deve usar formato `YYYY-MM`.
+
+`split_method` deve aceitar:
+
+- `income_proportional`: padrao; divide despesas compartilhadas proporcionalmente a `household_members.monthly_income`;
+- `equal`: divide despesas compartilhadas igualmente entre membros.
+
+O campo so tem efeito para despesas compartilhadas (`owner_profile.type = shared` e `amount < 0`). Receitas e despesas individuais nao devem afetar o acerto do grupo.
 
 ### 9.8 transaction_access
 
@@ -628,6 +655,10 @@ Diretrizes:
 - acoes destrutivas precisam de confirmacao;
 - textos devem caber em desktop e mobile;
 - nomes fixos como "Casal" nao devem aparecer quando houver nome real do grupo.
+- a tela de grupo deve deixar claro quem pagou cada despesa compartilhada;
+- a tela de grupo deve permitir editar renda mensal sem sair do contexto;
+- a regra de divisao deve ser visivel por despesa, mas sem poluir receitas onde ela nao se aplica;
+- o acerto final deve ser apresentado como uma instrucao direta de pagamento entre membros.
 
 ## 13. Setup e Deploy
 
@@ -669,6 +700,14 @@ Cenarios manuais:
 
 - usuario loga e acessa apenas seu household;
 - membro comum nao administra grupo;
+- renda mensal pode ser salva por membro do grupo;
+- renda negativa ou membro invalido e rejeitado;
+- cadastro manual em lote ignora linhas vazias;
+- despesa compartilhada aparece com pagador na tela de grupo;
+- despesa compartilhada permite alternar entre proporcional por renda e 50/50;
+- receitas nao exibem seletor de divisao;
+- divisao proporcional usa renda mensal e cai para divisao igual quando todas as rendas sao zero;
+- acerto final mostra quem deve pagar para quem;
 - importacao grava `reference_month`;
 - importacao pre-classifica transacoes;
 - transacao com categoria/subcategoria salvas aparece como texto;

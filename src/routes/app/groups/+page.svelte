@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { ArrowDown, ArrowUp, ArrowUpDown, Plus, Search, Users, X } from 'lucide-svelte';
+	import { ArrowDown, ArrowUp, ArrowUpDown, Banknote, HandCoins, Plus, Search, Users, X } from 'lucide-svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -21,7 +21,8 @@
 				const desc = tx.description?.toLowerCase() ?? '';
 				const cat = tx.category_name?.toLowerCase() ?? '';
 				const sub = tx.subcategory_name?.toLowerCase() ?? '';
-				return desc.includes(term) || cat.includes(term) || sub.includes(term);
+				const payer = tx.paid_by_display_name?.toLowerCase() ?? '';
+				return desc.includes(term) || cat.includes(term) || sub.includes(term) || payer.includes(term);
 			});
 		}
 		const sort = txAmountSort[groupId] ?? 'none';
@@ -38,6 +39,10 @@
 
 	function formatCurrency(value: number, currency = 'BRL') {
 		return value.toLocaleString('pt-BR', { style: 'currency', currency });
+	}
+
+	function splitMethodLabel(method: string) {
+		return method === 'equal' ? '50/50' : 'Por renda';
 	}
 
 	function formatMonth(month: string) {
@@ -166,7 +171,37 @@
 
 			<div>
 				<div class="flex items-center justify-between">
-					<h4 class="text-sm font-semibold text-gray-800">Quem pagou quanto</h4>
+					<h4 class="text-sm font-semibold text-gray-800">Renda mensal</h4>
+					<Banknote class="h-4 w-4 text-gray-400" />
+				</div>
+
+				<form method="POST" action="?/update_incomes" use:enhance class="mt-3 space-y-3 rounded-md border border-gray-100 bg-gray-50 p-3">
+					<input type="hidden" name="group_id" value={group.id} />
+					<div class="grid gap-3 sm:grid-cols-2">
+						{#each group.members as member}
+							<label class="block">
+								<span class="block truncate text-xs font-medium text-gray-600">{member.display_name}</span>
+								<input type="hidden" name="user_id" value={member.user_id} />
+								<input
+									name="monthly_income"
+									type="number"
+									min="0"
+									step="0.01"
+									value={member.monthly_income ?? 0}
+									class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+								/>
+							</label>
+						{/each}
+					</div>
+					<div class="flex justify-end">
+						<button type="submit" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800">Salvar rendas</button>
+					</div>
+				</form>
+			</div>
+
+			<div>
+				<div class="flex items-center justify-between">
+					<h4 class="text-sm font-semibold text-gray-800">Divisão e acerto</h4>
 					<button
 						type="button"
 						onclick={() => cycleSort(group.id)}
@@ -187,7 +222,7 @@
 				{#if contributions.length === 0 || group.activity.summary.expenses === 0}
 					<p class="mt-3 text-xs text-gray-500">Nenhuma despesa compartilhada neste mês.</p>
 				{:else}
-					<ul class="mt-3 space-y-2.5">
+					<ul class="mt-3 space-y-3">
 						{#each contributions as c}
 							<li>
 								<div class="flex items-center justify-between gap-3 text-sm">
@@ -199,9 +234,16 @@
 										<span class="text-xs text-gray-400">·  {c.count} {c.count === 1 ? 'tx' : 'txs'}</span>
 									</div>
 									<div class="flex items-center gap-3 shrink-0">
-										<span class="text-xs text-gray-500 tabular-nums">{c.share.toFixed(0)}%</span>
-										<span class="text-sm font-semibold text-gray-950 tabular-nums">{formatCurrency(c.expense_total)}</span>
+										<span class="text-xs text-gray-500 tabular-nums">{c.income_share.toFixed(0)}% da renda</span>
+										<span class={`text-sm font-semibold tabular-nums ${c.net_total >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+											{c.net_total >= 0 ? 'Recebe ' : 'Paga '}{formatCurrency(Math.abs(c.net_total))}
+										</span>
 									</div>
+								</div>
+								<div class="mt-1 grid grid-cols-3 gap-2 text-xs text-gray-500">
+									<span>Pagou <strong class="font-semibold text-gray-700">{formatCurrency(c.expense_total)}</strong></span>
+									<span>Deveria <strong class="font-semibold text-gray-700">{formatCurrency(c.owed_total)}</strong></span>
+									<span>Renda <strong class="font-semibold text-gray-700">{formatCurrency(c.monthly_income)}</strong></span>
 								</div>
 								<div class="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
 									<div class="h-full rounded-full bg-indigo-500" style={`width: ${Math.max(c.share, c.expense_total > 0 ? 2 : 0)}%`}></div>
@@ -209,6 +251,26 @@
 							</li>
 						{/each}
 					</ul>
+
+					<div class="mt-4 rounded-md border border-emerald-100 bg-emerald-50 p-3">
+						<div class="flex items-center gap-2 text-sm font-semibold text-emerald-900">
+							<HandCoins class="h-4 w-4" />
+							Acerto necessário
+						</div>
+						{#if group.activity.settlementTransfers.length === 0}
+							<p class="mt-2 text-sm text-emerald-800">Sem acerto pendente para este mês.</p>
+						{:else}
+							<ul class="mt-2 space-y-1.5 text-sm text-emerald-900">
+								{#each group.activity.settlementTransfers as transfer}
+									<li>
+										<span class="font-medium">{transfer.from_name}</span> paga
+										<span class="font-semibold tabular-nums">{formatCurrency(transfer.amount)}</span>
+										para <span class="font-medium">{transfer.to_name}</span>
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					</div>
 				{/if}
 			</div>
 
@@ -275,7 +337,7 @@
 							<Search class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
 							<input
 								type="search"
-								placeholder="Buscar descrição, categoria..."
+								placeholder="Buscar descrição, categoria, pagador..."
 								class="w-full rounded-md border-gray-300 pl-8 pr-8 py-1.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
 								value={txSearch[group.id] ?? ''}
 								oninput={(e) => (txSearch = { ...txSearch, [group.id]: (e.currentTarget as HTMLInputElement).value })}
@@ -302,7 +364,9 @@
 									<tr>
 										<th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-gray-500">Data</th>
 										<th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-gray-500">Descrição</th>
+										<th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-gray-500">Pago por</th>
 										<th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-gray-500">Classificação</th>
+										<th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-gray-500">Divisão</th>
 										<th class="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-gray-500">
 											<button
 												type="button"
@@ -329,10 +393,30 @@
 											<td class="px-3 py-2">
 												<a href={`/app/transactions/${tx.id}`} class="text-gray-900 hover:text-indigo-700">{tx.description}</a>
 											</td>
+											<td class="whitespace-nowrap px-3 py-2 text-gray-700">{tx.paid_by_display_name ?? 'Sem pagador'}</td>
 											<td class="px-3 py-2 text-gray-600">
 												{tx.category_name ?? 'Sem categoria'}
 												{#if tx.subcategory_name}
 													<span class="text-gray-400">/</span> {tx.subcategory_name}
+												{/if}
+											</td>
+											<td class="whitespace-nowrap px-3 py-2 text-gray-700">
+												{#if tx.amount < 0}
+													<form method="POST" action="?/update_split_method" use:enhance>
+														<input type="hidden" name="group_id" value={group.id} />
+														<input type="hidden" name="transaction_id" value={tx.id} />
+														<select
+															name="split_method"
+															class="rounded-md border-gray-300 py-1 pl-2 pr-7 text-xs shadow-sm"
+															aria-label="Regra de divisão de {tx.description}"
+															onchange={(event) => event.currentTarget.form?.requestSubmit()}
+														>
+															<option value="income_proportional" selected={tx.split_method === 'income_proportional'}>{splitMethodLabel('income_proportional')}</option>
+															<option value="equal" selected={tx.split_method === 'equal'}>{splitMethodLabel('equal')}</option>
+														</select>
+													</form>
+												{:else}
+													<span class="text-gray-400">-</span>
 												{/if}
 											</td>
 											<td class={`whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums ${tx.amount < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>

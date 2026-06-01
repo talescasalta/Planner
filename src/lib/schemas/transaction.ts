@@ -15,6 +15,7 @@ export const transactionSchema = z.object({
 	reference_month: z.string().regex(/^\d{4}-\d{2}$/).optional().nullable(),
 	paid_by_user_id: optionalUuid,
 	owner_profile_id: optionalUuid,
+	split_method: z.enum(['income_proportional', 'equal']).default('income_proportional'),
 	category_id: optionalUuid,
 	subcategory_id: optionalUuid,
 	classification_method: z.string().default('manual'),

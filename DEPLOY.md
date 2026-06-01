@@ -50,13 +50,15 @@ LLM_MODEL=xiaomi/mimo-v2.5-pro
 ## Banco de Dados
 
 1. Crie um projeto no Supabase.
-2. Aplique a migration inicial:
+2. Aplique todas as migrations:
    ```bash
    npx supabase login
    npx supabase link --project-id <project-id>
    npx supabase db push
    ```
    Ou execute o SQL manualmente no SQL Editor do Supabase.
+
+   O fluxo de divisão de despesas depende das colunas `household_members.monthly_income` e `transactions.split_method`, criadas pela migration `20260601213812_shared_expense_settlement.sql`. Se essas colunas não existirem, a tela `/app/groups` e o cadastro manual com regra de divisão não funcionarão corretamente.
 3. Configure o Auth (Email provider habilitado).
 
 ## Deploy
@@ -77,3 +79,4 @@ O arquivo `vercel.json` registra um Cron Job diário (`0 12 * * *`) para chamar 
 2. Crie ou entre em um grupo/household no app.
 3. Importe uma fatura CSV em `/app/imports`.
 4. Revise as classificações em `/app/transactions`.
+5. Em `/app/groups`, preencha a renda mensal dos membros, confirme que as despesas compartilhadas mostram quem pagou e valide o acerto final entre os membros.

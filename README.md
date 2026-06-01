@@ -2,7 +2,7 @@
 
 Personal finance planner built with SvelteKit and Supabase.
 
-The app lets a household import credit card or bank account statements, classify transactions with categories/subcategories, review LLM suggestions, ignore non-expense statement payments, and improve personal classification rules over time. The dashboard at `/app` shows a category treemap (click a cell to drill down into its transactions), receitas-vs-despesas trend, and per-member contribution bars in `/app/groups`.
+The app lets a household import credit card or bank account statements, classify transactions with categories/subcategories, review LLM suggestions, ignore non-expense statement payments, and improve personal classification rules over time. The dashboard at `/app` shows a category treemap (click a cell to drill down into its transactions), receitas-vs-despesas trend, and `/app/groups` shows who paid shared expenses, how they should be split, and the settlement amount one member needs to pay another.
 
 ## Stack
 
@@ -98,7 +98,20 @@ After applying migrations:
 1. Create a user through the app login/signup flow, or directly in Supabase Auth.
 2. Create or use a household/group in the app.
 3. Import a CSV statement from **Importar fatura**. Pick **Cartão de crédito** (Nubank/Itaú-style files where charges are positive) or **Conta corrente** (charges already negative) — the parser flips signs accordingly and drops the bill-payment row when the description matches `pagamento`/`pagto`.
-4. Review classifications in **Transações**. Manual category/subcategory corrections are saved as personal rules and increase confidence over repeated reinforcements, so future imports classify automatically once a merchant is confirmed enough times.
+4. Add manual transactions from **Nova transação** when needed. The form is table-like, so you can fill several transactions and register the batch in one submit.
+5. Review classifications in **Transações**. Manual category/subcategory corrections are saved as personal rules and increase confidence over repeated reinforcements, so future imports classify automatically once a merchant is confirmed enough times.
+6. Use **Grupos** to maintain each member's monthly income, review shared expenses, choose whether each shared expense is split **Por renda** or **50/50**, and see the final settlement between members.
+
+## Shared Expense Splitting
+
+Shared expenses are transactions assigned to the household's shared financial profile. In `/app/groups`, each shared expense shows:
+
+- who paid it (`paid_by_user_id`);
+- whether it is split proportionally by monthly income or equally;
+- each member's paid amount, expected share, and net balance;
+- the simplified settlement transfer, for example "A paga R$ 120,00 para B".
+
+The default split method is proportional to the monthly income stored on each `household_members` row. If all incomes are zero, proportional expenses fall back to an equal split. Individual/private expenses are not included in the shared settlement.
 
 ## Environment Variables
 
