@@ -9,6 +9,7 @@ const llmMappingSchema = z.object({
 	dateColumn: z.string().min(1),
 	descriptionColumn: z.string().min(1),
 	amountColumn: z.string().min(1),
+	identifierColumn: z.string().min(1).optional(),
 	currency: z.string().min(3).max(3).optional().default('BRL'),
 	sourceType: z.enum(['credit_card', 'bank_account']).optional(),
 	confidence: z.number().min(0).max(1),
@@ -98,6 +99,7 @@ Rules:
 - dateColumn must identify the purchase/transaction date.
 - descriptionColumn must identify merchant, establishment, memo, history, or transaction description.
 - amountColumn must identify the monetary amount.
+- identifierColumn is optional and should identify a stable row/transaction id when present.
 - sourceType is "credit_card" when card purchases are listed as positive charges; otherwise "bank_account".
 - Use BRL unless the file clearly says otherwise.
 - Set confidence below 0.6 if required columns are ambiguous.`;
@@ -115,6 +117,7 @@ Return JSON in this exact shape:
   "dateColumn": "exact header",
   "descriptionColumn": "exact header",
   "amountColumn": "exact header",
+  "identifierColumn": "exact header if present",
   "currency": "BRL",
   "sourceType": "credit_card",
   "confidence": 0.0,
@@ -140,7 +143,8 @@ Return JSON in this exact shape:
 		if (
 			!headers.includes(mapping.dateColumn) ||
 			!headers.includes(mapping.descriptionColumn) ||
-			!headers.includes(mapping.amountColumn)
+			!headers.includes(mapping.amountColumn) ||
+			(mapping.identifierColumn && !headers.includes(mapping.identifierColumn))
 		) {
 			return null;
 		}

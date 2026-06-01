@@ -6,6 +6,7 @@ export interface CsvColumnMapping {
 	dateColumn: string;
 	descriptionColumn: string;
 	amountColumn: string;
+	identifierColumn?: string;
 	currency?: string;
 }
 
@@ -19,11 +20,13 @@ export interface ParsedRow {
 	amount: number;
 	currency: string;
 	clean_description: string;
+	external_id?: string;
 }
 
 const DATE_CANDIDATES = ['date', 'data', 'data lançamento', 'data lancamento', 'dt', 'fecha'];
 const DESCRIPTION_CANDIDATES = ['title', 'description', 'descrição', 'descricao', 'historico', 'histórico', 'lançamento', 'lancamento', 'estabelecimento', 'memo'];
 const AMOUNT_CANDIDATES = ['amount', 'valor', 'valor r$', 'valor (r$)', 'value', 'montante', 'quantia'];
+const IDENTIFIER_CANDIDATES = ['identificador', 'id', 'identifier', 'transaction id', 'id transação', 'id transacao'];
 
 function pickColumn(headers: string[], candidates: string[]): string | null {
 	const lowerHeaders = headers.map((h) => h.toLowerCase().trim());
@@ -46,7 +49,8 @@ export function detectMapping(buffer: Buffer): CsvColumnMapping | null {
 	const descriptionColumn = pickColumn(headers, DESCRIPTION_CANDIDATES);
 	const amountColumn = pickColumn(headers, AMOUNT_CANDIDATES);
 	if (!dateColumn || !descriptionColumn || !amountColumn) return null;
-	return { dateColumn, descriptionColumn, amountColumn, currency: 'BRL' };
+	const identifierColumn = pickColumn(headers, IDENTIFIER_CANDIDATES) ?? undefined;
+	return { dateColumn, descriptionColumn, amountColumn, identifierColumn, currency: 'BRL' };
 }
 
 export function parseCsvBuffer(
@@ -68,6 +72,7 @@ export function parseCsvBuffer(
 		const rawDate = record[mapping.dateColumn]?.trim();
 		const rawDescription = record[mapping.descriptionColumn]?.trim();
 		const rawAmount = record[mapping.amountColumn]?.trim();
+		const rawIdentifier = mapping.identifierColumn ? record[mapping.identifierColumn]?.trim() : undefined;
 
 		if (!rawDate || !rawDescription || rawAmount === undefined) continue;
 
@@ -97,11 +102,12 @@ export function parseCsvBuffer(
 			description: rawDescription,
 			amount,
 			currency: mapping.currency ?? 'BRL',
-			clean_description: cleanDescription(rawDescription)
+			clean_description: cleanDescription(rawDescription),
+			external_id: rawIdentifier || undefined
 		});
 	}
 
-	return rows;
+	return removeNeutralizedStatementPairs(rows);
 }
 
 function normalizeDate(raw: string): string | null {
@@ -143,13 +149,32 @@ function isCreditCardPayment(description: string): boolean {
 	return /\bpag(amento|to)\b/i.test(description);
 }
 
-function cleanDescription(desc: string): string {
-	return desc
+export function cleanDescription(desc: string): string {
+	const compact = desc
 		.replace(/\s+/g, ' ')
 		.replace(/^IOF de /i, '')
 		.replace(/^IOF de volta de /i, '')
-		.trim()
-		.toUpperCase();
+		.trim();
+
+	const pixMatch = compact.match(/^Transferência (enviada|recebida|Recebida) pelo Pix - ([^-]+?)(?: - |$)/i);
+	if (pixMatch) {
+		const direction = normalizeToken(pixMatch[1]).startsWith('RECEBIDA') ? 'PIX RECEBIDO' : 'PIX ENVIADO';
+		return `${direction} - ${normalizePartyName(pixMatch[2])}`;
+	}
+
+	const transferMatch = compact.match(/^Transferência (Recebida|Enviada) - ([^-]+?)(?: - |$)/i);
+	if (transferMatch) {
+		const direction = normalizeToken(transferMatch[1]).startsWith('RECEBIDA') ? 'TRANSFERENCIA RECEBIDA' : 'TRANSFERENCIA ENVIADA';
+		return `${direction} - ${normalizePartyName(transferMatch[2])}`;
+	}
+
+	const boletoMatch = compact.match(/^Pagamento de boleto efetuado - (.+)$/i);
+	if (boletoMatch) return `BOLETO - ${normalizePartyName(boletoMatch[1])}`;
+
+	const debitMatch = compact.match(/^Compra no débito - (.+)$/i);
+	if (debitMatch) return `DEBITO - ${normalizePartyName(debitMatch[1])}`;
+
+	return normalizePartyName(compact);
 }
 
 export function buildDuplicateKey(row: ParsedRow): string {
@@ -159,4 +184,59 @@ export function buildDuplicateKey(row: ParsedRow): string {
 export function buildImportDedupKey(row: Pick<ParsedRow, 'date' | 'clean_description' | 'amount' | 'currency'>): string {
 	const cleanDescription = row.clean_description.trim().replace(/\s+/g, ' ').toUpperCase();
 	return `${row.date}|${cleanDescription}|${row.amount.toFixed(2)}|${row.currency || 'BRL'}`;
+}
+
+function normalizePartyName(value: string): string {
+	return normalizeToken(value)
+		.replace(/\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/g, '')
+		.replace(/[•*.]{2,}\.?\d{3}\.\d{3}-[•*\d]{2}/g, '')
+		.replace(/\b(AG[EÊ]NCIA|AG)\s*:?\s*[\d-]+\b/g, '')
+		.replace(/\bCONTA\s*:?\s*[\d.-]+\b/g, '')
+		.replace(/\b[A-Z ]+\s+S\.A\.\s*\(\d{4}\)/g, '')
+		.replace(/\b[A-Z ]+\s+IP\s*(LTDA\.)?\s*\(\d{4}\)/g, '')
+		.replace(/\bBCO\s+[A-Z ]+\s+S\.A\.\s*\(\d{4}\)/g, '')
+		.replace(/\bNU PAGAMENTOS\s+-?\s*IP\s*\(\d{4}\)/g, '')
+		.replace(/\s+-\s*$/g, '')
+		.replace(/(?:\s+-\s*){2,}/g, ' - ')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
+function normalizeToken(value: string): string {
+	return value
+		.normalize('NFD')
+		.replace(/\p{Diacritic}/gu, '')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.toUpperCase();
+}
+
+function removeNeutralizedStatementPairs(rows: ParsedRow[]): ParsedRow[] {
+	const indexesToSkip = new Set<number>();
+	const groups = new Map<string, Array<{ row: ParsedRow; index: number }>>();
+
+	rows.forEach((row, index) => {
+		if (!row.external_id || row.amount === 0) return;
+		const key = [
+			row.external_id,
+			row.date,
+			row.clean_description,
+			Math.abs(row.amount).toFixed(2),
+			row.currency || 'BRL'
+		].join('|');
+		const group = groups.get(key) ?? [];
+		group.push({ row, index });
+		groups.set(key, group);
+	});
+
+	for (const group of groups.values()) {
+		const total = group.reduce((sum, item) => sum + item.row.amount, 0);
+		const hasPositive = group.some((item) => item.row.amount > 0);
+		const hasNegative = group.some((item) => item.row.amount < 0);
+		if (hasPositive && hasNegative && Math.abs(total) < 0.005) {
+			for (const item of group) indexesToSkip.add(item.index);
+		}
+	}
+
+	return rows.filter((_, index) => !indexesToSkip.has(index));
 }

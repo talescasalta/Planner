@@ -207,7 +207,12 @@
 						{#each preview as row}
 							<tr class={row.duplicate ? 'bg-red-50' : ''}>
 								<td class="px-4 py-2 text-sm text-gray-900">{row.date}</td>
-								<td class="px-4 py-2 text-sm text-gray-900">{row.description}</td>
+								<td class="px-4 py-2 text-sm text-gray-900">
+									<span class="block font-medium">{row.clean_description}</span>
+									{#if row.clean_description !== row.description.toUpperCase()}
+										<span class="block max-w-xl truncate text-xs text-gray-500">{row.description}</span>
+									{/if}
+								</td>
 								<td class="px-4 py-2 text-sm text-gray-900 text-right">{row.amount.toFixed(2)}</td>
 								<td class="px-4 py-2 text-sm">
 									{#if row.duplicate}
