@@ -10,8 +10,10 @@
 	let profiles = $derived(data.profiles ?? []);
 	let monthOptions = $derived(data.monthOptions ?? []);
 	let selectedMonth = $derived(data.selectedMonth ?? '');
+	let filters = $derived(data.filters ?? { sourceType: 'all', categoryId: '', subcategoryId: '', status: 'all' });
 	let summary = $derived(data.summary);
 	let parentCategories = $derived(categories.filter((c) => !c.parent_id));
+	let filterSubcategories = $derived(filters.categoryId ? categories.filter((c) => c.parent_id === filters.categoryId) : []);
 	let selectedForDelete = $state<string[]>([]);
 	let editingId = $state<string | null>(null);
 	let editCategoryId = $state('');
@@ -72,7 +74,49 @@
 	}
 
 	function monthHref(month: string) {
-		return `/app/transactions?month=${encodeURIComponent(month)}`;
+		return transactionsHref({ month, page: 0 });
+	}
+
+	function transactionsHref(overrides: {
+		month?: string;
+		sourceType?: string;
+		categoryId?: string;
+		subcategoryId?: string;
+		status?: string;
+		page?: number;
+	} = {}) {
+		const params = new URLSearchParams();
+		const month = overrides.month ?? selectedMonth;
+		const sourceType = overrides.sourceType ?? filters.sourceType;
+		const categoryId = overrides.categoryId ?? filters.categoryId;
+		const subcategoryId = overrides.subcategoryId ?? filters.subcategoryId;
+		const status = overrides.status ?? filters.status;
+		const page = overrides.page ?? data.page;
+
+		if (month) params.set('month', month);
+		if (sourceType && sourceType !== 'all') params.set('source_type', sourceType);
+		if (categoryId) params.set('category_id', categoryId);
+		if (subcategoryId) params.set('subcategory_id', subcategoryId);
+		if (status && status !== 'all') params.set('status', status);
+		if (page > 0) params.set('page', String(page));
+
+		const query = params.toString();
+		return `/app/transactions${query ? `?${query}` : ''}`;
+	}
+
+	function hasActiveFilters() {
+		return (
+			(filters.sourceType && filters.sourceType !== 'all') ||
+			!!filters.categoryId ||
+			!!filters.subcategoryId ||
+			(filters.status && filters.status !== 'all')
+		);
+	}
+
+	function sourceTypeText(value: string | null | undefined) {
+		if (value === 'credit_card') return 'Fatura de cartão';
+		if (value === 'bank_account') return 'Conta corrente';
+		return 'Sem origem definida';
 	}
 
 	function setAllVisible(checked: boolean) {
@@ -251,6 +295,100 @@
 			</div>
 		</div>
 
+		<div class="grid gap-3 md:grid-cols-5">
+			<div>
+				<label for="source-type-filter" class="block text-xs font-medium uppercase tracking-wider text-gray-500">Origem</label>
+				<select
+					id="source-type-filter"
+					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+					value={filters.sourceType}
+					onchange={(event) => {
+						window.location.href = transactionsHref({ sourceType: event.currentTarget.value, page: 0 });
+					}}
+				>
+					<option value="all">Todas</option>
+					<option value="credit_card">Fatura de cartão</option>
+					<option value="bank_account">Conta corrente</option>
+					<option value="unknown">Sem origem definida</option>
+				</select>
+			</div>
+
+			<div>
+				<label for="category-filter" class="block text-xs font-medium uppercase tracking-wider text-gray-500">Categoria</label>
+				<select
+					id="category-filter"
+					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+					value={filters.categoryId}
+					onchange={(event) => {
+						window.location.href = transactionsHref({
+							categoryId: event.currentTarget.value,
+							subcategoryId: '',
+							page: 0
+						});
+					}}
+				>
+					<option value="">Todas</option>
+					{#each parentCategories as cat}
+						<option value={cat.id}>{cat.name}</option>
+					{/each}
+				</select>
+			</div>
+
+			<div>
+				<label for="subcategory-filter" class="block text-xs font-medium uppercase tracking-wider text-gray-500">Subcategoria</label>
+				<select
+					id="subcategory-filter"
+					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm disabled:bg-gray-100"
+					value={filters.subcategoryId}
+					disabled={!filters.categoryId}
+					onchange={(event) => {
+						window.location.href = transactionsHref({ subcategoryId: event.currentTarget.value, page: 0 });
+					}}
+				>
+					<option value="">Todas</option>
+					{#each filterSubcategories as sub}
+						<option value={sub.id}>{sub.name}</option>
+					{/each}
+				</select>
+			</div>
+
+			<div>
+				<label for="status-filter" class="block text-xs font-medium uppercase tracking-wider text-gray-500">Status</label>
+				<select
+					id="status-filter"
+					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+					value={filters.status}
+					onchange={(event) => {
+						window.location.href = transactionsHref({ status: event.currentTarget.value, page: 0 });
+					}}
+				>
+					<option value="all">Todos</option>
+					<option value="needs_review">Revisar</option>
+					<option value="confirmed">Confirmado</option>
+					<option value="ignored">Ignorado</option>
+				</select>
+			</div>
+
+			<div class="flex items-end">
+				<a
+					href={transactionsHref({
+						sourceType: 'all',
+						categoryId: '',
+						subcategoryId: '',
+						status: 'all',
+						page: 0
+					})}
+					class={`inline-flex w-full justify-center rounded-md border px-3 py-2 text-sm font-medium ${
+						hasActiveFilters()
+							? 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+							: 'pointer-events-none border-gray-200 bg-gray-50 text-gray-400'
+					}`}
+				>
+					Limpar filtros
+				</a>
+			</div>
+		</div>
+
 		{#if selectedMonth && selectedMonth !== 'all' && summary.count > 0}
 			<form
 				method="POST"
@@ -261,6 +399,10 @@
 				class="flex justify-end"
 			>
 				<input type="hidden" name="reference_month" value={selectedMonth} />
+				<input type="hidden" name="source_type_filter" value={filters.sourceType} />
+				<input type="hidden" name="category_id_filter" value={filters.categoryId} />
+				<input type="hidden" name="subcategory_id_filter" value={filters.subcategoryId} />
+				<input type="hidden" name="status_filter" value={filters.status} />
 				<button type="submit" class="px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100">
 					Excluir mês da fatura
 				</button>
@@ -281,6 +423,10 @@
 		>
 			<input type="hidden" name="month" value={selectedMonth} />
 			<input type="hidden" name="page" value={data.page} />
+			<input type="hidden" name="source_type_filter" value={filters.sourceType} />
+			<input type="hidden" name="category_id_filter" value={filters.categoryId} />
+			<input type="hidden" name="subcategory_id_filter" value={filters.subcategoryId} />
+			<input type="hidden" name="status_filter" value={filters.status} />
 		</form>
 
 		<div class="flex items-center justify-between">
@@ -309,6 +455,7 @@
 						</th>
 						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
 						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
+						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Origem</th>
 						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Classificação</th>
 						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Atribuir a</th>
 						<th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -348,6 +495,11 @@
 							<td class="px-4 py-3 text-sm text-gray-900 align-top">
 								<a href="/app/transactions/{tx.id}" class="hover:text-indigo-600">{tx.description}</a>
 							</td>
+							<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700 align-top">
+								<span class="inline-flex rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
+									{sourceTypeText(tx.source_type)}
+								</span>
+							</td>
 
 							{#if editingId === tx.id}
 								<td class="px-4 py-3 text-sm text-gray-600 align-top" colspan="2">
@@ -361,6 +513,10 @@
 										<input type="hidden" name="transaction_id" value={tx.id} />
 										<input type="hidden" name="month" value={selectedMonth} />
 										<input type="hidden" name="page" value={data.page} />
+										<input type="hidden" name="source_type_filter" value={filters.sourceType} />
+										<input type="hidden" name="category_id_filter" value={filters.categoryId} />
+										<input type="hidden" name="subcategory_id_filter" value={filters.subcategoryId} />
+										<input type="hidden" name="status_filter" value={filters.status} />
 										<label class="min-w-44 text-xs font-medium text-gray-600">
 											Categoria
 											<select
@@ -548,10 +704,10 @@
 			<p>Página {data.page + 1}</p>
 			<div class="flex gap-2">
 				{#if data.page > 0}
-					<a class="px-3 py-2 border rounded-md bg-white hover:bg-gray-50" href={`/app/transactions?month=${encodeURIComponent(selectedMonth)}&page=${data.page - 1}`}>Anterior</a>
+					<a class="px-3 py-2 border rounded-md bg-white hover:bg-gray-50" href={transactionsHref({ page: data.page - 1 })}>Anterior</a>
 				{/if}
 				{#if data.hasMore}
-					<a class="px-3 py-2 border rounded-md bg-white hover:bg-gray-50" href={`/app/transactions?month=${encodeURIComponent(selectedMonth)}&page=${data.page + 1}`}>Próxima</a>
+					<a class="px-3 py-2 border rounded-md bg-white hover:bg-gray-50" href={transactionsHref({ page: data.page + 1 })}>Próxima</a>
 				{/if}
 			</div>
 		</div>

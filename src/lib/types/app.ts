@@ -4,6 +4,7 @@ export type ImportStatus = 'uploaded' | 'parsed' | 'classified' | 'reviewed' | '
 export type PatternType = 'merchant_contains' | 'description_contains' | 'exact_merchant' | 'regex';
 export type FinancialProfileType = 'individual' | 'shared';
 export type SplitMethod = 'income_proportional' | 'equal';
+export type TransactionSourceType = 'credit_card' | 'bank_account';
 
 export interface SuccessfulClassificationSuggestion {
 	type?: 'classification';
@@ -86,6 +87,7 @@ export interface Transaction {
 	amount: number;
 	currency: string;
 	source_name: string | null;
+	source_type: TransactionSourceType | null;
 	reference_month: string | null;
 	paid_by_user_id: string | null;
 	owner_profile_id: string | null;
@@ -143,6 +145,7 @@ export interface TransactionImport {
 	household_id: string;
 	created_by_user_id: string;
 	source_filename: string;
+	source_type: TransactionSourceType | null;
 	status: ImportStatus;
 	row_count: number | null;
 	created_at: string;

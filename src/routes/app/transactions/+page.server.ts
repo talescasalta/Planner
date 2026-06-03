@@ -11,6 +11,10 @@ import { fail, redirect } from '@sveltejs/kit';
 
 const PAGE_SIZE = 100;
 const ALL_MONTHS = 'all';
+const ALL_FILTERS = 'all';
+const UNKNOWN_SOURCE = 'unknown';
+const VALID_SOURCE_TYPES = new Set(['credit_card', 'bank_account', UNKNOWN_SOURCE]);
+const VALID_REVIEW_STATUSES = new Set(['needs_review', 'confirmed', 'ignored']);
 
 type ClassificationSuggestionLike = {
 	category?: unknown;
@@ -36,6 +40,7 @@ function emptyPage() {
 		profiles: [],
 		monthOptions: [],
 		selectedMonth: '',
+		filters: { sourceType: ALL_FILTERS, categoryId: '', subcategoryId: '', status: ALL_FILTERS },
 		page: 0,
 		pageSize: PAGE_SIZE,
 		hasMore: false,
@@ -49,6 +54,32 @@ function monthFromDate(date: string | null | undefined): string {
 
 function suggestionText(value: unknown): string | null {
 	return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function cleanFilter(value: string | null | undefined): string {
+	return String(value ?? '').trim();
+}
+
+function readFilters(url: URL) {
+	const sourceType = cleanFilter(url.searchParams.get('source_type'));
+	const status = cleanFilter(url.searchParams.get('status'));
+	return {
+		sourceType: VALID_SOURCE_TYPES.has(sourceType) ? sourceType : ALL_FILTERS,
+		categoryId: cleanFilter(url.searchParams.get('category_id')),
+		subcategoryId: cleanFilter(url.searchParams.get('subcategory_id')),
+		status: VALID_REVIEW_STATUSES.has(status) ? status : ALL_FILTERS
+	};
+}
+
+function appendFilters(params: URLSearchParams, formData: FormData) {
+	const sourceType = cleanFilter(formData.get('source_type_filter')?.toString());
+	const categoryId = cleanFilter(formData.get('category_id_filter')?.toString());
+	const subcategoryId = cleanFilter(formData.get('subcategory_id_filter')?.toString());
+	const status = cleanFilter(formData.get('status_filter')?.toString());
+	if (sourceType && sourceType !== ALL_FILTERS) params.set('source_type', sourceType);
+	if (categoryId) params.set('category_id', categoryId);
+	if (subcategoryId) params.set('subcategory_id', subcategoryId);
+	if (status && status !== ALL_FILTERS) params.set('status', status);
 }
 
 function withClassificationDisplay<T extends TransactionWithDisplay>(transaction: T) {
@@ -97,9 +128,10 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 	const from = page * PAGE_SIZE;
 	const to = from + PAGE_SIZE;
 	const requestedMonth = url.searchParams.get('month') ?? '';
+	const filters = readFilters(url);
 	const readableTransactionIds = await getReadableTransactionIds(supabase, user.id);
 	if (readableTransactionIds.length === 0) {
-		return { ...emptyPage(), page };
+		return { ...emptyPage(), page, filters };
 	}
 
 	const { data: monthRows } = await supabaseAdmin
@@ -115,6 +147,16 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 	).sort((a, b) => b.localeCompare(a));
 	const selectedMonth =
 		requestedMonth === ALL_MONTHS ? ALL_MONTHS : requestedMonth || monthOptions[0] || '';
+
+	const applyFilters = (query: any) => {
+		if (selectedMonth && selectedMonth !== ALL_MONTHS) query = query.eq('reference_month', selectedMonth);
+		if (filters.sourceType === UNKNOWN_SOURCE) query = query.is('source_type', null);
+		else if (filters.sourceType !== ALL_FILTERS) query = query.eq('source_type', filters.sourceType);
+		if (filters.categoryId) query = query.eq('category_id', filters.categoryId);
+		if (filters.subcategoryId) query = query.eq('subcategory_id', filters.subcategoryId);
+		if (filters.status !== ALL_FILTERS) query = query.eq('review_status', filters.status);
+		return query;
+	};
 
 	const [
 		{ data: transactions, error },
@@ -135,9 +177,9 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 			`)
 			.eq('household_id', householdId)
 			.in('id', readableTransactionIds)
-			.order('date', { ascending: false })
-			.range(from, to);
-			if (selectedMonth && selectedMonth !== ALL_MONTHS) query = query.eq('reference_month', selectedMonth);
+			query = applyFilters(query)
+				.order('date', { ascending: false })
+				.range(from, to);
 			return query;
 		})(),
 		(() => {
@@ -145,9 +187,9 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 				.from('transactions')
 				.select('amount')
 				.eq('household_id', householdId)
-				.in('id', readableTransactionIds)
-				.neq('review_status', 'ignored');
-			if (selectedMonth && selectedMonth !== ALL_MONTHS) query = query.eq('reference_month', selectedMonth);
+				.in('id', readableTransactionIds);
+			if (filters.status === ALL_FILTERS) query = query.neq('review_status', 'ignored');
+			query = applyFilters(query);
 			return query;
 		})(),
 		supabaseAdmin
@@ -167,7 +209,7 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 
 	if (error) {
 		console.error('Error loading transactions:', error);
-		return { ...emptyPage(), page, monthOptions, selectedMonth };
+		return { ...emptyPage(), page, monthOptions, selectedMonth, filters };
 	}
 
 	const all = transactions ?? [];
@@ -193,6 +235,7 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		profiles: assignmentProfiles,
 		monthOptions,
 		selectedMonth,
+		filters,
 		page,
 		pageSize: PAGE_SIZE,
 		hasMore,
@@ -278,6 +321,7 @@ export const actions: Actions = {
 		const params = new URLSearchParams();
 		if (month) params.set('month', month);
 		if (page && page !== '0') params.set('page', page);
+		appendFilters(params, formData);
 		const query = params.toString();
 		redirect(303, `/app/transactions${query ? `?${query}` : ''}`);
 	},
@@ -378,6 +422,7 @@ export const actions: Actions = {
 		const transactionId = cleanName(formData.get('transaction_id'));
 		const parentId = cleanName(formData.get('category_id'));
 		const name = cleanName(formData.get('new_subcategory_name'));
+		const ownerProfileId = cleanName(formData.get('owner_profile_id')) || null;
 		if (!transactionId || !parentId || !name) {
 			return fail(400, { success: false, message: 'Informe categoria e nome da subcategoria' });
 		}
@@ -399,36 +444,63 @@ export const actions: Actions = {
 				category.parent_id === parentId &&
 				category.name.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR')
 		);
-		if (existing) {
-			return {
-				success: true,
-				message: 'Subcategoria já existia',
-				createdSubcategoryId: existing.id,
-				parentId,
-				transactionId
-			};
+		let subcategoryId: string | null = existing?.id ?? null;
+		let message = existing ? 'Subcategoria já existia' : 'Subcategoria criada';
+
+		if (!subcategoryId) {
+			const { data: created, error } = await supabaseAdmin
+				.from('categories')
+				.insert({
+					household_id: householdId,
+					name,
+					parent_id: parentId,
+					created_by_user_id: user.id,
+					is_default: false
+				})
+				.select('id')
+				.single();
+
+			if (error || !created) {
+				return fail(500, { success: false, message: error?.message ?? 'Erro ao criar subcategoria' });
+			}
+
+			subcategoryId = created.id;
 		}
 
-		const { data: created, error } = await supabaseAdmin
-			.from('categories')
-			.insert({
-				household_id: householdId,
-				name,
-				parent_id: parentId,
-				created_by_user_id: user.id,
-				is_default: false
-			})
-			.select('id')
-			.single();
+		const patch = {
+			category_id: parentId,
+			subcategory_id: subcategoryId,
+			owner_profile_id: ownerProfileId,
+			review_status: 'confirmed',
+			updated_at: new Date().toISOString()
+		};
 
-		if (error || !created) {
-			return fail(500, { success: false, message: error?.message ?? 'Erro ao criar subcategoria' });
+		const relationError = await validateTransactionRelations(supabase, householdId, patch, user.id);
+		if (relationError) {
+			return fail(400, { success: false, message: relationError });
 		}
+
+		const { error: updateError } = await supabaseAdmin
+			.from('transactions')
+			.update(patch)
+			.eq('id', transactionId)
+			.eq('household_id', householdId);
+
+		if (updateError) return fail(500, { success: false, message: updateError.message });
+
+		await learnFromTransactionAdjustment(supabaseAdmin, {
+			householdId,
+			userId: user.id,
+			transactionId,
+			categoryId: parentId,
+			subcategoryId,
+			ownerProfileId
+		});
 
 		return {
 			success: true,
-			message: 'Subcategoria criada',
-			createdSubcategoryId: created.id,
+			message,
+			createdSubcategoryId: subcategoryId,
 			parentId,
 			transactionId
 		};
@@ -554,6 +626,7 @@ export const actions: Actions = {
 		const params = new URLSearchParams();
 		if (month) params.set('month', month);
 		if (page && page !== '0') params.set('page', page);
+		appendFilters(params, formData);
 		const query = params.toString();
 		redirect(303, `/app/transactions${query ? `?${query}` : url.search}`);
 	},
@@ -593,6 +666,9 @@ export const actions: Actions = {
 			.eq('reference_month', referenceMonth);
 		if (error) return fail(500, { success: false, message: error.message });
 
-		redirect(303, '/app/transactions');
+		const params = new URLSearchParams();
+		appendFilters(params, formData);
+		const query = params.toString();
+		redirect(303, `/app/transactions${query ? `?${query}` : ''}`);
 	}
 };
