@@ -6,6 +6,12 @@ export interface TransactionsPageData {
 	profiles: FinancialProfile[];
 	monthOptions: string[];
 	selectedMonth: string;
+	filters: {
+		sourceType: string;
+		categoryId: string;
+		subcategoryId: string;
+		status: string;
+	};
 	page: number;
 	pageSize: number;
 	hasMore: boolean;

@@ -143,6 +143,7 @@ export const actions: Actions = {
 				household_id: householdId,
 				created_by_user_id: user.id,
 				source_filename: file.name,
+				source_type: resolved.sourceType,
 				status: 'parsed',
 				row_count: rows.length,
 				reference_month: referenceMonth
@@ -167,6 +168,7 @@ export const actions: Actions = {
 				clean_description: r.clean_description,
 				amount: r.amount,
 				currency: r.currency,
+				source_type: resolved.sourceType,
 				reference_month: referenceMonth,
 				import_dedup_key: buildImportDedupKey(r),
 				classification_method: 'imported',
