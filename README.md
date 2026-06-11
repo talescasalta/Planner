@@ -4,6 +4,10 @@ Personal finance planner built with SvelteKit and Supabase.
 
 The app lets a household import credit card or bank account statements, classify transactions with categories/subcategories, review LLM suggestions, ignore non-expense statement payments, and improve personal classification rules over time. The dashboard at `/app` shows a category treemap (click a cell to drill down into its transactions), receitas-vs-despesas trend, and `/app/groups` shows who paid shared expenses, how they should be split, and the settlement amount one member needs to pay another.
 
+## Security
+
+This app holds real household financial data. Read [SECURITY.md](SECURITY.md) before contributing — it defines the threat model, the RLS/`SECURITY DEFINER` rules, the secrets policy, and the review checklist every change must pass.
+
 ## Stack
 
 - SvelteKit

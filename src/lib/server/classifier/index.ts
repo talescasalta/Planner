@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
+import { supabaseAdmin } from '$lib/server/supabase';
 import { applyRules, loadActiveRules } from './rules';
 import { callLlm } from '$lib/server/llm';
 import { classificationResultSchema } from '$lib/schemas/classification';
@@ -150,7 +151,7 @@ export async function classifyTransactions(
 		}
 	}
 
-	await runUpdates(supabase, householdId, updates);
+	await runUpdates(householdId, updates);
 	return results;
 }
 
@@ -323,8 +324,11 @@ function extractResultsArray(parsed: unknown): unknown[] {
 	return [];
 }
 
+// The classification RPC is SECURITY DEFINER and only executable by the
+// service role, so it must go through the admin client. The transaction ids in
+// `updates` were loaded with the caller's RLS-enforced client and the RPC
+// re-checks household_id on every row, so the household scope still holds.
 async function runUpdates(
-	supabase: SupabaseClient<Database>,
 	householdId: string,
 	updates: Array<{ id: string; patch: TxUpdate }>
 ): Promise<void> {
@@ -339,7 +343,7 @@ async function runUpdates(
 		review_status: u.patch.review_status ?? 'needs_review',
 		classification_suggestion: u.patch.classification_suggestion ?? null
 	}));
-	const { data, error } = await supabase.rpc('apply_transaction_classification_updates', {
+	const { data, error } = await supabaseAdmin.rpc('apply_transaction_classification_updates', {
 		updates: payload
 	});
 	if (error) {

@@ -29,6 +29,10 @@ export const actions: Actions = {
 		}
 
 		if (action === 'signup') {
+			if (!password || password.length < 8) {
+				return { success: false, message: 'A senha precisa ter pelo menos 8 caracteres.' };
+			}
+
 			const { error } = await supabase.auth.signUp({
 				email,
 				password,

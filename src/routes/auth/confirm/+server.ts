@@ -6,7 +6,10 @@ export const GET: RequestHandler = async ({ url, locals: { supabase } }) => {
 	const code = url.searchParams.get('code')
 	const token_hash = url.searchParams.get('token_hash') as string
 	const type = url.searchParams.get('type') as EmailOtpType | null
-	const next = url.searchParams.get('next') ?? '/'
+	// Only allow same-origin paths ("/foo"), never "//host" or absolute URLs,
+	// so the link in the email can't be turned into an open redirect.
+	const rawNext = url.searchParams.get('next') ?? '/'
+	const next = /^\/(?![/\\])/.test(rawNext) ? rawNext : '/'
 
 	const redirectTo = new URL(url)
 	redirectTo.pathname = next
