@@ -16,7 +16,11 @@
 	let filterSubcategories = $derived(filters.categoryId ? categories.filter((c) => c.parent_id === filters.categoryId) : []);
 	let selectedForDelete = $state<string[]>([]);
 	let newSubcategoryName = $state('');
-	let savingId = $state<string | null>(null);
+	// Per-row save state, keyed by transaction id, so saving one row never
+	// unlocks another that is still in flight.
+	let savingIds = $state<Record<string, boolean>>({});
+	// Per-row error message shown when a row's auto-save is rejected by the server.
+	let rowErrors = $state<Record<string, string>>({});
 	let confirmingId = $state<string | null>(null);
 	let statusChangingId = $state<string | null>(null);
 	// Row currently showing the inline "create subcategory" input instead of the select.
@@ -173,17 +177,45 @@
 		newSubcategoryName = '';
 	}
 
-	function rowEnhance(transactionId: string, submitter: HTMLElement | null) {
+	// A rejected change leaves the native select showing the value the user
+	// picked; snap the row's controls back to what is actually stored.
+	function revertRowControls(formElement: HTMLFormElement, tx: Transaction) {
+		const set = (name: string, value: string) => {
+			const el = formElement.elements.namedItem(name);
+			if (el instanceof HTMLSelectElement || el instanceof HTMLInputElement) el.value = value;
+		};
+		set('category_id', tx.category_id ?? '');
+		set('subcategory_id', tx.subcategory_id ?? '');
+		set('owner_profile_id', tx.owner_profile_id ?? '');
+	}
+
+	function rowEnhance(tx: Transaction, formElement: HTMLFormElement, submitter: HTMLElement | null) {
 		const scrollY = window.scrollY;
 		const isCreatingSubcategory =
 			submitter instanceof HTMLButtonElement && submitter.formAction.includes('create_subcategory');
-		savingId = transactionId;
+		savingIds[tx.id] = true;
+		delete rowErrors[tx.id];
 
-		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
+		return async ({
+			result,
+			update
+		}: {
+			result: { type: string; data?: Record<string, unknown> };
+			update: () => Promise<void>;
+		}) => {
+			if (result.type === 'failure') {
+				// Don't reload (nothing changed server-side); revert and surface the error.
+				revertRowControls(formElement, tx);
+				const message = result.data?.message;
+				rowErrors[tx.id] = typeof message === 'string' ? message : 'Não foi possível salvar. Tente novamente.';
+				delete savingIds[tx.id];
+				requestAnimationFrame(() => window.scrollTo({ top: scrollY }));
+				return;
+			}
 			await update();
 			requestAnimationFrame(() => {
 				window.scrollTo({ top: scrollY });
-				savingId = null;
+				delete savingIds[tx.id];
 				if (isCreatingSubcategory && result.type === 'success') cancelCreateSubcategory();
 			});
 		};
@@ -573,7 +605,7 @@
 				</thead>
 				<tbody class="divide-y divide-gray-200">
 					{#each visibleTransactions as tx (tx.id)}
-						<tr class={savingId === tx.id ? 'bg-indigo-50/40' : ''}>
+						<tr class={savingIds[tx.id] ? 'bg-indigo-50/40' : ''}>
 							<td class="px-4 py-3 align-top">
 								<input
 									type="checkbox"
@@ -599,7 +631,7 @@
 									id={`tx-form-${tx.id}`}
 									method="POST"
 									action="?/update_single_classification"
-									use:enhance={({ submitter }) => rowEnhance(tx.id, submitter)}
+									use:enhance={({ formElement, submitter }) => rowEnhance(tx, formElement, submitter)}
 									data-sveltekit-noscroll
 								>
 									<input type="hidden" name="transaction_id" value={tx.id} />
@@ -615,7 +647,7 @@
 										name="category_id"
 										form={`tx-form-${tx.id}`}
 										value={tx.category_id ?? ''}
-										disabled={savingId === tx.id}
+										disabled={savingIds[tx.id]}
 										onchange={onRowCategoryChange}
 										aria-label="Categoria"
 										class="block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
@@ -640,7 +672,7 @@
 												type="submit"
 												form={`tx-form-${tx.id}`}
 												formaction="?/create_subcategory"
-												disabled={!newSubcategoryName.trim() || savingId === tx.id}
+												disabled={!newSubcategoryName.trim() || savingIds[tx.id]}
 												class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-green-600 text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
 												title="Criar subcategoria"
 												aria-label="Criar subcategoria"
@@ -662,7 +694,7 @@
 											name="subcategory_id"
 											form={`tx-form-${tx.id}`}
 											value={tx.subcategory_id ?? ''}
-											disabled={savingId === tx.id || !tx.category_id}
+											disabled={savingIds[tx.id] || !tx.category_id}
 											onchange={(event) => onRowSubcategoryChange(event, tx.id)}
 											aria-label="Subcategoria"
 											class="block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
@@ -679,6 +711,9 @@
 									{#if suggestionLabel(tx)}
 										<span class="w-40 text-xs text-amber-700">sugerido: {suggestionLabel(tx)}</span>
 									{/if}
+									{#if rowErrors[tx.id]}
+										<span class="w-40 text-xs text-red-600" role="alert">{rowErrors[tx.id]}</span>
+									{/if}
 								</div>
 							</td>
 							<td class="px-4 py-3 text-sm align-top">
@@ -686,7 +721,7 @@
 									name="owner_profile_id"
 									form={`tx-form-${tx.id}`}
 									value={tx.owner_profile_id ?? ''}
-									disabled={savingId === tx.id}
+									disabled={savingIds[tx.id]}
 									onchange={submitRowForm}
 									aria-label="Atribuir a"
 									class="block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
