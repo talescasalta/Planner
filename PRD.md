@@ -303,6 +303,8 @@ Criterios:
 
 - seletor de mes da fatura no topo;
 - opcao "Todos os meses";
+- filtros por origem (cartao de credito / conta corrente), categoria, subcategoria e status de revisao;
+- busca textual e ordenacao por valor sobre o mes carregado;
 - sem query, selecionar automaticamente o mes mais recente;
 - resumo do filtro: quantidade, despesas, creditos e saldo;
 - tabela mostra apenas o mes selecionado;
@@ -386,6 +388,21 @@ Criterios:
 - filtro por perfil;
 - filtro por status de revisao.
 
+### 7.12 Parcelas Futuras
+
+Como usuario, quero antecipar as parcelas de compras no cartao que ainda vao cair.
+
+Contexto: faturas de cartao sao importadas uma por mes e cada compra parcelada aparece com um marcador `k/n` (ex.: `1/6` = primeira de seis). A parcela `2/6` so entra quando a fatura do mes seguinte e importada.
+
+Criterios:
+
+- a importacao extrai `k/n` da descricao e grava `installment_number`, `installment_total` e `installment_group_key`;
+- `/app/installments` projeta (calcula, sem gravar) as parcelas ainda nao lancadas a partir da ultima parcela conhecida de cada compra;
+- as parcelas projetadas sao agrupadas por mes futuro, com subtotal por mes e total do compromisso restante;
+- quando a fatura real de um mes e importada, a parcela real vira a nova ancora e a projezao encolhe automaticamente (sem transacoes falsas);
+- a tela respeita `transaction_access`: so projeta parcelas de transacoes legiveis pelo usuario;
+- por enquanto a projecao e apenas visualizacao: nao entra em relatorios nem no acerto do grupo.
+
 ## 8. Rotas
 
 Rotas esperadas:
@@ -397,10 +414,11 @@ Rotas esperadas:
 - `/app/transactions`;
 - `/app/transactions/new`;
 - `/app/transactions/[id]`;
+- `/app/installments`;
 - `/app/categories`;
 - `/app/review`;
 - `/app/rules`;
-- `/app/reports`;
+- `/app/reports` (redireciona 308 para `/app`; os relatorios/visualizacoes vivem no dashboard);
 - `/app/settings`.
 
 ## 9. Schema de Banco
@@ -474,6 +492,11 @@ Registra categorias/subcategorias sugeridas que o usuario ocultou do seu gabarit
 - `amount numeric`;
 - `currency text default 'BRL'`;
 - `source_name text null`;
+- `source_type text null`; -- `credit_card` ou `bank_account`, usado no filtro de origem
+- `import_dedup_key text null`; -- chave canonica para deduplicar importacoes repetidas
+- `installment_number smallint null`; -- parcela atual (o k em k/n)
+- `installment_total smallint null`; -- total de parcelas (o n em k/n)
+- `installment_group_key text null`; -- agrupa as parcelas da mesma compra entre meses
 - `reference_month text`;
 - `paid_by_user_id uuid null`;
 - `owner_profile_id uuid null`;
@@ -516,9 +539,12 @@ O campo so tem efeito para despesas compartilhadas (`owner_profile.type = shared
 - `subcategory_id uuid null`;
 - `owner_profile_id uuid null`;
 - `confidence numeric`;
+- `reinforcement_count integer`; -- quantas confirmacoes manuais reforcaram a regra
 - `created_by_user_id uuid`;
 - `active boolean`;
 - `created_at timestamptz`.
+
+`reinforcement_count` cresce a cada confirmacao manual repetida do mesmo padrao e eleva a confianca ate a regra passar a classificar automaticamente.
 
 Tipos de padrao:
 
@@ -542,6 +568,7 @@ Evitar duplicidade de regra pessoal com a mesma combinacao:
 - `source_filename text`;
 - `status text`;
 - `row_count integer`;
+- `source_type text null`; -- `credit_card` ou `bank_account`
 - `reference_month text`;
 - `created_at timestamptz`.
 

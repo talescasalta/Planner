@@ -29,6 +29,23 @@
 	let searchTerm = $state('');
 	let amountSort = $state<'none' | 'desc' | 'asc'>('none');
 
+	// Bulk-apply bar: '__keep__' means "leave this field untouched".
+	const KEEP = '__keep__';
+	let bulkCategoryId = $state(KEEP);
+	let bulkSubcategoryId = $state('');
+	let bulkOwnerId = $state(KEEP);
+	let bulkApplying = $state(false);
+	let bulkCategoryRealId = $derived(bulkCategoryId !== KEEP && bulkCategoryId !== '' ? bulkCategoryId : '');
+	let bulkSubcategories = $derived(bulkCategoryRealId ? categories.filter((c) => c.parent_id === bulkCategoryRealId) : []);
+	let bulkHasChange = $derived(bulkCategoryId !== KEEP || bulkOwnerId !== KEEP);
+
+	// Mass-edit mode: every visible row becomes editable with its own selects and
+	// saves in one submit via the ?/update_classification action.
+	type MassRow = { categoryId: string; subcategoryId: string; ownerProfileId: string };
+	let massEditing = $state(false);
+	let massSaving = $state(false);
+	let massRows = $state<Record<string, MassRow>>({});
+
 	let visibleTransactions = $derived.by(() => {
 		const term = searchTerm.trim().toLowerCase();
 		let list = transactions;
@@ -57,6 +74,31 @@
 		if (editSubcategoryId && !editSubcategories.some((sub) => sub.id === editSubcategoryId)) {
 			editSubcategoryId = '';
 		}
+	});
+
+	$effect(() => {
+		if (bulkSubcategoryId && !bulkSubcategories.some((sub) => sub.id === bulkSubcategoryId)) {
+			bulkSubcategoryId = '';
+		}
+	});
+
+	// While mass-editing, make sure every visible row has an entry (e.g. if the
+	// search widens), without discarding edits already in progress.
+	$effect(() => {
+		if (!massEditing) return;
+		let added = false;
+		const next = { ...massRows };
+		for (const tx of visibleTransactions) {
+			if (!next[tx.id]) {
+				next[tx.id] = {
+					categoryId: tx.category_id ?? '',
+					subcategoryId: tx.subcategory_id ?? '',
+					ownerProfileId: tx.owner_profile_id ?? ''
+				};
+				added = true;
+			}
+		}
+		if (added) massRows = next;
 	});
 
 	function formatCurrency(value: number) {
@@ -185,6 +227,65 @@
 				savingId = null;
 				creatingSubcategoryForId = null;
 			});
+		};
+	}
+
+	function enterMassEdit() {
+		const next: Record<string, MassRow> = {};
+		for (const tx of visibleTransactions) {
+			next[tx.id] = {
+				categoryId: tx.category_id ?? '',
+				subcategoryId: tx.subcategory_id ?? '',
+				ownerProfileId: tx.owner_profile_id ?? ''
+			};
+		}
+		massRows = next;
+		editingId = null;
+		massEditing = true;
+	}
+
+	function exitMassEdit() {
+		massEditing = false;
+		massRows = {};
+	}
+
+	function massSubcategories(categoryId: string) {
+		return categoryId ? categories.filter((c) => c.parent_id === categoryId) : [];
+	}
+
+	function onMassCategoryChange(id: string) {
+		const row = massRows[id];
+		if (row && row.subcategoryId && !massSubcategories(row.categoryId).some((s) => s.id === row.subcategoryId)) {
+			row.subcategoryId = '';
+		}
+	}
+
+	function massEditEnhance() {
+		const scrollY = window.scrollY;
+		massSaving = true;
+
+		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
+			await update();
+			massSaving = false;
+			if (result.type === 'success') exitMassEdit();
+			requestAnimationFrame(() => window.scrollTo({ top: scrollY }));
+		};
+	}
+
+	function bulkApplyEnhance() {
+		const scrollY = window.scrollY;
+		bulkApplying = true;
+
+		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
+			await update();
+			bulkApplying = false;
+			if (result.type === 'success') {
+				selectedForDelete = [];
+				bulkCategoryId = KEEP;
+				bulkSubcategoryId = '';
+				bulkOwnerId = KEEP;
+			}
+			requestAnimationFrame(() => window.scrollTo({ top: scrollY }));
 		};
 	}
 
@@ -421,6 +522,9 @@
 				if (!confirm(`Excluir ${selectedForDelete.length} transações selecionadas?`)) event.preventDefault();
 			}}
 		>
+			{#each selectedForDelete as id}
+				<input type="hidden" name="transaction_id" value={id} />
+			{/each}
 			<input type="hidden" name="month" value={selectedMonth} />
 			<input type="hidden" name="page" value={data.page} />
 			<input type="hidden" name="source_type_filter" value={filters.sourceType} />
@@ -429,17 +533,127 @@
 			<input type="hidden" name="status_filter" value={filters.status} />
 		</form>
 
-		<div class="flex items-center justify-between">
-			<p class="text-sm text-gray-600">{selectedForDelete.length} selecionadas</p>
-			<button
-				type="submit"
-				form="transactions-delete-selected-form"
-				disabled={selectedForDelete.length === 0}
-				class="px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100 disabled:opacity-50 disabled:hover:bg-red-50"
-			>
-				Excluir selecionadas
-			</button>
+		<!-- Target form for mass-edit: per-row selects below associate via form= -->
+		<form id="mass-edit-form" method="POST" action="?/update_classification" use:enhance={massEditEnhance} data-sveltekit-noscroll></form>
+
+		{#if massEditing}
+			<div class="flex flex-col gap-3 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+				<p class="text-sm font-medium text-indigo-900">
+					Editando {visibleTransactions.length} linha{visibleTransactions.length === 1 ? '' : 's'} — ajuste o que precisar e salve tudo de uma vez.
+				</p>
+				<div class="flex gap-2">
+					<button
+						type="submit"
+						form="mass-edit-form"
+						disabled={massSaving}
+						class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+					>
+						{massSaving ? 'Salvando...' : 'Salvar tudo'}
+					</button>
+					<button
+						type="button"
+						onclick={exitMassEdit}
+						disabled={massSaving}
+						class="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+					>
+						Cancelar
+					</button>
+				</div>
+			</div>
+		{:else}
+		<div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+			<div class="flex items-center gap-3">
+				<p class="text-sm font-medium text-gray-700">{selectedForDelete.length} selecionadas</p>
+				{#if selectedForDelete.length > 0}
+					<button type="button" onclick={() => (selectedForDelete = [])} class="text-xs text-gray-500 underline hover:text-gray-700">
+						limpar seleção
+					</button>
+				{/if}
+			</div>
+
+			{#if selectedForDelete.length > 0}
+				<form
+					method="POST"
+					action="?/bulk_apply_classification"
+					use:enhance={bulkApplyEnhance}
+					data-sveltekit-noscroll
+					class="flex flex-wrap items-end gap-2"
+				>
+					{#each selectedForDelete as id}
+						<input type="hidden" name="transaction_id" value={id} />
+					{/each}
+					<label class="text-xs font-medium text-gray-600">
+						Categoria
+						<select
+							name="category_id"
+							bind:value={bulkCategoryId}
+							onchange={() => (bulkSubcategoryId = '')}
+							class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
+						>
+							<option value={KEEP}>— manter —</option>
+							<option value="">Sem categoria</option>
+							{#each parentCategories as cat}
+								<option value={cat.id}>{cat.name}</option>
+							{/each}
+						</select>
+					</label>
+					<label class="text-xs font-medium text-gray-600">
+						Subcategoria
+						<select
+							name="subcategory_id"
+							bind:value={bulkSubcategoryId}
+							disabled={!bulkCategoryRealId}
+							class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
+						>
+							<option value="">Sem subcategoria</option>
+							{#each bulkSubcategories as sub}
+								<option value={sub.id}>{sub.name}</option>
+							{/each}
+						</select>
+					</label>
+					<label class="text-xs font-medium text-gray-600">
+						Atribuir a
+						<select
+							name="owner_profile_id"
+							bind:value={bulkOwnerId}
+							class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
+						>
+							<option value={KEEP}>— manter —</option>
+							<option value="">Sem atribuição</option>
+							{#each profiles as p}
+								<option value={p.id}>{p.name}</option>
+							{/each}
+						</select>
+					</label>
+					<button
+						type="submit"
+						disabled={!bulkHasChange || bulkApplying}
+						class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+					>
+						{bulkApplying ? 'Aplicando...' : `Aplicar a ${selectedForDelete.length}`}
+					</button>
+				</form>
+			{/if}
+
+			<div class="flex gap-2 self-start lg:self-auto">
+				<button
+					type="button"
+					onclick={enterMassEdit}
+					class="px-3 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 rounded-md hover:bg-indigo-100"
+				>
+					Editar em massa
+				</button>
+				<button
+					type="submit"
+					form="transactions-delete-selected-form"
+					disabled={selectedForDelete.length === 0}
+					class="px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100 disabled:opacity-50 disabled:hover:bg-red-50"
+				>
+					Excluir selecionadas
+				</button>
+			</div>
 		</div>
+		{/if}
 
 		<div class="overflow-x-auto">
 			<table class="min-w-full divide-y divide-gray-200 bg-white shadow rounded-lg">
@@ -484,9 +698,7 @@
 							<td class="px-4 py-3 align-top">
 								<input
 									type="checkbox"
-									name="transaction_id"
 									value={tx.id}
-									form="transactions-delete-selected-form"
 									bind:group={selectedForDelete}
 									aria-label="Selecionar transação"
 								/>
@@ -501,7 +713,56 @@
 								</span>
 							</td>
 
-							{#if editingId === tx.id}
+							{#if massEditing && massRows[tx.id]}
+								<td class="px-4 py-3 text-sm text-gray-600 align-top" colspan="2">
+									<div class="flex flex-wrap items-end gap-2">
+										<input type="hidden" name="transaction_id" value={tx.id} form="mass-edit-form" />
+										<label class="text-xs font-medium text-gray-600">
+											Categoria
+											<select
+												name="category_id"
+												form="mass-edit-form"
+												bind:value={massRows[tx.id].categoryId}
+												onchange={() => onMassCategoryChange(tx.id)}
+												class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
+											>
+												<option value="">Sem categoria</option>
+												{#each parentCategories as cat}
+													<option value={cat.id}>{cat.name}</option>
+												{/each}
+											</select>
+										</label>
+										<label class="text-xs font-medium text-gray-600">
+											Subcategoria
+											<select
+												name="subcategory_id"
+												form="mass-edit-form"
+												bind:value={massRows[tx.id].subcategoryId}
+												class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
+											>
+												<option value="">Sem subcategoria</option>
+												{#each massSubcategories(massRows[tx.id].categoryId) as sub}
+													<option value={sub.id}>{sub.name}</option>
+												{/each}
+											</select>
+										</label>
+										<label class="text-xs font-medium text-gray-600">
+											Atribuir a
+											<select
+												name="owner_profile_id"
+												form="mass-edit-form"
+												bind:value={massRows[tx.id].ownerProfileId}
+												class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
+											>
+												<option value="">Sem atribuição</option>
+												{#each profiles as p}
+													<option value={p.id}>{p.name}</option>
+												{/each}
+											</select>
+										</label>
+									</div>
+								</td>
+							{:else if editingId === tx.id}
 								<td class="px-4 py-3 text-sm text-gray-600 align-top" colspan="2">
 									<form
 										method="POST"

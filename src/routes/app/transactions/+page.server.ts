@@ -12,6 +12,8 @@ import { fail, redirect } from '@sveltejs/kit';
 const PAGE_SIZE = 100;
 const ALL_MONTHS = 'all';
 const ALL_FILTERS = 'all';
+// Sentinel used by the bulk-apply bar to leave a field untouched.
+const KEEP = '__keep__';
 const UNKNOWN_SOURCE = 'unknown';
 const VALID_SOURCE_TYPES = new Set(['credit_card', 'bank_account', UNKNOWN_SOURCE]);
 const VALID_REVIEW_STATUSES = new Set(['needs_review', 'confirmed', 'ignored']);
@@ -592,6 +594,118 @@ export const actions: Actions = {
 				subcategoryId,
 				ownerProfileId
 			});
+			updated += 1;
+		}
+
+		return { success: true, message: `${updated} transações atualizadas` };
+	},
+
+	bulk_apply_classification: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const formData = await request.formData();
+		const transactionIds = Array.from(
+			new Set(formData.getAll('transaction_id').map((v) => String(v).trim()).filter(Boolean))
+		);
+		if (transactionIds.length === 0) {
+			return fail(400, { success: false, message: 'Selecione ao menos uma transação' });
+		}
+
+		// Each control uses the '__keep__' sentinel to mean "leave untouched", so
+		// the user can apply only a category, only an assignment, or both.
+		const rawCategory = String(formData.get('category_id') ?? KEEP);
+		const rawOwner = String(formData.get('owner_profile_id') ?? KEEP);
+		const applyCategory = rawCategory !== KEEP;
+		const applyOwner = rawOwner !== KEEP;
+		if (!applyCategory && !applyOwner) {
+			return fail(400, { success: false, message: 'Escolha uma categoria ou atribuição para aplicar' });
+		}
+
+		const categoryId = applyCategory ? rawCategory.trim() || null : undefined;
+		const subcategoryId = applyCategory
+			? categoryId
+				? String(formData.get('subcategory_id') ?? '').trim() || null
+				: null
+			: undefined;
+		const ownerProfileId = applyOwner ? rawOwner.trim() || null : undefined;
+
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+
+		// The relation values are identical for every selected row, so validate once.
+		const relationError = await validateTransactionRelations(
+			supabase,
+			householdId,
+			{
+				category_id: applyCategory ? categoryId : undefined,
+				subcategory_id: applyCategory ? subcategoryId : undefined,
+				owner_profile_id: applyOwner ? ownerProfileId : undefined
+			},
+			user.id
+		);
+		if (relationError) return fail(400, { success: false, message: relationError });
+
+		const [editableSet, { data: existingRows }] = await Promise.all([
+			getEditableTransactionIds(supabase, user.id, transactionIds),
+			supabaseAdmin
+				.from('transactions')
+				.select('id, category_id, subcategory_id, owner_profile_id')
+				.eq('household_id', householdId)
+				.in('id', transactionIds)
+		]);
+
+		if (editableSet.size !== transactionIds.length) {
+			return fail(403, { success: false, message: 'Sem permissão para uma ou mais transações' });
+		}
+
+		const existingById = new Map((existingRows ?? []).map((row) => [row.id, row]));
+		const now = new Date().toISOString();
+		let updated = 0;
+
+		for (const transactionId of transactionIds) {
+			const existing = existingById.get(transactionId);
+			if (!existing) return fail(404, { success: false, message: 'Transação não encontrada' });
+
+			const nextCategory = applyCategory ? categoryId : existing.category_id;
+			const nextSubcategory = applyCategory ? subcategoryId : existing.subcategory_id;
+			const nextOwner = applyOwner ? ownerProfileId : existing.owner_profile_id;
+
+			if (
+				existing.category_id === nextCategory &&
+				existing.subcategory_id === nextSubcategory &&
+				existing.owner_profile_id === nextOwner
+			) {
+				continue;
+			}
+
+			const patch: Record<string, unknown> = { review_status: 'confirmed', updated_at: now };
+			if (applyCategory) {
+				patch.category_id = categoryId;
+				patch.subcategory_id = subcategoryId;
+			}
+			if (applyOwner) {
+				patch.owner_profile_id = ownerProfileId;
+			}
+
+			const { error } = await supabaseAdmin
+				.from('transactions')
+				.update(patch)
+				.eq('id', transactionId)
+				.eq('household_id', householdId);
+			if (error) return fail(500, { success: false, message: error.message });
+
+			if (applyCategory && categoryId) {
+				await learnFromTransactionAdjustment(supabaseAdmin, {
+					householdId,
+					userId: user.id,
+					transactionId,
+					categoryId,
+					subcategoryId: subcategoryId ?? null,
+					ownerProfileId: applyOwner ? (ownerProfileId ?? null) : existing.owner_profile_id
+				});
+			}
+
 			updated += 1;
 		}
 

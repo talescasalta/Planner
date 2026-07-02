@@ -88,6 +88,9 @@ export interface Transaction {
 	currency: string;
 	source_name: string | null;
 	source_type: TransactionSourceType | null;
+	installment_number: number | null;
+	installment_total: number | null;
+	installment_group_key: string | null;
 	reference_month: string | null;
 	paid_by_user_id: string | null;
 	owner_profile_id: string | null;

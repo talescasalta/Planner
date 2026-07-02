@@ -12,6 +12,7 @@
 				<a href="/app" class="text-sm text-gray-600 hover:text-gray-900">Dashboard</a>
 				<a href="/app/groups" class="text-sm text-gray-600 hover:text-gray-900">Grupos</a>
 				<a href="/app/transactions" class="text-sm text-gray-600 hover:text-gray-900">Transações</a>
+				<a href="/app/installments" class="text-sm text-gray-600 hover:text-gray-900">Parcelas</a>
 				<a href="/app/categories" class="text-sm text-gray-600 hover:text-gray-900">Categorias</a>
 				<a href="/app/imports" class="text-sm text-gray-600 hover:text-gray-900">Importar fatura</a>
 				<a href="/app/review" class="text-sm text-gray-600 hover:text-gray-900">Revisão</a>

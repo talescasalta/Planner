@@ -171,6 +171,9 @@ export const actions: Actions = {
 				source_type: resolved.sourceType,
 				reference_month: referenceMonth,
 				import_dedup_key: buildImportDedupKey(r),
+				installment_number: r.installment_number ?? null,
+				installment_total: r.installment_total ?? null,
+				installment_group_key: r.installment_group_key ?? null,
 				classification_method: 'imported',
 				review_status: 'needs_review',
 				created_by_user_id: user.id
