@@ -21,6 +21,9 @@ export interface ParsedRow {
 	currency: string;
 	clean_description: string;
 	external_id?: string;
+	installment_number?: number;
+	installment_total?: number;
+	installment_group_key?: string;
 }
 
 const DATE_CANDIDATES = ['date', 'data', 'data lançamento', 'data lancamento', 'dt', 'fecha'];
@@ -97,13 +100,21 @@ export function parseCsvBuffer(
 		const date = normalizeDate(rawDate);
 		if (!date) continue;
 
+		const clean = cleanDescription(rawDescription);
+		const installment = parseInstallment(rawDescription);
+
 		rows.push({
 			date,
 			description: rawDescription,
 			amount,
 			currency: mapping.currency ?? 'BRL',
-			clean_description: cleanDescription(rawDescription),
-			external_id: rawIdentifier || undefined
+			clean_description: clean,
+			external_id: rawIdentifier || undefined,
+			installment_number: installment?.number,
+			installment_total: installment?.total,
+			installment_group_key: installment
+				? installmentGroupKey(clean, amount, installment.total)
+				: undefined
 		});
 	}
 
@@ -184,6 +195,49 @@ export function buildDuplicateKey(row: ParsedRow): string {
 export function buildImportDedupKey(row: Pick<ParsedRow, 'date' | 'clean_description' | 'amount' | 'currency'>): string {
 	const cleanDescription = row.clean_description.trim().replace(/\s+/g, ' ').toUpperCase();
 	return `${row.date}|${cleanDescription}|${row.amount.toFixed(2)}|${row.currency || 'BRL'}`;
+}
+
+// Credit card statements mark installments as "k/n" (installment k of n),
+// often prefixed with "Parcela"/"Parc". We only trust a bare trailing "k/n"
+// when it is at the very end of the description; a "Parcela"/"de" keyword may
+// appear anywhere. Totals are capped at 72 and k must be within 1..n so that
+// dates ("12/06") and fractions are not mistaken for installments.
+const INSTALLMENT_PATTERNS: RegExp[] = [
+	/\bparc(?:ela)?\.?\s*(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})\b/i,
+	/(?:^|[\s-])(\d{1,2})\s*\/\s*(\d{1,2})\s*$/,
+	/(?:^|[\s-])(\d{1,2})\s+de\s+(\d{1,2})\s*$/i
+];
+
+export function parseInstallment(description: string): { number: number; total: number } | null {
+	const text = description.normalize('NFD').replace(/\p{Diacritic}/gu, '');
+	for (const re of INSTALLMENT_PATTERNS) {
+		const match = text.match(re);
+		if (!match) continue;
+		const number = Number(match[1]);
+		const total = Number(match[2]);
+		if (!Number.isInteger(number) || !Number.isInteger(total)) continue;
+		if (total < 2 || total > 72) continue;
+		if (number < 1 || number > total) continue;
+		return { number, total };
+	}
+	return null;
+}
+
+// Ties installments of the same purchase together across statements. The clean
+// description has the "k/n" marker stripped so every month lands on the same
+// key; the per-installment amount and total keep unrelated purchases apart.
+export function installmentGroupKey(cleanDescription: string, amount: number, total: number): string {
+	const base = cleanDescription
+		.normalize('NFD')
+		.replace(/\p{Diacritic}/gu, '')
+		.toUpperCase()
+		.replace(/\bPARC(?:ELA)?\.?\s*\d{1,2}\s*(?:\/|DE)\s*\d{1,2}\b/g, '')
+		.replace(/(?:^|[\s-])\d{1,2}\s*\/\s*\d{1,2}\s*$/g, '')
+		.replace(/(?:^|[\s-])\d{1,2}\s+DE\s+\d{1,2}\s*$/g, '')
+		.replace(/\s*-\s*$/g, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+	return `${base}|${total}|${Math.abs(amount).toFixed(2)}`;
 }
 
 function normalizePartyName(value: string): string {
