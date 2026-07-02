@@ -309,15 +309,14 @@ Criterios:
 - resumo do filtro: quantidade, despesas, creditos e saldo;
 - tabela mostra apenas o mes selecionado;
 - paginacao aplicada dentro do filtro;
-- classificacao aparece como texto/chip;
-- se existir ID salvo, mostrar categoria/subcategoria salvas;
-- se nao existir ID mas houver `classification_suggestion`, mostrar como "sugerido";
+- cada linha mostra dropdowns compactos sempre visiveis de categoria, subcategoria e atribuicao, estilo planilha;
+- alterar qualquer dropdown salva a linha imediatamente (auto-save), sem abrir editor nem botao de salvar;
+- a subcategoria depende da categoria da linha e permite "criar nova" inline;
+- trocar categoria limpa subcategoria invalida antes de salvar;
+- se existir ID salvo, os dropdowns mostram categoria/subcategoria salvas;
+- se nao existir ID mas houver `classification_suggestion`, mostrar a sugestao como texto auxiliar ("sugerido");
 - se nao houver nada, mostrar "Sem categoria";
-- clicar na classificacao ou atribuicao abre editor inline apenas naquela linha;
-- editor contem categoria, subcategoria dependente e atribuicao;
-- trocar categoria limpa subcategoria invalida;
-- salvar linha imediatamente;
-- cancelar restaura o estado visual sem alterar banco.
+- selecionar varias linhas permite aplicar a mesma categoria/subcategoria/atribuicao em lote num unico submit.
 
 ### 7.7 Excluir Transacoes
 
@@ -676,8 +675,8 @@ Diretrizes:
 
 - a tela inicial autenticada deve ser o produto, nao uma landing page;
 - telas operacionais devem ser densas, claras e feitas para uso recorrente;
-- evitar dropdowns sempre visiveis em tabelas longas;
-- preferir leitura rapida com edicao sob demanda;
+- a aba Transacoes usa dropdowns compactos sempre visiveis com auto-save por linha (estilo planilha), priorizando o minimo de cliques na revisao mensal;
+- em outras tabelas, preferir leitura rapida com edicao sob demanda;
 - a aba Transacoes deve priorizar filtro por mes, resumo e classificacao legivel;
 - acoes destrutivas precisam de confirmacao;
 - textos devem caber em desktop e mobile;

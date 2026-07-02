@@ -15,22 +15,20 @@
 	let parentCategories = $derived(categories.filter((c) => !c.parent_id));
 	let filterSubcategories = $derived(filters.categoryId ? categories.filter((c) => c.parent_id === filters.categoryId) : []);
 	let selectedForDelete = $state<string[]>([]);
-	let editingId = $state<string | null>(null);
-	let editCategoryId = $state('');
-	let editSubcategoryId = $state('');
-	let editOwnerProfileId = $state('');
 	let newSubcategoryName = $state('');
 	let savingId = $state<string | null>(null);
 	let confirmingId = $state<string | null>(null);
 	let statusChangingId = $state<string | null>(null);
+	// Row currently showing the inline "create subcategory" input instead of the select.
 	let creatingSubcategoryForId = $state<string | null>(null);
-	let editSubcategories = $derived(editCategoryId ? categories.filter((c) => c.parent_id === editCategoryId) : []);
 
 	let searchTerm = $state('');
 	let amountSort = $state<'none' | 'desc' | 'asc'>('none');
 
 	// Bulk-apply bar: '__keep__' means "leave this field untouched".
 	const KEEP = '__keep__';
+	// Sentinel option in the per-row subcategory select that opens the inline create input.
+	const NEW_SUBCATEGORY = '__new__';
 	let bulkCategoryId = $state(KEEP);
 	let bulkSubcategoryId = $state('');
 	let bulkOwnerId = $state(KEEP);
@@ -38,13 +36,6 @@
 	let bulkCategoryRealId = $derived(bulkCategoryId !== KEEP && bulkCategoryId !== '' ? bulkCategoryId : '');
 	let bulkSubcategories = $derived(bulkCategoryRealId ? categories.filter((c) => c.parent_id === bulkCategoryRealId) : []);
 	let bulkHasChange = $derived(bulkCategoryId !== KEEP || bulkOwnerId !== KEEP);
-
-	// Mass-edit mode: every visible row becomes editable with its own selects and
-	// saves in one submit via the ?/update_classification action.
-	type MassRow = { categoryId: string; subcategoryId: string; ownerProfileId: string };
-	let massEditing = $state(false);
-	let massSaving = $state(false);
-	let massRows = $state<Record<string, MassRow>>({});
 
 	let visibleTransactions = $derived.by(() => {
 		const term = searchTerm.trim().toLowerCase();
@@ -71,34 +62,9 @@
 	}
 
 	$effect(() => {
-		if (editSubcategoryId && !editSubcategories.some((sub) => sub.id === editSubcategoryId)) {
-			editSubcategoryId = '';
-		}
-	});
-
-	$effect(() => {
 		if (bulkSubcategoryId && !bulkSubcategories.some((sub) => sub.id === bulkSubcategoryId)) {
 			bulkSubcategoryId = '';
 		}
-	});
-
-	// While mass-editing, make sure every visible row has an entry (e.g. if the
-	// search widens), without discarding edits already in progress.
-	$effect(() => {
-		if (!massEditing) return;
-		let added = false;
-		const next = { ...massRows };
-		for (const tx of visibleTransactions) {
-			if (!next[tx.id]) {
-				next[tx.id] = {
-					categoryId: tx.category_id ?? '',
-					subcategoryId: tx.subcategory_id ?? '',
-					ownerProfileId: tx.owner_profile_id ?? ''
-				};
-				added = true;
-			}
-		}
-		if (added) massRows = next;
 	});
 
 	function formatCurrency(value: number) {
@@ -165,110 +131,61 @@
 		selectedForDelete = checked ? visibleTransactions.map((tx) => tx.id) : [];
 	}
 
-	function startEdit(tx: Transaction) {
-		editingId = tx.id;
-		editCategoryId = tx.category_id ?? '';
-		editSubcategoryId = tx.subcategory_id ?? '';
-		editOwnerProfileId = tx.owner_profile_id ?? '';
-		newSubcategoryName = '';
-	}
-
-	function cancelEdit() {
-		editingId = null;
-		editCategoryId = '';
-		editSubcategoryId = '';
-		editOwnerProfileId = '';
-		newSubcategoryName = '';
-	}
-
-	function classificationText(tx: Transaction) {
-		return tx.category_display_name ?? 'Sem categoria';
-	}
-
-	function subcategoryText(tx: Transaction) {
-		return tx.subcategory_display_name ?? '';
-	}
-
-	function assignmentText(tx: Transaction) {
-		return tx.owner_profile?.name ?? 'Sem atribuição';
-	}
-
-	function sourceClasses(tx: Transaction) {
-		if (tx.classification_display_source === 'suggestion') {
-			return 'border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100';
-		}
-		if (tx.classification_display_source === 'empty') {
-			return 'border-dashed border-gray-300 bg-white text-gray-500 hover:bg-gray-50';
-		}
-		return 'border-emerald-100 bg-emerald-50 text-emerald-900 hover:bg-emerald-100';
-	}
-
-	function keepScrollOnEditSubmit(transactionId: string, submitter: HTMLElement | null) {
-		const scrollY = window.scrollY;
-		const isCreatingSubcategory =
-			submitter instanceof HTMLButtonElement && submitter.formAction.includes('create_subcategory');
-		if (isCreatingSubcategory) {
-			creatingSubcategoryForId = transactionId;
-		} else {
-			savingId = transactionId;
-		}
-
-		return async ({ result, update }: { result: { type: string; data?: Record<string, unknown> }; update: () => Promise<void> }) => {
-			await update();
-			requestAnimationFrame(() => {
-				if (isCreatingSubcategory && result.type === 'success') {
-					const createdSubcategoryId = result.data?.createdSubcategoryId;
-					if (typeof createdSubcategoryId === 'string') {
-						editSubcategoryId = createdSubcategoryId;
-						newSubcategoryName = '';
-					}
-				}
-				window.scrollTo({ top: scrollY });
-				savingId = null;
-				creatingSubcategoryForId = null;
-			});
-		};
-	}
-
-	function enterMassEdit() {
-		const next: Record<string, MassRow> = {};
-		for (const tx of visibleTransactions) {
-			next[tx.id] = {
-				categoryId: tx.category_id ?? '',
-				subcategoryId: tx.subcategory_id ?? '',
-				ownerProfileId: tx.owner_profile_id ?? ''
-			};
-		}
-		massRows = next;
-		editingId = null;
-		massEditing = true;
-	}
-
-	function exitMassEdit() {
-		massEditing = false;
-		massRows = {};
-	}
-
-	function massSubcategories(categoryId: string) {
+	function rowSubcategories(categoryId: string | null | undefined) {
 		return categoryId ? categories.filter((c) => c.parent_id === categoryId) : [];
 	}
 
-	function onMassCategoryChange(id: string) {
-		const row = massRows[id];
-		if (row && row.subcategoryId && !massSubcategories(row.categoryId).some((s) => s.id === row.subcategoryId)) {
-			row.subcategoryId = '';
-		}
+	function suggestionLabel(tx: Transaction): string | null {
+		if (tx.classification_display_source !== 'suggestion') return null;
+		const category = tx.category_display_name ?? '';
+		const subcategory = tx.subcategory_display_name;
+		return subcategory ? `${category} · ${subcategory}` : category;
 	}
 
-	function massEditEnhance() {
+	// Spreadsheet-style rows: every select saves its row immediately on change.
+	function submitRowForm(event: Event) {
+		(event.currentTarget as HTMLSelectElement).form?.requestSubmit();
+	}
+
+	function onRowCategoryChange(event: Event) {
+		const target = event.currentTarget as HTMLSelectElement;
+		const form = target.form;
+		if (!form) return;
+		// The old subcategory no longer belongs to the new category; clear it
+		// before saving so the server does not reject the pair.
+		const sub = form.elements.namedItem('subcategory_id');
+		if (sub instanceof HTMLSelectElement || sub instanceof HTMLInputElement) sub.value = '';
+		form.requestSubmit();
+	}
+
+	function onRowSubcategoryChange(event: Event, transactionId: string) {
+		const target = event.currentTarget as HTMLSelectElement;
+		if (target.value === NEW_SUBCATEGORY) {
+			creatingSubcategoryForId = transactionId;
+			newSubcategoryName = '';
+			return;
+		}
+		target.form?.requestSubmit();
+	}
+
+	function cancelCreateSubcategory() {
+		creatingSubcategoryForId = null;
+		newSubcategoryName = '';
+	}
+
+	function rowEnhance(transactionId: string, submitter: HTMLElement | null) {
 		const scrollY = window.scrollY;
-		massSaving = true;
+		const isCreatingSubcategory =
+			submitter instanceof HTMLButtonElement && submitter.formAction.includes('create_subcategory');
+		savingId = transactionId;
 
 		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
 			await update();
-			massSaving = false;
-			if (result.type === 'success') exitMassEdit();
-			requestAnimationFrame(() => window.scrollTo({ top: scrollY }));
+			requestAnimationFrame(() => {
+				window.scrollTo({ top: scrollY });
+				savingId = null;
+				if (isCreatingSubcategory && result.type === 'success') cancelCreateSubcategory();
+			});
 		};
 	}
 
@@ -533,34 +450,6 @@
 			<input type="hidden" name="status_filter" value={filters.status} />
 		</form>
 
-		<!-- Target form for mass-edit: per-row selects below associate via form= -->
-		<form id="mass-edit-form" method="POST" action="?/update_classification" use:enhance={massEditEnhance} data-sveltekit-noscroll></form>
-
-		{#if massEditing}
-			<div class="flex flex-col gap-3 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-				<p class="text-sm font-medium text-indigo-900">
-					Editando {visibleTransactions.length} linha{visibleTransactions.length === 1 ? '' : 's'} — ajuste o que precisar e salve tudo de uma vez.
-				</p>
-				<div class="flex gap-2">
-					<button
-						type="submit"
-						form="mass-edit-form"
-						disabled={massSaving}
-						class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
-					>
-						{massSaving ? 'Salvando...' : 'Salvar tudo'}
-					</button>
-					<button
-						type="button"
-						onclick={exitMassEdit}
-						disabled={massSaving}
-						class="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-					>
-						Cancelar
-					</button>
-				</div>
-			</div>
-		{:else}
 		<div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm lg:flex-row lg:items-end lg:justify-between">
 			<div class="flex items-center gap-3">
 				<p class="text-sm font-medium text-gray-700">{selectedForDelete.length} selecionadas</p>
@@ -635,25 +524,15 @@
 				</form>
 			{/if}
 
-			<div class="flex gap-2 self-start lg:self-auto">
-				<button
-					type="button"
-					onclick={enterMassEdit}
-					class="px-3 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 rounded-md hover:bg-indigo-100"
-				>
-					Editar em massa
-				</button>
-				<button
-					type="submit"
-					form="transactions-delete-selected-form"
-					disabled={selectedForDelete.length === 0}
-					class="px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100 disabled:opacity-50 disabled:hover:bg-red-50"
-				>
-					Excluir selecionadas
-				</button>
-			</div>
+			<button
+				type="submit"
+				form="transactions-delete-selected-form"
+				disabled={selectedForDelete.length === 0}
+				class="self-start px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100 disabled:opacity-50 disabled:hover:bg-red-50 lg:self-auto"
+			>
+				Excluir selecionadas
+			</button>
 		</div>
-		{/if}
 
 		<div class="overflow-x-auto">
 			<table class="min-w-full divide-y divide-gray-200 bg-white shadow rounded-lg">
@@ -693,8 +572,8 @@
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-gray-200">
-					{#each visibleTransactions as tx}
-						<tr class={editingId === tx.id ? 'bg-indigo-50/40' : ''}>
+					{#each visibleTransactions as tx (tx.id)}
+						<tr class={savingId === tx.id ? 'bg-indigo-50/40' : ''}>
 							<td class="px-4 py-3 align-top">
 								<input
 									type="checkbox"
@@ -713,179 +592,111 @@
 								</span>
 							</td>
 
-							{#if massEditing && massRows[tx.id]}
-								<td class="px-4 py-3 text-sm text-gray-600 align-top" colspan="2">
-									<div class="flex flex-wrap items-end gap-2">
-										<input type="hidden" name="transaction_id" value={tx.id} form="mass-edit-form" />
-										<label class="text-xs font-medium text-gray-600">
-											Categoria
-											<select
-												name="category_id"
-												form="mass-edit-form"
-												bind:value={massRows[tx.id].categoryId}
-												onchange={() => onMassCategoryChange(tx.id)}
-												class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
-											>
-												<option value="">Sem categoria</option>
-												{#each parentCategories as cat}
-													<option value={cat.id}>{cat.name}</option>
-												{/each}
-											</select>
-										</label>
-										<label class="text-xs font-medium text-gray-600">
-											Subcategoria
-											<select
-												name="subcategory_id"
-												form="mass-edit-form"
-												bind:value={massRows[tx.id].subcategoryId}
-												class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
-											>
-												<option value="">Sem subcategoria</option>
-												{#each massSubcategories(massRows[tx.id].categoryId) as sub}
-													<option value={sub.id}>{sub.name}</option>
-												{/each}
-											</select>
-										</label>
-										<label class="text-xs font-medium text-gray-600">
-											Atribuir a
-											<select
-												name="owner_profile_id"
-												form="mass-edit-form"
-												bind:value={massRows[tx.id].ownerProfileId}
-												class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
-											>
-												<option value="">Sem atribuição</option>
-												{#each profiles as p}
-													<option value={p.id}>{p.name}</option>
-												{/each}
-											</select>
-										</label>
-									</div>
-								</td>
-							{:else if editingId === tx.id}
-								<td class="px-4 py-3 text-sm text-gray-600 align-top" colspan="2">
-									<form
-										method="POST"
-										action="?/update_single_classification"
-										use:enhance={({ submitter }) => keepScrollOnEditSubmit(tx.id, submitter)}
-										data-sveltekit-noscroll
-										class="flex flex-wrap items-end gap-2"
+							<td class="px-4 py-3 text-sm align-top">
+								<!-- Hidden per-row form; the selects in this row associate via form= and
+								     auto-save on change, spreadsheet style. -->
+								<form
+									id={`tx-form-${tx.id}`}
+									method="POST"
+									action="?/update_single_classification"
+									use:enhance={({ submitter }) => rowEnhance(tx.id, submitter)}
+									data-sveltekit-noscroll
+								>
+									<input type="hidden" name="transaction_id" value={tx.id} />
+									<input type="hidden" name="month" value={selectedMonth} />
+									<input type="hidden" name="page" value={data.page} />
+									<input type="hidden" name="source_type_filter" value={filters.sourceType} />
+									<input type="hidden" name="category_id_filter" value={filters.categoryId} />
+									<input type="hidden" name="subcategory_id_filter" value={filters.subcategoryId} />
+									<input type="hidden" name="status_filter" value={filters.status} />
+								</form>
+								<div class="flex flex-col gap-1">
+									<select
+										name="category_id"
+										form={`tx-form-${tx.id}`}
+										value={tx.category_id ?? ''}
+										disabled={savingId === tx.id}
+										onchange={onRowCategoryChange}
+										aria-label="Categoria"
+										class="block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
 									>
-										<input type="hidden" name="transaction_id" value={tx.id} />
-										<input type="hidden" name="month" value={selectedMonth} />
-										<input type="hidden" name="page" value={data.page} />
-										<input type="hidden" name="source_type_filter" value={filters.sourceType} />
-										<input type="hidden" name="category_id_filter" value={filters.categoryId} />
-										<input type="hidden" name="subcategory_id_filter" value={filters.subcategoryId} />
-										<input type="hidden" name="status_filter" value={filters.status} />
-										<label class="min-w-44 text-xs font-medium text-gray-600">
-											Categoria
-											<select
-												name="category_id"
-												bind:value={editCategoryId}
-												onchange={() => (editSubcategoryId = '')}
-												class="mt-1 block w-44 rounded-md border-gray-300 shadow-sm text-sm px-2 py-1"
+										<option value="">Sem categoria</option>
+										{#each parentCategories as cat}
+											<option value={cat.id}>{cat.name}</option>
+										{/each}
+									</select>
+									{#if creatingSubcategoryForId === tx.id}
+										<div class="flex w-40 gap-1">
+											<input type="hidden" name="subcategory_id" value={tx.subcategory_id ?? ''} form={`tx-form-${tx.id}`} />
+											<input
+												name="new_subcategory_name"
+												form={`tx-form-${tx.id}`}
+												type="text"
+												bind:value={newSubcategoryName}
+												placeholder="Nova subcategoria"
+												class="block min-w-0 flex-1 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
+											/>
+											<button
+												type="submit"
+												form={`tx-form-${tx.id}`}
+												formaction="?/create_subcategory"
+												disabled={!newSubcategoryName.trim() || savingId === tx.id}
+												class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-green-600 text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+												title="Criar subcategoria"
+												aria-label="Criar subcategoria"
 											>
-												<option value="">Sem categoria</option>
-												{#each parentCategories as cat}
-													<option value={cat.id}>{cat.name}</option>
-												{/each}
-											</select>
-										</label>
-										<label class="min-w-44 text-xs font-medium text-gray-600">
-											Subcategoria
-											<select
-												name="subcategory_id"
-												bind:value={editSubcategoryId}
-												disabled={!editCategoryId}
-												class="mt-1 block w-44 rounded-md border-gray-300 shadow-sm text-sm px-2 py-1 disabled:bg-gray-100"
+												<Plus class="h-4 w-4" />
+											</button>
+											<button
+												type="button"
+												onclick={cancelCreateSubcategory}
+												class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
+												title="Cancelar"
+												aria-label="Cancelar criação de subcategoria"
 											>
-												<option value="">Sem subcategoria</option>
-												{#each editSubcategories as sub}
-													<option value={sub.id}>{sub.name}</option>
-												{/each}
-											</select>
-										</label>
-										<label class="min-w-44 text-xs font-medium text-gray-600">
-											Nova subcategoria
-											<div class="mt-1 flex w-56 gap-1">
-												<input
-													name="new_subcategory_name"
-													type="text"
-													bind:value={newSubcategoryName}
-													disabled={!editCategoryId || creatingSubcategoryForId === tx.id}
-													placeholder="Criar aqui"
-													class="block min-w-0 flex-1 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
-												/>
-												<button
-													type="submit"
-													formaction="?/create_subcategory"
-													disabled={!editCategoryId || !newSubcategoryName.trim() || creatingSubcategoryForId === tx.id}
-													class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-green-600 text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-													title="Criar subcategoria"
-													aria-label="Criar subcategoria"
-												>
-													<Plus class="h-4 w-4" />
-												</button>
-											</div>
-										</label>
-										<label class="min-w-44 text-xs font-medium text-gray-600">
-											Atribuir a
-											<select
-												name="owner_profile_id"
-												bind:value={editOwnerProfileId}
-												class="mt-1 block w-44 rounded-md border-gray-300 shadow-sm text-sm px-2 py-1"
-											>
-												<option value="">Sem atribuição</option>
-												{#each profiles as p}
-													<option value={p.id}>{p.name}</option>
-												{/each}
-											</select>
-										</label>
-										<button
-											type="submit"
-											disabled={savingId === tx.id}
-											class="inline-flex min-w-20 items-center justify-center px-3 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+												<X class="h-4 w-4" />
+											</button>
+										</div>
+									{:else}
+										<select
+											name="subcategory_id"
+											form={`tx-form-${tx.id}`}
+											value={tx.subcategory_id ?? ''}
+											disabled={savingId === tx.id || !tx.category_id}
+											onchange={(event) => onRowSubcategoryChange(event, tx.id)}
+											aria-label="Subcategoria"
+											class="block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
 										>
-											{savingId === tx.id ? 'Salvando...' : 'Salvar'}
-										</button>
-										<button
-											type="button"
-											onclick={cancelEdit}
-											class="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-										>
-											Cancelar
-										</button>
-									</form>
-								</td>
-							{:else}
-								<td class="px-4 py-3 text-sm align-top">
-									<button
-										type="button"
-										onclick={() => startEdit(tx)}
-										class={`inline-flex max-w-sm flex-col items-start gap-0.5 rounded-md border px-2.5 py-1.5 text-left transition ${sourceClasses(tx)}`}
-										aria-label="Editar classificação"
-									>
-										<span class="font-medium">{classificationText(tx)}</span>
-										<span class="text-xs opacity-75">
-											{subcategoryText(tx) || 'Sem subcategoria'}
-											{#if tx.classification_display_source === 'suggestion'}
-												<span aria-label="sugestão da classificação"> · sugerido</span>
+											<option value="">Sem subcategoria</option>
+											{#each rowSubcategories(tx.category_id) as sub}
+												<option value={sub.id}>{sub.name}</option>
+											{/each}
+											{#if tx.category_id}
+												<option value={NEW_SUBCATEGORY}>+ Criar nova…</option>
 											{/if}
-										</span>
-									</button>
-								</td>
-								<td class="px-4 py-3 text-sm text-gray-700 align-top">
-									<button
-										type="button"
-										onclick={() => startEdit(tx)}
-										class="inline-flex max-w-44 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-left text-gray-700 hover:bg-gray-100"
-										aria-label="Editar atribuição"
-									>
-										{assignmentText(tx)}
-									</button>
-								</td>
-							{/if}
+										</select>
+									{/if}
+									{#if suggestionLabel(tx)}
+										<span class="w-40 text-xs text-amber-700">sugerido: {suggestionLabel(tx)}</span>
+									{/if}
+								</div>
+							</td>
+							<td class="px-4 py-3 text-sm align-top">
+								<select
+									name="owner_profile_id"
+									form={`tx-form-${tx.id}`}
+									value={tx.owner_profile_id ?? ''}
+									disabled={savingId === tx.id}
+									onchange={submitRowForm}
+									aria-label="Atribuir a"
+									class="block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
+								>
+									<option value="">Sem atribuição</option>
+									{#each profiles as p}
+										<option value={p.id}>{p.name}</option>
+									{/each}
+								</select>
+							</td>
 
 							<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right align-top">
 								{tx.amount.toLocaleString('pt-BR', { style: 'currency', currency: tx.currency ?? 'BRL' })}
