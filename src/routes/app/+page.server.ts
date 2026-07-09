@@ -1,8 +1,13 @@
-import type { PageServerLoad } from './$types';
+import type { PageServerLoad, Actions } from './$types';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '$lib/types/database';
+import { z } from 'zod';
+import { fail } from '@sveltejs/kit';
 import { getReadableTransactionIds } from '$lib/server/access';
 import { getUserHouseholdId } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { loadCategoriesForUser } from '$lib/server/categories';
+import { callLlm } from '$lib/server/llm';
 
 const NO_MONTH = 'Sem mes';
 const UNCATEGORIZED_ID = '__uncategorized__';
@@ -14,12 +19,16 @@ type TransactionRow = {
 	currency: string | null;
 	date: string;
 	description: string;
+	clean_description: string | null;
 	reference_month: string | null;
 	review_status: string;
 	category_id: string | null;
 	subcategory_id: string | null;
 	owner_profile_id: string | null;
 	paid_by_user_id: string | null;
+	installment_number: number | null;
+	installment_total: number | null;
+	installment_group_key: string | null;
 	category: { id: string | null; name: string | null; parent_id: string | null } | null;
 	subcategory: { id: string | null; name: string | null; parent_id: string | null } | null;
 	owner_profile: { id: string | null; name: string | null } | null;
@@ -150,6 +159,300 @@ function buildMonthlyTrend(rows: TransactionRow[]) {
 		.slice(-6);
 }
 
+function addMonths(month: string, delta: number): string {
+	const [y, m] = month.split('-').map(Number);
+	if (!y || !m) return month;
+	const total = y * 12 + (m - 1) + delta;
+	const year = Math.floor(total / 12);
+	const mon = (total % 12) + 1;
+	return `${year}-${String(mon).padStart(2, '0')}`;
+}
+
+// Per-month expense totals keyed by top-level category, over every month that
+// has data. Feeds the category trend chart and the above-normal comparison.
+function buildCategoryMonthTotals(rows: TransactionRow[], categoryMap: CategoryMap) {
+	const byMonth = new Map<string, Map<string, { id: string; name: string; total: number }>>();
+	for (const tx of rows) {
+		const amount = Number(tx.amount);
+		if (!(amount < 0)) continue;
+		const month = rowMonth(tx);
+		if (month === NO_MONTH) continue;
+		const { category } = resolveTaxonomy(tx, categoryMap);
+		const id = category?.id ?? UNCATEGORIZED_ID;
+		const name = category?.name ?? 'Sem categoria';
+		const bucket = byMonth.get(month) ?? new Map();
+		const entry = bucket.get(id) ?? { id, name, total: 0 };
+		entry.total += Math.abs(amount);
+		bucket.set(id, entry);
+		byMonth.set(month, bucket);
+	}
+	return byMonth;
+}
+
+const TREND_WINDOW = 12;
+const TREND_TOP_CATEGORIES = 5;
+const OTHERS_ID = '__others__';
+
+function buildCategoryTrend(byMonth: ReturnType<typeof buildCategoryMonthTotals>) {
+	const months = Array.from(byMonth.keys()).sort().slice(-TREND_WINDOW);
+	if (months.length === 0) return { months: [], series: [] as { id: string; name: string }[], points: [] };
+
+	const totals = new Map<string, { id: string; name: string; total: number }>();
+	for (const month of months) {
+		for (const entry of byMonth.get(month)?.values() ?? []) {
+			const acc = totals.get(entry.id) ?? { id: entry.id, name: entry.name, total: 0 };
+			acc.total += entry.total;
+			totals.set(entry.id, acc);
+		}
+	}
+	const ranked = Array.from(totals.values()).sort((a, b) => b.total - a.total);
+	const top = ranked.slice(0, TREND_TOP_CATEGORIES);
+	const hasOthers = ranked.length > TREND_TOP_CATEGORIES;
+	const series = [...top.map((c) => ({ id: c.id, name: c.name })), ...(hasOthers ? [{ id: OTHERS_ID, name: 'Outras' }] : [])];
+	const topIds = new Set(top.map((c) => c.id));
+
+	const points = months.map((month) => {
+		const bucket = byMonth.get(month);
+		const values: Record<string, number> = {};
+		let total = 0;
+		for (const s of series) values[s.id] = 0;
+		for (const entry of bucket?.values() ?? []) {
+			const key = topIds.has(entry.id) ? entry.id : OTHERS_ID;
+			if (key === OTHERS_ID && !hasOthers) continue;
+			values[key] = (values[key] ?? 0) + entry.total;
+			total += entry.total;
+		}
+		return { month, total, values };
+	});
+
+	return { months, series, points };
+}
+
+const ABOVE_NORMAL_BASELINE_MONTHS = 6;
+const ABOVE_NORMAL_MIN_DELTA = 30;
+
+function buildAboveNormal(
+	byMonth: ReturnType<typeof buildCategoryMonthTotals>,
+	selectedMonth: string
+) {
+	if (!selectedMonth) return [];
+	const previousMonths = Array.from(byMonth.keys())
+		.filter((m) => m < selectedMonth)
+		.sort()
+		.slice(-ABOVE_NORMAL_BASELINE_MONTHS);
+	if (previousMonths.length < 2) return [];
+
+	const names = new Map<string, string>();
+	const currentTotals = new Map<string, number>();
+	for (const entry of byMonth.get(selectedMonth)?.values() ?? []) {
+		currentTotals.set(entry.id, entry.total);
+		names.set(entry.id, entry.name);
+	}
+	const baselineSums = new Map<string, number>();
+	for (const month of previousMonths) {
+		for (const entry of byMonth.get(month)?.values() ?? []) {
+			baselineSums.set(entry.id, (baselineSums.get(entry.id) ?? 0) + entry.total);
+			if (!names.has(entry.id)) names.set(entry.id, entry.name);
+		}
+	}
+
+	const out: Array<{ id: string; name: string; current: number; baseline: number; delta: number; deltaPercent: number | null }> = [];
+	for (const id of new Set([...currentTotals.keys(), ...baselineSums.keys()])) {
+		const current = currentTotals.get(id) ?? 0;
+		const baseline = (baselineSums.get(id) ?? 0) / previousMonths.length;
+		const delta = current - baseline;
+		if (Math.abs(delta) < ABOVE_NORMAL_MIN_DELTA) continue;
+		out.push({
+			id,
+			name: names.get(id) ?? 'Sem categoria',
+			current,
+			baseline,
+			delta,
+			deltaPercent: baseline > 0 ? Math.round((delta / baseline) * 100) : null
+		});
+	}
+	return out.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 8);
+}
+
+function buildSavingsHistory(rows: TransactionRow[]) {
+	const map = new Map<string, { expenses: number; credits: number }>();
+	for (const row of rows) {
+		const month = rowMonth(row);
+		if (month === NO_MONTH) continue;
+		const bucket = map.get(month) ?? { expenses: 0, credits: 0 };
+		const amount = Number(row.amount);
+		bucket.expenses += expenseValue(amount);
+		bucket.credits += creditValue(amount);
+		map.set(month, bucket);
+	}
+	return Array.from(map, ([month, v]) => ({
+		month,
+		expenses: v.expenses,
+		credits: v.credits,
+		rate: v.credits > 0 ? (v.credits - v.expenses) / v.credits : null
+	}))
+		.sort((a, b) => a.month.localeCompare(b.month))
+		.slice(-12);
+}
+
+function recurrenceKey(tx: TransactionRow): string {
+	return (tx.clean_description || tx.description || '')
+		.normalize('NFD')
+		.replace(/\p{Diacritic}/gu, '')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.toUpperCase();
+}
+
+const RECURRENCE_LOOKBACK_MONTHS = 3;
+const RECURRENCE_MIN_HITS = 2;
+
+// A selected-month expense counts as "fixed" when it is an installment or when
+// the same establishment shows up in at least 2 of the 3 previous months.
+function buildFixedVsVariable(rows: TransactionRow[], selectedMonth: string) {
+	if (!selectedMonth) return { fixedTotal: 0, variableTotal: 0, topFixed: [] as Array<{ name: string; total: number }> };
+	const lookback = new Set(
+		Array.from({ length: RECURRENCE_LOOKBACK_MONTHS }, (_, i) => addMonths(selectedMonth, -(i + 1)))
+	);
+	const keyMonths = new Map<string, Set<string>>();
+	for (const tx of rows) {
+		if (!(Number(tx.amount) < 0)) continue;
+		const month = rowMonth(tx);
+		if (!lookback.has(month)) continue;
+		const key = recurrenceKey(tx);
+		if (!key) continue;
+		const months = keyMonths.get(key) ?? new Set<string>();
+		months.add(month);
+		keyMonths.set(key, months);
+	}
+
+	let fixedTotal = 0;
+	let variableTotal = 0;
+	const fixedByKey = new Map<string, { name: string; total: number }>();
+	for (const tx of rows) {
+		const amount = Number(tx.amount);
+		if (!(amount < 0) || rowMonth(tx) !== selectedMonth) continue;
+		const expense = Math.abs(amount);
+		const key = recurrenceKey(tx);
+		const recurring = (keyMonths.get(key)?.size ?? 0) >= RECURRENCE_MIN_HITS;
+		const isInstallment = (tx.installment_total ?? 0) >= 2;
+		if (recurring || isInstallment) {
+			fixedTotal += expense;
+			const entry = fixedByKey.get(key) ?? { name: tx.clean_description || tx.description, total: 0 };
+			entry.total += expense;
+			fixedByKey.set(key, entry);
+		} else {
+			variableTotal += expense;
+		}
+	}
+	const topFixed = Array.from(fixedByKey.values())
+		.sort((a, b) => b.total - a.total)
+		.slice(0, 5);
+	return { fixedTotal, variableTotal, topFixed };
+}
+
+const FORECAST_MONTHS = 6;
+
+// Projects the amounts already committed in installments. For each installment
+// group, the latest known row tells how many installments remain; each one
+// lands in a subsequent month with (approximately) the same amount.
+function buildInstallmentForecast(rows: TransactionRow[], baseMonth: string) {
+	const latestByGroup = new Map<string, TransactionRow>();
+	for (const tx of rows) {
+		if (!tx.installment_group_key || !tx.installment_number || !tx.installment_total) continue;
+		if (!(Number(tx.amount) < 0)) continue;
+		const current = latestByGroup.get(tx.installment_group_key);
+		if (!current || (tx.installment_number ?? 0) > (current.installment_number ?? 0)) {
+			latestByGroup.set(tx.installment_group_key, tx);
+		}
+	}
+
+	const totals = new Map<string, { total: number; count: number }>();
+	let totalCommitted = 0;
+	for (const tx of latestByGroup.values()) {
+		const remaining = (tx.installment_total ?? 0) - (tx.installment_number ?? 0);
+		if (remaining <= 0) continue;
+		const amount = Math.abs(Number(tx.amount));
+		const startMonth = rowMonth(tx);
+		if (startMonth === NO_MONTH) continue;
+		for (let k = 1; k <= remaining; k++) {
+			const month = addMonths(startMonth, k);
+			if (baseMonth && month <= baseMonth) continue;
+			totalCommitted += amount;
+			const bucket = totals.get(month) ?? { total: 0, count: 0 };
+			bucket.total += amount;
+			bucket.count += 1;
+			totals.set(month, bucket);
+		}
+	}
+	const months = Array.from(totals, ([month, v]) => ({ month, ...v }))
+		.sort((a, b) => a.month.localeCompare(b.month))
+		.slice(0, FORECAST_MONTHS);
+	return { months, totalCommitted };
+}
+
+// Straight-line projection for the running calendar month: how the month is
+// likely to close if spending keeps the current daily pace. Only rows DATED
+// inside the current calendar month count as "spent so far" — an imported
+// statement lands as a lump in the reference month with purchase dates mostly
+// from the previous month, and extrapolating that lump would wildly overshoot.
+function buildProjection(monthRows: TransactionRow[], selectedMonth: string, savingsHistory: ReturnType<typeof buildSavingsHistory>) {
+	const now = new Date();
+	const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+	if (!selectedMonth || selectedMonth !== currentMonth) return null;
+	const dayOfMonth = now.getDate();
+	const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+	if (dayOfMonth < 3) return null;
+	const spent = monthRows
+		.filter((row) => row.date?.startsWith(currentMonth))
+		.reduce((sum, row) => sum + expenseValue(Number(row.amount)), 0);
+	if (spent === 0) return null;
+	const projected = (spent / dayOfMonth) * daysInMonth;
+	const previous = savingsHistory.filter((h) => h.month < selectedMonth).slice(-3);
+	const baseline = previous.length > 0 ? previous.reduce((s, h) => s + h.expenses, 0) / previous.length : null;
+	return {
+		spent,
+		projected,
+		baseline,
+		percentVsBaseline: baseline && baseline > 0 ? Math.round(((projected - baseline) / baseline) * 100) : null
+	};
+}
+
+async function fetchVisibleRows(
+	supabase: SupabaseClient<Database>,
+	userId: string,
+	householdId: string
+): Promise<TransactionRow[]> {
+	const readableTransactionIds = await getReadableTransactionIds(supabase, userId);
+	if (readableTransactionIds.length === 0) return [];
+	const { data } = await supabaseAdmin
+		.from('transactions')
+		.select(`
+			id,
+			amount,
+			currency,
+			date,
+			description,
+			clean_description,
+			reference_month,
+			review_status,
+			category_id,
+			subcategory_id,
+			owner_profile_id,
+			paid_by_user_id,
+			installment_number,
+			installment_total,
+			installment_group_key,
+			category:categories!transactions_category_id_fkey ( id, name, parent_id ),
+			subcategory:categories!transactions_subcategory_id_fkey ( id, name, parent_id ),
+			owner_profile:financial_profiles ( id, name )
+		`)
+		.eq('household_id', householdId)
+		.in('id', readableTransactionIds)
+		.order('date', { ascending: false });
+	return (data ?? []) as unknown as TransactionRow[];
+}
+
 export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSession } }) => {
 	const empty = {
 		monthOptions: [] as string[],
@@ -160,6 +463,12 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		monthlyTrend: [] as ReturnType<typeof buildMonthlyTrend>,
 		expenseHierarchy: [] as ReturnType<typeof buildHierarchy>,
 		totalExpenses: 0,
+		categoryTrend: { months: [], series: [], points: [] } as ReturnType<typeof buildCategoryTrend>,
+		aboveNormal: [] as ReturnType<typeof buildAboveNormal>,
+		savingsHistory: [] as ReturnType<typeof buildSavingsHistory>,
+		fixedVsVariable: { fixedTotal: 0, variableTotal: 0, topFixed: [] } as ReturnType<typeof buildFixedVsVariable>,
+		installmentForecast: { months: [], totalCommitted: 0 } as ReturnType<typeof buildInstallmentForecast>,
+		projection: null as ReturnType<typeof buildProjection>,
 		byProfile: [] as ReturnType<typeof aggregateBy>,
 		byPayer: [] as ReturnType<typeof aggregateBy>,
 		filteredTransactions: [] as {
@@ -183,36 +492,12 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 	const householdId = await getUserHouseholdId(supabase, user.id);
 	if (!householdId) return empty;
 
-	const readableTransactionIds = await getReadableTransactionIds(supabase, user.id);
-	if (readableTransactionIds.length === 0) return empty;
-
 	const profileId = url.searchParams.get('profile') ?? '';
 	const categoryId = url.searchParams.get('category') ?? '';
 	const reviewStatus = url.searchParams.get('review_status') ?? '';
 
-	const { data } = await supabaseAdmin
-		.from('transactions')
-		.select(`
-			id,
-			amount,
-			currency,
-			date,
-			description,
-			reference_month,
-			review_status,
-			category_id,
-			subcategory_id,
-			owner_profile_id,
-			paid_by_user_id,
-			category:categories!transactions_category_id_fkey ( id, name, parent_id ),
-			subcategory:categories!transactions_subcategory_id_fkey ( id, name, parent_id ),
-			owner_profile:financial_profiles ( id, name )
-		`)
-		.eq('household_id', householdId)
-		.in('id', readableTransactionIds)
-		.order('date', { ascending: false });
-
-	const transactions = (data ?? []) as unknown as TransactionRow[];
+	const transactions = await fetchVisibleRows(supabase, user.id, householdId);
+	if (transactions.length === 0) return empty;
 	const visibleAllMonths = transactions.filter((t) => t.review_status !== 'ignored');
 	const monthOptions = Array.from(
 		new Set(visibleAllMonths.map(rowMonth).filter((m) => m !== NO_MONTH))
@@ -254,6 +539,10 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 	}
 
 	const hierarchy = buildHierarchy(filtered, categoryMap);
+	// Health/time analyses intentionally ignore the secondary filters: they
+	// describe the household month as a whole, like the monthly trend does.
+	const categoryMonthTotals = buildCategoryMonthTotals(visibleAllMonths, categoryMap);
+	const savingsHistory = buildSavingsHistory(visibleAllMonths);
 	const resolvedFiltered = filtered.map((t) => {
 		const { category, subcategory } = resolveTaxonomy(t, categoryMap);
 		return {
@@ -276,6 +565,12 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		monthlyTrend: buildMonthlyTrend(visibleAllMonths),
 		expenseHierarchy: hierarchy,
 		totalExpenses: hierarchy.reduce((s, n) => s + n.total, 0),
+		categoryTrend: buildCategoryTrend(categoryMonthTotals),
+		aboveNormal: buildAboveNormal(categoryMonthTotals, selectedMonth),
+		savingsHistory,
+		fixedVsVariable: buildFixedVsVariable(visibleAllMonths, selectedMonth),
+		installmentForecast: buildInstallmentForecast(visibleAllMonths, selectedMonth),
+		projection: buildProjection(monthRows, selectedMonth, savingsHistory),
 		byProfile: aggregateBy(filtered, (t) => ({
 			id: t.owner_profile?.id ?? 'unknown',
 			name: t.owner_profile?.name ?? 'Sem atribuição'
@@ -290,4 +585,111 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		categories: (categoriesData ?? []).filter((c) => !c.parent_id),
 		filters: { profileId, categoryId, reviewStatus }
 	};
+};
+
+const insightsResponseSchema = z.object({
+	insights: z.array(z.string().min(1)).min(1).max(6)
+});
+
+const NEW_MERCHANT_MIN_TOTAL = 40;
+
+export const actions: Actions = {
+	insights: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const formData = await request.formData();
+		const month = String(formData.get('month') ?? '').trim();
+		if (!/^\d{4}-\d{2}$/.test(month)) {
+			return fail(400, { success: false, message: 'Mês inválido' });
+		}
+
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+
+		const transactions = await fetchVisibleRows(supabase, user.id, householdId);
+		const visible = transactions.filter((t) => t.review_status !== 'ignored');
+		const monthRows = visible.filter((t) => rowMonth(t) === month);
+		if (monthRows.length === 0) {
+			return fail(400, { success: false, message: 'Sem transações neste mês para analisar.' });
+		}
+
+		const categoriesData = await loadCategoriesForUser(supabaseAdmin, householdId, user.id);
+		const categoryMap: CategoryMap = new Map();
+		for (const c of categoriesData ?? []) {
+			if (c.id) categoryMap.set(c.id, { id: c.id, name: c.name ?? '', parent_id: c.parent_id ?? null });
+		}
+
+		const categoryMonthTotals = buildCategoryMonthTotals(visible, categoryMap);
+		const savingsHistory = buildSavingsHistory(visible);
+		const aboveNormal = buildAboveNormal(categoryMonthTotals, month);
+		const fixedVsVariable = buildFixedVsVariable(visible, month);
+		const forecast = buildInstallmentForecast(visible, month);
+		const summary = summarize(monthRows);
+
+		// New merchants: keys seen this month but absent from the 3 previous ones.
+		const lookback = new Set(Array.from({ length: 3 }, (_, i) => addMonths(month, -(i + 1))));
+		const previousKeys = new Set(
+			visible.filter((t) => lookback.has(rowMonth(t)) && Number(t.amount) < 0).map(recurrenceKey)
+		);
+		const newMerchantTotals = new Map<string, number>();
+		for (const tx of monthRows) {
+			if (!(Number(tx.amount) < 0)) continue;
+			const key = recurrenceKey(tx);
+			if (!key || previousKeys.has(key)) continue;
+			newMerchantTotals.set(key, (newMerchantTotals.get(key) ?? 0) + Math.abs(Number(tx.amount)));
+		}
+		const newMerchants = Array.from(newMerchantTotals, ([name, total]) => ({ name, total }))
+			.filter((m) => m.total >= NEW_MERCHANT_MIN_TOTAL)
+			.sort((a, b) => b.total - a.total)
+			.slice(0, 5);
+
+		const facts = {
+			mes: month,
+			despesas_total: Math.round(summary.expenses),
+			receitas_total: Math.round(summary.credits),
+			taxa_poupanca_pct: summary.credits > 0 ? Math.round(((summary.credits - summary.expenses) / summary.credits) * 100) : null,
+			historico_despesas: savingsHistory.slice(-6).map((h) => ({ mes: h.month, despesas: Math.round(h.expenses) })),
+			categorias_fora_do_normal: aboveNormal.map((a) => ({
+				categoria: a.name,
+				atual: Math.round(a.current),
+				media_anterior: Math.round(a.baseline),
+				variacao_pct: a.deltaPercent
+			})),
+			gastos_fixos: Math.round(fixedVsVariable.fixedTotal),
+			gastos_variaveis: Math.round(fixedVsVariable.variableTotal),
+			parcelas_comprometidas_proximos_meses: Math.round(forecast.totalCommitted),
+			estabelecimentos_novos: newMerchants.map((m) => ({ nome: m.name, total: Math.round(m.total) }))
+		};
+
+		const systemPrompt = `Você é um analista de finanças pessoais de uma família brasileira. Receberá agregados de um mês e deve responder APENAS com JSON no formato {"insights": ["...", "..."]}.
+
+Regras:
+- 3 a 5 insights curtos (1 frase cada), em português do Brasil, tom direto e concreto.
+- Priorize o que é acionável: categorias fora do normal, assinaturas/estabelecimentos novos, ritmo vs meses anteriores, peso dos fixos e das parcelas.
+- Cite valores em R$ arredondados e percentuais quando relevantes.
+- Não invente dados que não estão nos agregados; não dê conselhos genéricos ("gaste menos").`;
+
+		try {
+			const response = await callLlm({
+				messages: [
+					{ role: 'system', content: systemPrompt },
+					{ role: 'user', content: JSON.stringify(facts) }
+				],
+				temperature: 0.3,
+				max_tokens: 700,
+				json_mode: true
+			});
+			const raw = response.choices[0]?.message?.content ?? '{}';
+			const parsed = JSON.parse(raw.replace(/```json\s*|\s*```/g, '').trim());
+			const validated = insightsResponseSchema.safeParse(parsed);
+			if (!validated.success) {
+				return fail(500, { success: false, message: 'A IA não retornou insights válidos. Tente novamente.' });
+			}
+			return { success: true, insights: validated.data.insights, insightsMonth: month };
+		} catch (error) {
+			console.error('[dashboard] insights failed', error);
+			return fail(500, { success: false, message: 'Não foi possível gerar os insights agora. Verifique a configuração da IA.' });
+		}
+	}
 };
