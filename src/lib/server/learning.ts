@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
+import { stripInstallmentMarker } from './csv-parser';
 
 type PatternType = 'merchant_contains' | 'description_contains';
 
@@ -34,7 +35,9 @@ function choosePattern(tx: TransactionForLearning): { pattern: string; patternTy
 	const merchant = normalizePattern(tx.merchant ?? '');
 	if (merchant) return { pattern: merchant, patternType: 'merchant_contains' };
 
-	const description = normalizePattern(tx.clean_description ?? tx.description ?? '');
+	// Installment markers ("3/5") change every month; strip them so the rule
+	// learned from one installment matches the next ones via `contains`.
+	const description = stripInstallmentMarker(normalizePattern(tx.clean_description ?? tx.description ?? ''));
 	if (description) return { pattern: description, patternType: 'description_contains' };
 
 	return null;
@@ -67,7 +70,7 @@ export async function learnFromTransactionAdjustment(
 
 	const { data: existing } = await supabase
 		.from('classification_rules')
-		.select('id, reinforcement_count')
+		.select('id, reinforcement_count, category_id, subcategory_id')
 		.eq('household_id', input.householdId)
 		.eq('created_by_user_id', input.userId)
 		.eq('pattern_type', chosen.patternType)
@@ -75,7 +78,15 @@ export async function learnFromTransactionAdjustment(
 		.maybeSingle();
 
 	if (existing?.id) {
-		const reinforcementCount = Math.max(1, Number(existing.reinforcement_count ?? 1)) + 1;
+		// Repeating the same classification builds trust; a contradictory one
+		// (same pattern, different category) drops the rule back to the lowest
+		// confidence instead of reinforcing the new choice.
+		const sameClassification =
+			existing.category_id === input.categoryId &&
+			(existing.subcategory_id ?? null) === (input.subcategoryId ?? null);
+		const reinforcementCount = sameClassification
+			? Math.max(1, Number(existing.reinforcement_count ?? 1)) + 1
+			: 1;
 		await supabase
 			.from('classification_rules')
 			.update({
