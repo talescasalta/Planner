@@ -359,22 +359,27 @@ export const actions: Actions = {
 			.eq('id', transactionId)
 			.eq('household_id', householdId)
 			.select('category_id, subcategory_id, owner_profile_id')
-			.single();
+			.maybeSingle();
 
 		if (error) return fail(500, { success: false, message: error.message });
 
 		// Confirming a suggested classification endorses it: reinforce (or
 		// create) the user's rule so this merchant stops asking for review
-		// after enough confirmations.
+		// after enough confirmations. Confirmation mode never overwrites an
+		// existing rule that disagrees.
 		if (confirmed?.category_id) {
-			await learnFromTransactionAdjustment(supabaseAdmin, {
-				householdId,
-				userId: user.id,
-				transactionId,
-				categoryId: confirmed.category_id,
-				subcategoryId: confirmed.subcategory_id,
-				ownerProfileId: confirmed.owner_profile_id
-			});
+			await learnFromTransactionAdjustment(
+				supabaseAdmin,
+				{
+					householdId,
+					userId: user.id,
+					transactionId,
+					categoryId: confirmed.category_id,
+					subcategoryId: confirmed.subcategory_id,
+					ownerProfileId: confirmed.owner_profile_id
+				},
+				'confirmation'
+			);
 		}
 		return { success: true };
 	},
