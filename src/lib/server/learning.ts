@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
+import { parseInstallment, stripInstallmentMarker } from './csv-parser';
 
 type PatternType = 'merchant_contains' | 'description_contains';
 
@@ -34,15 +35,29 @@ function choosePattern(tx: TransactionForLearning): { pattern: string; patternTy
 	const merchant = normalizePattern(tx.merchant ?? '');
 	if (merchant) return { pattern: merchant, patternType: 'merchant_contains' };
 
-	const description = normalizePattern(tx.clean_description ?? tx.description ?? '');
+	// Installment markers ("3/5") change every month; strip them so the rule
+	// learned from one installment matches the next ones via `contains`. Only
+	// strip when it really is an installment — parseInstallment validates
+	// k<=n and total<=72, so date/ratio endings ("ESTACIONAMENTO 24/7") keep
+	// their suffix instead of becoming an over-broad pattern.
+	const raw = normalizePattern(tx.clean_description ?? tx.description ?? '');
+	const description = parseInstallment(raw) ? stripInstallmentMarker(raw) : raw;
 	if (description) return { pattern: description, patternType: 'description_contains' };
 
 	return null;
 }
 
+// 'adjustment' (default): the user actively re-classified — the new choice
+// overwrites the rule, and a contradiction resets its confidence.
+// 'confirmation': the user only endorsed what was already there — reinforce a
+// matching rule or create a missing one, but never overwrite or downgrade an
+// existing rule that disagrees (a low-friction ✓ must not destroy history).
+export type LearningMode = 'adjustment' | 'confirmation';
+
 export async function learnFromTransactionAdjustment(
 	supabase: SupabaseClient<Database>,
-	input: ClassificationLearningInput
+	input: ClassificationLearningInput,
+	mode: LearningMode = 'adjustment'
 ): Promise<void> {
 	if (!input.categoryId) return;
 
@@ -67,7 +82,7 @@ export async function learnFromTransactionAdjustment(
 
 	const { data: existing } = await supabase
 		.from('classification_rules')
-		.select('id, reinforcement_count')
+		.select('id, reinforcement_count, category_id, subcategory_id')
 		.eq('household_id', input.householdId)
 		.eq('created_by_user_id', input.userId)
 		.eq('pattern_type', chosen.patternType)
@@ -75,7 +90,32 @@ export async function learnFromTransactionAdjustment(
 		.maybeSingle();
 
 	if (existing?.id) {
-		const reinforcementCount = Math.max(1, Number(existing.reinforcement_count ?? 1)) + 1;
+		// Repeating the same classification builds trust; a contradictory one
+		// (same pattern, different category) drops the rule back to the lowest
+		// confidence instead of reinforcing the new choice.
+		const sameClassification =
+			existing.category_id === input.categoryId &&
+			(existing.subcategory_id ?? null) === (input.subcategoryId ?? null);
+
+		if (mode === 'confirmation') {
+			if (!sameClassification) return;
+			const reinforcementCount = Math.max(1, Number(existing.reinforcement_count ?? 1)) + 1;
+			await supabase
+				.from('classification_rules')
+				.update({
+					active: true,
+					reinforcement_count: reinforcementCount,
+					confidence: confidenceForReinforcement(reinforcementCount)
+				})
+				.eq('id', existing.id)
+				.eq('household_id', input.householdId)
+				.eq('created_by_user_id', input.userId);
+			return;
+		}
+
+		const reinforcementCount = sameClassification
+			? Math.max(1, Number(existing.reinforcement_count ?? 1)) + 1
+			: 1;
 		await supabase
 			.from('classification_rules')
 			.update({

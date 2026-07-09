@@ -29,6 +29,51 @@
 	let searchTerm = $state('');
 	let amountSort = $state<'none' | 'desc' | 'asc'>('none');
 
+	// Rows edited in place that stopped matching the active filters after the
+	// save (e.g. categorized while filtering by "a revisar", or moved to
+	// another category while filtering by category). They stay visible at
+	// their original position until the user navigates to another view, so
+	// the row being worked on never vanishes mid-edit.
+	let retainedRows = $state<Array<{ tx: Transaction; index: number }>>([]);
+	// Only rows actually re-inserted (absent from the fresh list) get the
+	// dimmed "fora do filtro" treatment; a retained row that reappears in the
+	// server list renders as a normal row.
+	let displayedRetainedIds = $derived.by(() => {
+		if (retainedRows.length === 0) return new Set<string>();
+		const present = new Set(transactions.map((t) => t.id));
+		return new Set(retainedRows.filter((r) => !present.has(r.tx.id)).map((r) => r.tx.id));
+	});
+	// Retained rows belong to the view they were edited in; navigating to a
+	// different month/filter/page drops them (a same-view reload after a row
+	// save keeps the key identical, so they survive exactly as intended).
+	let viewKey = $derived(
+		[selectedMonth, filters.sourceType, filters.categoryId, filters.subcategoryId, filters.status, data.page].join('|')
+	);
+	let retainedViewKey = $state<string | null>(null);
+	$effect(() => {
+		if (retainedViewKey !== viewKey) {
+			retainedViewKey = viewKey;
+			retainedRows = [];
+		}
+	});
+
+	// After a save, keep the row visible in place when it fell out of the
+	// active filters; drop any stale copy when it is still (or again) listed.
+	function retainAfterSave(tx: Transaction, previousIndex: number, overrides: Partial<Transaction>) {
+		if (transactions.some((t) => t.id === tx.id)) {
+			retainedRows = retainedRows.filter((r) => r.tx.id !== tx.id);
+			return;
+		}
+		const existing = retainedRows.find((r) => r.tx.id === tx.id);
+		retainedRows = [
+			...retainedRows.filter((r) => r.tx.id !== tx.id),
+			{
+				tx: { ...tx, ...overrides },
+				index: previousIndex >= 0 ? previousIndex : (existing?.index ?? 0)
+			}
+		];
+	}
+
 	// Bulk-apply bar: '__keep__' means "leave this field untouched".
 	const KEEP = '__keep__';
 	// Sentinel option in the per-row subcategory select that opens the inline create input.
@@ -44,6 +89,13 @@
 	let visibleTransactions = $derived.by(() => {
 		const term = searchTerm.trim().toLowerCase();
 		let list = transactions;
+		if (retainedRows.length > 0) {
+			const toInsert = retainedRows.filter((r) => displayedRetainedIds.has(r.tx.id));
+			if (toInsert.length > 0) {
+				list = [...list];
+				for (const r of toInsert) list.splice(Math.min(r.index, list.length), 0, r.tx);
+			}
+		}
 		if (term) {
 			list = list.filter((tx) => {
 				const desc = (tx.description ?? '').toLowerCase();
@@ -198,6 +250,17 @@
 		savingIds[tx.id] = true;
 		delete rowErrors[tx.id];
 
+		// Snapshot what was submitted while the form still exists in the DOM:
+		// after update() the row may have been filtered out and unmounted.
+		const readControl = (name: string) => {
+			const el = formElement.elements.namedItem(name);
+			return el instanceof HTMLSelectElement || el instanceof HTMLInputElement ? el.value : '';
+		};
+		const submittedCategoryId = readControl('category_id') || null;
+		const submittedSubcategoryId = readControl('subcategory_id') || null;
+		const submittedOwnerId = readControl('owner_profile_id') || null;
+		const previousIndex = transactions.findIndex((t) => t.id === tx.id);
+
 		return async ({
 			result,
 			update
@@ -215,6 +278,20 @@
 				return;
 			}
 			await update();
+			// If the save pushed the row out of the active filters (e.g. it was
+			// confirmed while filtering by "a revisar"), keep an updated copy in
+			// place instead of letting it vanish from under the user.
+			if (result.type === 'success') {
+				retainAfterSave(tx, previousIndex, {
+					category_id: submittedCategoryId,
+					subcategory_id: submittedSubcategoryId,
+					owner_profile_id: submittedOwnerId,
+					review_status: 'confirmed',
+					classification_display_source: 'saved',
+					category_display_name: categories.find((c) => c.id === submittedCategoryId)?.name ?? null,
+					subcategory_display_name: categories.find((c) => c.id === submittedSubcategoryId)?.name ?? null
+				});
+			}
 			requestAnimationFrame(() => {
 				window.scrollTo({ top: scrollY });
 				delete savingIds[tx.id];
@@ -231,6 +308,8 @@
 			await update();
 			bulkApplying = false;
 			if (result.type === 'success') {
+				// Retained snapshots of bulk-edited rows are stale now; drop them.
+				retainedRows = retainedRows.filter((r) => !selectedForDelete.includes(r.tx.id));
 				selectedForDelete = [];
 				bulkCategoryId = KEEP;
 				bulkSubcategoryId = '';
@@ -240,12 +319,16 @@
 		};
 	}
 
-	function keepScrollOnConfirm(transactionId: string) {
+	function keepScrollOnConfirm(tx: Transaction) {
 		const scrollY = window.scrollY;
-		confirmingId = transactionId;
+		confirmingId = tx.id;
+		const previousIndex = transactions.findIndex((t) => t.id === tx.id);
 
-		return async ({ update }: { update: () => Promise<void> }) => {
+		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
 			await update();
+			if (result.type === 'success') {
+				retainAfterSave(tx, previousIndex, { review_status: 'confirmed' });
+			}
 			requestAnimationFrame(() => {
 				window.scrollTo({ top: scrollY });
 				confirmingId = null;
@@ -253,12 +336,16 @@
 		};
 	}
 
-	function keepScrollOnStatusChange(transactionId: string) {
+	function keepScrollOnStatusChange(tx: Transaction, nextStatus: Transaction['review_status']) {
 		const scrollY = window.scrollY;
-		statusChangingId = transactionId;
+		statusChangingId = tx.id;
+		const previousIndex = transactions.findIndex((t) => t.id === tx.id);
 
-		return async ({ update }: { update: () => Promise<void> }) => {
+		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
 			await update();
+			if (result.type === 'success') {
+				retainAfterSave(tx, previousIndex, { review_status: nextStatus });
+			}
 			requestAnimationFrame(() => {
 				window.scrollTo({ top: scrollY });
 				statusChangingId = null;
@@ -578,7 +665,7 @@
 							<input
 								type="checkbox"
 								aria-label="Selecionar todas as transações visíveis"
-								checked={selectedForDelete.length === transactions.length}
+								checked={visibleTransactions.length > 0 && selectedForDelete.length === visibleTransactions.length}
 								onchange={(event) => setAllVisible(event.currentTarget.checked)}
 							/>
 						</th>
@@ -609,7 +696,7 @@
 				</thead>
 				<tbody class="divide-y divide-gray-200">
 					{#each visibleTransactions as tx (tx.id)}
-						<tr class={savingIds[tx.id] ? 'bg-indigo-50/40' : ''}>
+						<tr class={`${savingIds[tx.id] ? 'bg-indigo-50/40' : ''} ${displayedRetainedIds.has(tx.id) ? 'opacity-60' : ''}`}>
 							<td class="px-4 py-3 align-top">
 								<input
 									type="checkbox"
@@ -744,7 +831,7 @@
 								{#if tx.review_status === 'needs_review'}
 									<div class="flex items-center gap-2">
 										<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">Revisar</span>
-										<form method="POST" action="?/confirm_single" use:enhance={() => keepScrollOnConfirm(tx.id)} data-sveltekit-noscroll>
+										<form method="POST" action="?/confirm_single" use:enhance={() => keepScrollOnConfirm(tx)} data-sveltekit-noscroll>
 											<input type="hidden" name="transaction_id" value={tx.id} />
 											<button
 												type="submit"
@@ -756,7 +843,7 @@
 												<Check class="h-4 w-4" />
 											</button>
 										</form>
-										<form method="POST" action="?/ignore_single" use:enhance={() => keepScrollOnStatusChange(tx.id)} data-sveltekit-noscroll>
+										<form method="POST" action="?/ignore_single" use:enhance={() => keepScrollOnStatusChange(tx, 'ignored')} data-sveltekit-noscroll>
 											<input type="hidden" name="transaction_id" value={tx.id} />
 											<button
 												type="submit"
@@ -772,7 +859,7 @@
 								{:else if tx.review_status === 'confirmed'}
 									<div class="flex items-center gap-2">
 										<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Confirmado</span>
-										<form method="POST" action="?/ignore_single" use:enhance={() => keepScrollOnStatusChange(tx.id)} data-sveltekit-noscroll>
+										<form method="POST" action="?/ignore_single" use:enhance={() => keepScrollOnStatusChange(tx, 'ignored')} data-sveltekit-noscroll>
 											<input type="hidden" name="transaction_id" value={tx.id} />
 											<button
 												type="submit"
@@ -788,7 +875,7 @@
 								{:else if tx.review_status === 'ignored'}
 									<div class="flex items-center gap-2">
 										<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">Ignorado</span>
-										<form method="POST" action="?/restore_single" use:enhance={() => keepScrollOnStatusChange(tx.id)} data-sveltekit-noscroll>
+										<form method="POST" action="?/restore_single" use:enhance={() => keepScrollOnStatusChange(tx, 'needs_review')} data-sveltekit-noscroll>
 											<input type="hidden" name="transaction_id" value={tx.id} />
 											<button
 												type="submit"
@@ -803,6 +890,9 @@
 									</div>
 								{:else}
 									<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">{tx.review_status}</span>
+								{/if}
+								{#if displayedRetainedIds.has(tx.id)}
+									<span class="mt-1 block text-xs text-gray-400">Fora do filtro atual</span>
 								{/if}
 							</td>
 						</tr>

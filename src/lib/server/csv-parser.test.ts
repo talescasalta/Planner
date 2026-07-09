@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { buildImportDedupKey, parseAmount, parseCsvBuffer } from './csv-parser';
+import { buildImportDedupKey, parseAmount, parseCsvBuffer, stripInstallmentMarker } from './csv-parser';
+
+describe('stripInstallmentMarker', () => {
+	it('strips trailing k/n markers so patterns match sibling installments', () => {
+		expect(stripInstallmentMarker('MAGAZINE LUIZA 3/5')).toBe('MAGAZINE LUIZA');
+		expect(stripInstallmentMarker('MAGAZINE LUIZA - 3/5')).toBe('MAGAZINE LUIZA');
+		expect(stripInstallmentMarker('LOJA PARCELA 2/10')).toBe('LOJA');
+		expect(stripInstallmentMarker('LOJA PARC. 2 DE 10')).toBe('LOJA');
+	});
+
+	it('keeps descriptions without markers untouched', () => {
+		expect(stripInstallmentMarker('IFOOD RESTAURANTE')).toBe('IFOOD RESTAURANTE');
+		expect(stripInstallmentMarker('POSTO 24/7 LTDA')).toBe('POSTO 24/7 LTDA');
+	});
+});
 
 describe('buildImportDedupKey', () => {
 	it('normalizes description whitespace, amount precision, and currency', () => {

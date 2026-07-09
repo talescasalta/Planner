@@ -223,20 +223,25 @@ export function parseInstallment(description: string): { number: number; total: 
 	return null;
 }
 
+// Strips the "k/n" installment marker so text derived from one installment
+// also matches the sibling rows of the following months.
+export function stripInstallmentMarker(value: string): string {
+	return value
+		.replace(/\bPARC(?:ELA)?\.?\s*\d{1,2}\s*(?:\/|DE)\s*\d{1,2}\b/gi, '')
+		.replace(/(?:^|[\s-])\d{1,2}\s*\/\s*\d{1,2}\s*$/g, '')
+		.replace(/(?:^|[\s-])\d{1,2}\s+DE\s+\d{1,2}\s*$/gi, '')
+		.replace(/\s*-\s*$/g, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
 // Ties installments of the same purchase together across statements. The clean
 // description has the "k/n" marker stripped so every month lands on the same
 // key; the per-installment amount and total keep unrelated purchases apart.
 export function installmentGroupKey(cleanDescription: string, amount: number, total: number): string {
-	const base = cleanDescription
-		.normalize('NFD')
-		.replace(/\p{Diacritic}/gu, '')
-		.toUpperCase()
-		.replace(/\bPARC(?:ELA)?\.?\s*\d{1,2}\s*(?:\/|DE)\s*\d{1,2}\b/g, '')
-		.replace(/(?:^|[\s-])\d{1,2}\s*\/\s*\d{1,2}\s*$/g, '')
-		.replace(/(?:^|[\s-])\d{1,2}\s+DE\s+\d{1,2}\s*$/g, '')
-		.replace(/\s*-\s*$/g, '')
-		.replace(/\s+/g, ' ')
-		.trim();
+	const base = stripInstallmentMarker(
+		cleanDescription.normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase()
+	);
 	return `${base}|${total}|${Math.abs(amount).toFixed(2)}`;
 }
 
