@@ -15,7 +15,7 @@ const ALL_FILTERS = 'all';
 // Sentinel used by the bulk-apply bar to leave a field untouched.
 const KEEP = '__keep__';
 const UNKNOWN_SOURCE = 'unknown';
-const VALID_SOURCE_TYPES = new Set(['credit_card', 'bank_account', UNKNOWN_SOURCE]);
+const VALID_SOURCE_TYPES = new Set(['credit_card', 'bank_account', 'vale_alimentacao', 'vale_refeicao', UNKNOWN_SOURCE]);
 const VALID_REVIEW_STATUSES = new Set(['needs_review', 'confirmed', 'ignored']);
 
 type ClassificationSuggestionLike = {

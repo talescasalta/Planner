@@ -4,7 +4,7 @@ export type ImportStatus = 'uploaded' | 'parsed' | 'classified' | 'reviewed' | '
 export type PatternType = 'merchant_contains' | 'description_contains' | 'exact_merchant' | 'regex';
 export type FinancialProfileType = 'individual' | 'shared';
 export type SplitMethod = 'income_proportional' | 'equal';
-export type TransactionSourceType = 'credit_card' | 'bank_account';
+export type TransactionSourceType = 'credit_card' | 'bank_account' | 'vale_alimentacao' | 'vale_refeicao';
 
 export interface SuccessfulClassificationSuggestion {
 	type?: 'classification';

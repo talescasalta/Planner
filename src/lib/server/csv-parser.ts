@@ -1,6 +1,6 @@
 import Papa from 'papaparse';
 
-export type CsvSourceType = 'credit_card' | 'bank_account';
+export type CsvSourceType = 'credit_card' | 'bank_account' | 'vale_alimentacao' | 'vale_refeicao';
 
 export interface CsvColumnMapping {
 	dateColumn: string;
@@ -91,11 +91,11 @@ export function parseCsvBuffer(
 			continue;
 		}
 
-		// Credit card statements typically list charges as positive numbers.
-		// Flip the sign so charges become negative (expenses) and payments to
-		// the card become positive (credits), matching the bank-account
-		// convention used everywhere else in the app.
-		const amount = sourceType === 'credit_card' ? -parsedAmount : parsedAmount;
+		// Credit card and voucher (vale) statements typically list charges as
+		// positive numbers. Flip the sign so charges become negative (expenses)
+		// and credits become positive, matching the bank-account convention
+		// used everywhere else in the app.
+		const amount = sourceType === 'bank_account' ? parsedAmount : -parsedAmount;
 
 		const date = normalizeDate(rawDate);
 		if (!date) continue;

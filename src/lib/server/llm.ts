@@ -11,9 +11,13 @@ const API_URL = OPENROUTER_API_KEY
 const DEFAULT_MODEL =
 	LLM_MODEL?.trim() || (OPENROUTER_API_KEY ? 'openai/gpt-4o-mini' : 'gpt-4o-mini');
 
+export type LlmContentPart =
+	| { type: 'text'; text: string }
+	| { type: 'image_url'; image_url: { url: string } };
+
 export interface LlmPayload {
 	model?: string;
-	messages: Array<{ role: 'system' | 'user'; content: string }>;
+	messages: Array<{ role: 'system' | 'user'; content: string | LlmContentPart[] }>;
 	temperature?: number;
 	max_tokens?: number;
 	json_mode?: boolean;

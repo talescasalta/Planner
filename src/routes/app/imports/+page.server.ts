@@ -3,14 +3,97 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
 import {
 	buildImportDedupKey,
+	detectMapping,
 	type CsvSourceType,
 	type ParsedRow
 } from '$lib/server/csv-parser';
 import { resolveImportMapping } from '$lib/server/import-mapping';
+import { extractRowsFromImage, extractRowsFromText } from '$lib/server/import-extract';
 
 function readSourceType(formData: FormData): CsvSourceType {
 	const raw = formData.get('source_type');
-	return raw === 'credit_card' ? 'credit_card' : 'bank_account';
+	if (raw === 'credit_card' || raw === 'vale_alimentacao' || raw === 'vale_refeicao') return raw;
+	return 'bank_account';
+}
+
+const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+
+const EMPTY_ROWS_MESSAGE =
+	'Não foi possível identificar transações no conteúdo enviado. Verifique se o arquivo, print ou texto colado mostra data, descrição e valor.';
+
+interface ResolvedImportInput {
+	rows: ParsedRow[];
+	sourceType: CsvSourceType;
+	mappingSource: 'deterministic' | 'llm' | 'vision';
+	confidence: number;
+	notes?: string;
+	sourceName: string;
+}
+
+// Accepts a CSV file, a statement screenshot or pasted text and normalizes
+// everything into parsed transaction rows.
+async function resolveImportInput(
+	formData: FormData,
+	referenceMonth: string
+): Promise<ResolvedImportInput | null> {
+	const sourceType = readSourceType(formData);
+	const file = formData.get('file') as File | null;
+	const pastedText = (formData.get('pasted_text')?.toString() ?? '').trim();
+
+	if (file && file.size > 0) {
+		const buffer = Buffer.from(await file.arrayBuffer());
+		if (IMAGE_MIME_TYPES.has(file.type)) {
+			const extraction = await extractRowsFromImage(buffer, file.type, sourceType, referenceMonth);
+			return {
+				rows: extraction.rows,
+				sourceType,
+				mappingSource: 'vision',
+				confidence: extraction.confidence,
+				notes: extraction.notes,
+				sourceName: file.name || 'print-colado.png'
+			};
+		}
+		const resolved = await resolveImportMapping(buffer, sourceType);
+		return {
+			rows: resolved.rows,
+			sourceType: resolved.sourceType,
+			mappingSource: resolved.mappingSource,
+			confidence: resolved.confidence,
+			notes: resolved.notes,
+			sourceName: file.name
+		};
+	}
+
+	if (pastedText) {
+		const buffer = Buffer.from(pastedText, 'utf-8');
+		// Pasted CSVs (with recognizable headers) go through the regular column
+		// mapping; anything else (text copied from an app or site) goes to LLM
+		// extraction.
+		if (detectMapping(buffer)) {
+			const resolved = await resolveImportMapping(buffer, sourceType);
+			if (resolved.rows.length > 0) {
+				return {
+					rows: resolved.rows,
+					sourceType: resolved.sourceType,
+					mappingSource: resolved.mappingSource,
+					confidence: resolved.confidence,
+					notes: resolved.notes,
+					sourceName: 'texto-colado.csv'
+				};
+			}
+		}
+		const extraction = await extractRowsFromText(pastedText, sourceType, referenceMonth);
+		return {
+			rows: extraction.rows,
+			sourceType,
+			mappingSource: 'llm',
+			confidence: extraction.confidence,
+			notes: extraction.notes,
+			sourceName: 'texto-colado.txt'
+		};
+	}
+
+	return null;
 }
 import { getUserHouseholdId, getHouseholdMembers } from '$lib/server/household';
 import { classifyTransactions } from '$lib/server/classifier';
@@ -57,26 +140,22 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const file = formData.get('file') as File;
 		const referenceMonth = formData.get('reference_month') as string;
-		const sourceType = readSourceType(formData);
 
-		if (!file || file.size === 0) {
-			return fail(400, { success: false, message: 'Arquivo não enviado' });
-		}
 		if (!referenceMonth) {
 			return fail(400, { success: false, message: 'Mês de referência não informado' });
 		}
 
-		const buffer = Buffer.from(await file.arrayBuffer());
-		const resolved = await resolveImportMapping(buffer, sourceType);
-		const rows = resolved.rows;
-		if (rows.length === 0) {
+		const resolved = await resolveImportInput(formData, referenceMonth);
+		if (!resolved) {
 			return fail(400, {
 				success: false,
-				message:
-					'Não foi possível identificar linhas válidas na fatura. Verifique se o CSV tem colunas de data, descrição e valor.'
+				message: 'Envie um arquivo CSV, uma imagem (print) ou cole o conteúdo da fatura.'
 			});
+		}
+		const rows = resolved.rows;
+		if (rows.length === 0) {
+			return fail(400, { success: false, message: resolved.notes || EMPTY_ROWS_MESSAGE });
 		}
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
@@ -96,7 +175,7 @@ export const actions: Actions = {
 			preview: previewRows,
 			total: rows.length,
 			duplicates: rows.filter((r) => existingKeys.has(buildImportDedupKey(r))).length,
-			filename: file.name,
+			filename: resolved.sourceName,
 			reference_month: referenceMonth,
 			source_type: resolved.sourceType,
 			mapping_source: resolved.mappingSource,
@@ -110,26 +189,22 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const file = formData.get('file') as File;
 		const referenceMonth = formData.get('reference_month') as string;
-		const sourceType = readSourceType(formData);
 
-		if (!file || file.size === 0) {
-			return fail(400, { success: false, message: 'Arquivo não enviado' });
-		}
 		if (!referenceMonth) {
 			return fail(400, { success: false, message: 'Mês de referência não informado' });
 		}
 
-		const buffer = Buffer.from(await file.arrayBuffer());
-		const resolved = await resolveImportMapping(buffer, sourceType);
-		const rows = resolved.rows;
-		if (rows.length === 0) {
+		const resolved = await resolveImportInput(formData, referenceMonth);
+		if (!resolved) {
 			return fail(400, {
 				success: false,
-				message:
-					'Não foi possível identificar linhas válidas na fatura. Verifique se o CSV tem colunas de data, descrição e valor.'
+				message: 'Envie um arquivo CSV, uma imagem (print) ou cole o conteúdo da fatura.'
 			});
+		}
+		const rows = resolved.rows;
+		if (rows.length === 0) {
+			return fail(400, { success: false, message: resolved.notes || EMPTY_ROWS_MESSAGE });
 		}
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
@@ -142,7 +217,7 @@ export const actions: Actions = {
 			.insert({
 				household_id: householdId,
 				created_by_user_id: user.id,
-				source_filename: file.name,
+				source_filename: resolved.sourceName,
 				source_type: resolved.sourceType,
 				status: 'parsed',
 				row_count: rows.length,
