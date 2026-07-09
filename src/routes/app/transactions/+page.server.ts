@@ -179,8 +179,14 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 			`)
 			.eq('household_id', householdId)
 			.in('id', readableTransactionIds)
+			// Tie-breakers keep the order deterministic across reloads: Postgres
+			// gives no stable order among rows with the same date, so without
+			// them same-day rows shuffle every time the list refetches (e.g.
+			// after a row auto-save) and can duplicate/vanish across pages.
 			query = applyFilters(query)
 				.order('date', { ascending: false })
+				.order('created_at', { ascending: false })
+				.order('id', { ascending: false })
 				.range(from, to);
 			return query;
 		})(),
@@ -344,16 +350,32 @@ export const actions: Actions = {
 			return fail(403, { success: false, message: 'Sem permissão para editar essa transação' });
 		}
 
-		const { error } = await supabaseAdmin
+		const { data: confirmed, error } = await supabaseAdmin
 			.from('transactions')
 			.update({
 				review_status: 'confirmed',
 				updated_at: new Date().toISOString()
 			})
 			.eq('id', transactionId)
-			.eq('household_id', householdId);
+			.eq('household_id', householdId)
+			.select('category_id, subcategory_id, owner_profile_id')
+			.single();
 
 		if (error) return fail(500, { success: false, message: error.message });
+
+		// Confirming a suggested classification endorses it: reinforce (or
+		// create) the user's rule so this merchant stops asking for review
+		// after enough confirmations.
+		if (confirmed?.category_id) {
+			await learnFromTransactionAdjustment(supabaseAdmin, {
+				householdId,
+				userId: user.id,
+				transactionId,
+				categoryId: confirmed.category_id,
+				subcategoryId: confirmed.subcategory_id,
+				ownerProfileId: confirmed.owner_profile_id
+			});
+		}
 		return { success: true };
 	},
 

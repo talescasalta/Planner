@@ -29,6 +29,14 @@
 	let searchTerm = $state('');
 	let amountSort = $state<'none' | 'desc' | 'asc'>('none');
 
+	// Rows edited in place that stopped matching the active filters after the
+	// save (e.g. categorized while filtering by "a revisar", or moved to
+	// another category while filtering by category). They stay visible at
+	// their original position until the user navigates, so the row being
+	// worked on never vanishes mid-edit.
+	let retainedRows = $state<Array<{ tx: Transaction; index: number }>>([]);
+	let retainedIds = $derived(new Set(retainedRows.map((r) => r.tx.id)));
+
 	// Bulk-apply bar: '__keep__' means "leave this field untouched".
 	const KEEP = '__keep__';
 	// Sentinel option in the per-row subcategory select that opens the inline create input.
@@ -44,6 +52,12 @@
 	let visibleTransactions = $derived.by(() => {
 		const term = searchTerm.trim().toLowerCase();
 		let list = transactions;
+		const presentIds = new Set(list.map((t) => t.id));
+		const toInsert = retainedRows.filter((r) => !presentIds.has(r.tx.id));
+		if (toInsert.length > 0) {
+			list = [...list];
+			for (const r of toInsert) list.splice(Math.min(r.index, list.length), 0, r.tx);
+		}
 		if (term) {
 			list = list.filter((tx) => {
 				const desc = (tx.description ?? '').toLowerCase();
@@ -198,6 +212,17 @@
 		savingIds[tx.id] = true;
 		delete rowErrors[tx.id];
 
+		// Snapshot what was submitted while the form still exists in the DOM:
+		// after update() the row may have been filtered out and unmounted.
+		const readControl = (name: string) => {
+			const el = formElement.elements.namedItem(name);
+			return el instanceof HTMLSelectElement || el instanceof HTMLInputElement ? el.value : '';
+		};
+		const submittedCategoryId = readControl('category_id') || null;
+		const submittedSubcategoryId = readControl('subcategory_id') || null;
+		const submittedOwnerId = readControl('owner_profile_id') || null;
+		const previousIndex = transactions.findIndex((t) => t.id === tx.id);
+
 		return async ({
 			result,
 			update
@@ -215,6 +240,27 @@
 				return;
 			}
 			await update();
+			// If the save pushed the row out of the active filters (e.g. it was
+			// confirmed while filtering by "a revisar"), keep an updated copy in
+			// place instead of letting it vanish from under the user.
+			if (result.type === 'success' && !transactions.some((t) => t.id === tx.id)) {
+				const existing = retainedRows.find((r) => r.tx.id === tx.id);
+				const snapshot: Transaction = {
+					...tx,
+					category_id: submittedCategoryId,
+					subcategory_id: submittedSubcategoryId,
+					owner_profile_id: submittedOwnerId,
+					review_status: 'confirmed',
+					category_display_name: categories.find((c) => c.id === submittedCategoryId)?.name ?? null,
+					subcategory_display_name: categories.find((c) => c.id === submittedSubcategoryId)?.name ?? null
+				};
+				retainedRows = [
+					...retainedRows.filter((r) => r.tx.id !== tx.id),
+					{ tx: snapshot, index: previousIndex >= 0 ? previousIndex : (existing?.index ?? 0) }
+				];
+			} else if (result.type === 'success') {
+				retainedRows = retainedRows.filter((r) => r.tx.id !== tx.id);
+			}
 			requestAnimationFrame(() => {
 				window.scrollTo({ top: scrollY });
 				delete savingIds[tx.id];
@@ -609,7 +655,7 @@
 				</thead>
 				<tbody class="divide-y divide-gray-200">
 					{#each visibleTransactions as tx (tx.id)}
-						<tr class={savingIds[tx.id] ? 'bg-indigo-50/40' : ''}>
+						<tr class={`${savingIds[tx.id] ? 'bg-indigo-50/40' : ''} ${retainedIds.has(tx.id) ? 'opacity-60' : ''}`}>
 							<td class="px-4 py-3 align-top">
 								<input
 									type="checkbox"
@@ -803,6 +849,9 @@
 									</div>
 								{:else}
 									<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">{tx.review_status}</span>
+								{/if}
+								{#if retainedIds.has(tx.id)}
+									<span class="mt-1 block text-xs text-gray-400">Fora do filtro atual</span>
 								{/if}
 							</td>
 						</tr>
