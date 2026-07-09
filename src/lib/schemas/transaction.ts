@@ -12,7 +12,7 @@ export const transactionSchema = z.object({
 	amount: z.coerce.number().refine((n) => n !== 0, 'Valor não pode ser zero'),
 	currency: z.string().default('BRL'),
 	source_name: z.string().optional().nullable(),
-	source_type: z.enum(['credit_card', 'bank_account']).optional().nullable(),
+	source_type: z.enum(['credit_card', 'bank_account', 'vale_alimentacao', 'vale_refeicao']).optional().nullable(),
 	reference_month: z.string().regex(/^\d{4}-\d{2}$/).optional().nullable(),
 	paid_by_user_id: optionalUuid,
 	owner_profile_id: optionalUuid,

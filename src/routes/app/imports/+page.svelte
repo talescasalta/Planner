@@ -16,10 +16,36 @@
 	const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
 	let selectedFile: File | null = $state(null);
+	let pastedText = $state('');
 	let isDragging = $state(false);
 	let isConfirming = $state(false);
 	let confirmFileInput: HTMLInputElement | null = $state(null);
-	let sourceType: 'credit_card' | 'bank_account' = $state('credit_card');
+
+	type SourceType = 'credit_card' | 'bank_account' | 'vale_alimentacao' | 'vale_refeicao';
+	let sourceType: SourceType = $state('credit_card');
+
+	const sourceOptions: Array<{ value: SourceType; label: string; hint: string }> = [
+		{
+			value: 'credit_card',
+			label: 'Cartão de crédito',
+			hint: 'Gastos aparecem como valores positivos (Nubank, Itaú, etc.)'
+		},
+		{
+			value: 'bank_account',
+			label: 'Conta corrente',
+			hint: 'Despesas já aparecem como valores negativos.'
+		},
+		{
+			value: 'vale_alimentacao',
+			label: 'Vale alimentação',
+			hint: 'Benefício de mercado (Alelo, VR, Sodexo, Caju, Flash...).'
+		},
+		{
+			value: 'vale_refeicao',
+			label: 'Vale refeição',
+			hint: 'Benefício de refeição (Alelo, VR, Sodexo, Caju, Flash...).'
+		}
+	];
 
 	// Mirror the selected file into the confirm form's hidden input as soon
 	// as both are available, so the browser-native `required` check passes
@@ -35,8 +61,23 @@
 		confirmFileInput.files = dt.files;
 	});
 
+	function isAcceptedFile(file: File): boolean {
+		return file.name.toLowerCase().endsWith('.csv') || file.type.startsWith('image/');
+	}
+
 	function setFile(file: File | null) {
 		selectedFile = file;
+		if (file) pastedText = '';
+	}
+
+	function syncVisibleInput(file: File) {
+		// push into the visible input so the form submits with it
+		const input = document.getElementById('file') as HTMLInputElement | null;
+		if (input) {
+			const dt = new DataTransfer();
+			dt.items.add(file);
+			input.files = dt.files;
+		}
 	}
 
 	function onFileChange(e: Event) {
@@ -48,16 +89,44 @@
 		e.preventDefault();
 		isDragging = false;
 		const file = e.dataTransfer?.files?.[0];
-		if (file && file.name.toLowerCase().endsWith('.csv')) {
+		if (file && isAcceptedFile(file)) {
 			setFile(file);
-			// also push into the visible input so the form submits with it
-			const input = document.getElementById('file') as HTMLInputElement | null;
-			if (input) {
-				const dt = new DataTransfer();
-				dt.items.add(file);
-				input.files = dt.files;
+			syncVisibleInput(file);
+		}
+	}
+
+	function onPaste(e: ClipboardEvent) {
+		if (isConfirming) return;
+		const items = e.clipboardData?.items ?? [];
+		for (const item of items) {
+			if (item.type.startsWith('image/')) {
+				const blob = item.getAsFile();
+				if (blob) {
+					const ext = item.type.split('/')[1] ?? 'png';
+					const file = new File([blob], `print-colado.${ext}`, { type: item.type });
+					setFile(file);
+					syncVisibleInput(file);
+					e.preventDefault();
+					return;
+				}
 			}
 		}
+		// Text paste: only capture when the user isn't pasting into a field
+		// (the textarea below handles its own paste natively).
+		const target = e.target as HTMLElement | null;
+		if (target?.closest('input, textarea')) return;
+		const text = e.clipboardData?.getData('text/plain');
+		if (text?.trim()) {
+			pastedText = text;
+			clearFile();
+			e.preventDefault();
+		}
+	}
+
+	function clearFile() {
+		selectedFile = null;
+		const input = document.getElementById('file') as HTMLInputElement | null;
+		if (input) input.value = '';
 	}
 
 	function onDragOver(e: DragEvent) {
@@ -83,6 +152,8 @@
 		};
 	}
 </script>
+
+<svelte:window onpaste={onPaste} />
 
 <div class="max-w-3xl mx-auto space-y-6">
 	<div class="flex items-center justify-between">
@@ -115,39 +186,27 @@
 		<div>
 			<span class="block text-sm font-medium text-gray-700">Tipo de origem</span>
 			<div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-				<label class={`flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm ${sourceType === 'credit_card' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
-					<input
-						type="radio"
-						name="source_type"
-						value="credit_card"
-						checked={sourceType === 'credit_card'}
-						onchange={() => (sourceType = 'credit_card')}
-						class="mt-0.5"
-					/>
-					<span>
-						<span class="block font-medium text-gray-900">Cartão de crédito</span>
-						<span class="block text-xs text-gray-500">Valores no CSV são positivos para gastos (Nubank, Itaú, etc.)</span>
-					</span>
-				</label>
-				<label class={`flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm ${sourceType === 'bank_account' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
-					<input
-						type="radio"
-						name="source_type"
-						value="bank_account"
-						checked={sourceType === 'bank_account'}
-						onchange={() => (sourceType = 'bank_account')}
-						class="mt-0.5"
-					/>
-					<span>
-						<span class="block font-medium text-gray-900">Conta corrente</span>
-						<span class="block text-xs text-gray-500">Valores no CSV já trazem despesas como negativas.</span>
-					</span>
-				</label>
+				{#each sourceOptions as option}
+					<label class={`flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm ${sourceType === option.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+						<input
+							type="radio"
+							name="source_type"
+							value={option.value}
+							checked={sourceType === option.value}
+							onchange={() => (sourceType = option.value)}
+							class="mt-0.5"
+						/>
+						<span>
+							<span class="block font-medium text-gray-900">{option.label}</span>
+							<span class="block text-xs text-gray-500">{option.hint}</span>
+						</span>
+					</label>
+				{/each}
 			</div>
 		</div>
 
 		<div>
-			<span class="block text-sm font-medium text-gray-700 mb-1">Arquivo CSV da fatura</span>
+			<span class="block text-sm font-medium text-gray-700 mb-1">Arquivo da fatura (CSV ou print)</span>
 			<label
 				for="file"
 				ondragover={onDragOver}
@@ -165,11 +224,35 @@
 					<svg class="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
 					</svg>
-					<span class="text-sm font-medium text-gray-700">Clique para selecionar ou arraste o CSV aqui</span>
-					<span class="text-xs text-gray-500">Formato aceito: .csv</span>
+					<span class="text-sm font-medium text-gray-700">Clique para selecionar, arraste ou cole (Ctrl+V) aqui</span>
+					<span class="text-xs text-gray-500">Formatos aceitos: .csv, .png, .jpg, .webp — prints de fatura funcionam</span>
 				{/if}
 			</label>
-			<input id="file" name="file" type="file" accept=".csv" required class="sr-only" onchange={onFileChange} />
+			<input
+				id="file"
+				name="file"
+				type="file"
+				accept=".csv,image/png,image/jpeg,image/webp,image/gif"
+				required={!pastedText.trim()}
+				class="sr-only"
+				onchange={onFileChange}
+			/>
+		</div>
+
+		<div>
+			<label for="pasted_text" class="block text-sm font-medium text-gray-700 mb-1">Ou cole o texto da fatura</label>
+			<textarea
+				id="pasted_text"
+				name="pasted_text"
+				rows="4"
+				bind:value={pastedText}
+				oninput={() => {
+					if (pastedText.trim()) clearFile();
+				}}
+				placeholder="Cole aqui as linhas copiadas do app ou site do banco / benefício (Ctrl+V em qualquer lugar da página também funciona)"
+				class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2"
+			></textarea>
+			<p class="mt-1 text-xs text-gray-500">Se um arquivo estiver selecionado, ele tem prioridade sobre o texto colado.</p>
 		</div>
 
 		<button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">Visualizar</button>
@@ -184,9 +267,12 @@
 				<h3 class="text-lg font-medium text-gray-900">Preview: {filename}</h3>
 				<span class="text-sm text-gray-600">{total} linhas ({duplicates} duplicatas detectadas)</span>
 			</div>
-			{#if mappingSource === 'llm'}
+			{#if mappingSource !== 'deterministic'}
 				<div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-					O formato da fatura foi interpretado com IA antes do preview. Confiança: {(mappingConfidence * 100).toFixed(0)}%.
+					{mappingSource === 'vision'
+						? 'As transações foram extraídas da imagem com IA. Confira os valores antes de confirmar.'
+						: 'O conteúdo da fatura foi interpretado com IA antes do preview.'}
+					Confiança: {(mappingConfidence * 100).toFixed(0)}%.
 					{#if mappingNotes}
 						<span class="block text-amber-800">{mappingNotes}</span>
 					{/if}
@@ -237,18 +323,19 @@
 			>
 				<input type="hidden" name="reference_month" value={form?.reference_month ?? currentMonth} />
 				<input type="hidden" name="source_type" value={form?.source_type ?? sourceType} />
+				<input type="hidden" name="pasted_text" value={pastedText} />
 				<input
 					bind:this={confirmFileInput}
 					name="file"
 					type="file"
-					accept=".csv"
+					accept=".csv,image/png,image/jpeg,image/webp,image/gif"
 					class="sr-only"
 					tabindex="-1"
 					aria-hidden="true"
 				/>
-				{#if !selectedFile}
+				{#if !selectedFile && !pastedText.trim()}
 					<p class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3 mb-3">
-						Recarregamos a página? Volte para a etapa anterior e selecione o arquivo novamente.
+						Recarregamos a página? Volte para a etapa anterior e selecione o arquivo ou cole o conteúdo novamente.
 					</p>
 				{/if}
 				{#if isConfirming}
@@ -266,7 +353,7 @@
 					</a>
 					<button
 						type="submit"
-						disabled={!selectedFile || isConfirming}
+						disabled={(!selectedFile && !pastedText.trim()) || isConfirming}
 						class="inline-flex min-w-44 items-center justify-center gap-2 rounded-md border border-transparent bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
 					>
 						{#if isConfirming}

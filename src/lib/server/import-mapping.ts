@@ -58,7 +58,10 @@ export async function resolveImportMapping(
 		};
 	}
 
-	const sourceType = llm.sourceType ?? selectedSourceType;
+	// The mapping LLM only distinguishes credit card vs bank account; when the
+	// user explicitly picked a voucher (vale) source, their choice wins.
+	const isVoucher = selectedSourceType === 'vale_alimentacao' || selectedSourceType === 'vale_refeicao';
+	const sourceType = isVoucher ? selectedSourceType : (llm.sourceType ?? selectedSourceType);
 	const rows = parseCsvBuffer(buffer, llm, { sourceType });
 	return {
 		mapping: llm,

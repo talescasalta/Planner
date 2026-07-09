@@ -128,6 +128,8 @@
 	function sourceTypeText(value: string | null | undefined) {
 		if (value === 'credit_card') return 'Fatura de cartão';
 		if (value === 'bank_account') return 'Conta corrente';
+		if (value === 'vale_alimentacao') return 'Vale alimentação';
+		if (value === 'vale_refeicao') return 'Vale refeição';
 		return 'Sem origem definida';
 	}
 
@@ -359,6 +361,8 @@
 					<option value="all">Todas</option>
 					<option value="credit_card">Fatura de cartão</option>
 					<option value="bank_account">Conta corrente</option>
+					<option value="vale_alimentacao">Vale alimentação</option>
+					<option value="vale_refeicao">Vale refeição</option>
 					<option value="unknown">Sem origem definida</option>
 				</select>
 			</div>
