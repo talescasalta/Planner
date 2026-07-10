@@ -8,7 +8,7 @@ import {
 	type ParsedRow
 } from '$lib/server/csv-parser';
 import { resolveImportMapping } from '$lib/server/import-mapping';
-import { extractRowsFromImage, extractRowsFromText } from '$lib/server/import-extract';
+import { detectImageMimeType, extractRowsFromImage, extractRowsFromText } from '$lib/server/import-extract';
 
 function readSourceType(formData: FormData): CsvSourceType {
 	const raw = formData.get('source_type');
@@ -16,7 +16,7 @@ function readSourceType(formData: FormData): CsvSourceType {
 	return 'bank_account';
 }
 
-const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
 const EMPTY_ROWS_MESSAGE =
 	'Não foi possível identificar transações no conteúdo enviado. Verifique se o arquivo, print ou texto colado mostra data, descrição e valor.';
@@ -42,8 +42,19 @@ async function resolveImportInput(
 
 	if (file && file.size > 0) {
 		const buffer = Buffer.from(await file.arrayBuffer());
-		if (IMAGE_MIME_TYPES.has(file.type)) {
-			const extraction = await extractRowsFromImage(buffer, file.type, sourceType, referenceMonth);
+		const detectedImageMimeType = detectImageMimeType(buffer);
+		if (IMAGE_MIME_TYPES.has(file.type) || detectedImageMimeType) {
+			if (!detectedImageMimeType) {
+				return {
+					rows: [],
+					sourceType,
+					mappingSource: 'vision',
+					confidence: 0,
+					notes: 'A imagem enviada não está em um formato suportado. Envie PNG, JPEG ou WebP.',
+					sourceName: file.name || 'imagem'
+				};
+			}
+			const extraction = await extractRowsFromImage(buffer, detectedImageMimeType, sourceType, referenceMonth);
 			return {
 				rows: extraction.rows,
 				sourceType,

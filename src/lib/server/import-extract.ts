@@ -28,6 +28,27 @@ export interface ExtractionResult {
 	notes?: string;
 }
 
+const IMAGE_SIGNATURES: Array<{ mimeType: string; bytes: number[] }> = [
+	{ mimeType: 'image/png', bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+	{ mimeType: 'image/jpeg', bytes: [0xff, 0xd8, 0xff] },
+	{ mimeType: 'image/webp', bytes: [0x52, 0x49, 0x46, 0x46] }
+];
+
+// The browser-provided MIME type is not always reliable for pasted or renamed
+// files. OpenRouter validates the bytes behind a data URL, so use the detected
+// type whenever possible rather than sending a misleading MIME header.
+export function detectImageMimeType(buffer: Buffer): 'image/png' | 'image/jpeg' | 'image/webp' | null {
+	for (const signature of IMAGE_SIGNATURES) {
+		if (signature.bytes.every((byte, index) => buffer[index] === byte)) {
+			if (signature.mimeType === 'image/webp') {
+				if (buffer.subarray(8, 12).toString('ascii') !== 'WEBP') continue;
+			}
+			return signature.mimeType as 'image/png' | 'image/jpeg' | 'image/webp';
+		}
+	}
+	return null;
+}
+
 const SOURCE_TYPE_HINTS: Record<CsvSourceType, string> = {
 	credit_card: 'fatura de cartão de crédito',
 	bank_account: 'extrato de conta corrente',
@@ -105,7 +126,10 @@ async function runExtraction(
 			notes: validated.data.notes
 		};
 	} catch (error) {
-		console.error('[imports] extraction failed', error);
+		console.error('[imports] extraction failed', {
+			model: process.env.LLM_MODEL ?? 'default',
+			error: String(error)
+		});
 		return { rows: [], confidence: 0, notes: 'Falha ao interpretar o conteúdo com IA.' };
 	}
 }
