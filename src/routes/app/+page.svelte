@@ -1,10 +1,12 @@
 <script lang="ts">
-	import { AlertTriangle, ArrowDownRight, ArrowUpRight, CircleDollarSign, ReceiptText, SlidersHorizontal, X } from 'lucide-svelte';
+	import { enhance } from '$app/forms';
+	import { AlertTriangle, ArrowDownRight, ArrowUpRight, CalendarClock, CircleDollarSign, PiggyBank, ReceiptText, RefreshCcw, SlidersHorizontal, Sparkles, X } from 'lucide-svelte';
 	import CategoryTreemap from '$lib/components/charts/CategoryTreemap.svelte';
 	import type { TreemapSelection } from '$lib/components/charts/CategoryTreemap.svelte';
 	import MonthlyTrendChart from '$lib/components/charts/MonthlyTrendChart.svelte';
+	import CategoryTrendChart from '$lib/components/charts/CategoryTrendChart.svelte';
 
-	let { data } = $props();
+	let { data, form } = $props();
 	let summary = $derived(data.summary);
 	let previousSummary = $derived(data.previousSummary);
 	let monthOptions = $derived(data.monthOptions ?? []);
@@ -22,6 +24,31 @@
 	let hasActiveSecondaryFilter = $derived(!!(filters.profileId || filters.categoryId || filters.reviewStatus));
 	let showFilters = $state(false);
 	let selection = $state<TreemapSelection | null>(null);
+
+	let categoryTrend = $derived(data.categoryTrend ?? { months: [], series: [], points: [] });
+	let aboveNormal = $derived(data.aboveNormal ?? []);
+	let savingsHistory = $derived(data.savingsHistory ?? []);
+	let fixedVsVariable = $derived(data.fixedVsVariable ?? { fixedTotal: 0, variableTotal: 0, topFixed: [] });
+	let installmentForecast = $derived(data.installmentForecast ?? { months: [], totalCommitted: 0 });
+	let projection = $derived(data.projection ?? null);
+
+	let currentSavings = $derived(savingsHistory.find((h) => h.month === selectedMonth) ?? null);
+	let fixedShare = $derived.by(() => {
+		const total = fixedVsVariable.fixedTotal + fixedVsVariable.variableTotal;
+		return total > 0 ? Math.round((fixedVsVariable.fixedTotal / total) * 100) : 0;
+	});
+	let maxForecastTotal = $derived(Math.max(1, ...installmentForecast.months.map((m) => m.total)));
+
+	let generatingInsights = $state(false);
+	let insights = $derived(form?.insights && form?.insightsMonth === selectedMonth ? form.insights : null);
+
+	function insightsEnhance() {
+		generatingInsights = true;
+		return async ({ update }: { update: (opts?: { reset?: boolean }) => Promise<void> }) => {
+			await update({ reset: false });
+			generatingInsights = false;
+		};
+	}
 
 	const UNCATEGORIZED_ID = '__uncategorized__';
 	const UNSPECIFIED_SUB_ID = '__unspecified__';
@@ -84,6 +111,18 @@
 		if (status === 'needs_review') return 'Revisar';
 		if (status === 'confirmed') return 'Confirmado';
 		return status || 'Sem status';
+	}
+
+	function formatPercent(value: number) {
+		return `${Math.round(value * 100)}%`;
+	}
+
+	function shortMonthLabel(month: string) {
+		const [year, monthNumber] = month.split('-').map(Number);
+		if (!year || !monthNumber) return month;
+		return new Date(year, monthNumber - 1, 1)
+			.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
+			.replace('.', '');
 	}
 </script>
 
@@ -229,6 +268,87 @@
 			</a>
 		</section>
 
+		<section class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+			<div class="rounded-lg bg-white p-4 shadow">
+				<div class="flex items-center justify-between">
+					<p class="text-sm font-medium text-gray-500">Taxa de poupança</p>
+					<PiggyBank class="h-5 w-5 text-emerald-600" />
+				</div>
+				<p class={`mt-3 text-2xl font-semibold ${currentSavings?.rate != null && currentSavings.rate < 0 ? 'text-rose-700' : 'text-gray-950'}`}>
+					{currentSavings?.rate != null ? formatPercent(currentSavings.rate) : '—'}
+				</p>
+				<p class="mt-1 text-xs text-gray-500">do que entrou, sobrou no mês</p>
+				{#if savingsHistory.length > 1}
+					<div class="mt-3 flex h-10 items-end gap-1" aria-hidden="true">
+						{#each savingsHistory as h (h.month)}
+							<div
+								class={`min-w-0 flex-1 rounded-sm ${h.rate == null ? 'bg-gray-200' : h.rate >= 0 ? 'bg-emerald-500' : 'bg-rose-500'} ${h.month === selectedMonth ? '' : 'opacity-50'}`}
+								style={`height: ${h.rate == null ? 8 : Math.max(8, Math.min(100, Math.abs(h.rate) * 100)) * 0.4}px`}
+								title={`${shortMonthLabel(h.month)}: ${h.rate == null ? 'sem receitas' : formatPercent(h.rate)}`}
+							></div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
+			<div class="rounded-lg bg-white p-4 shadow">
+				<div class="flex items-center justify-between">
+					<p class="text-sm font-medium text-gray-500">Fixos vs variáveis</p>
+					<RefreshCcw class="h-5 w-5 text-indigo-600" />
+				</div>
+				<p class="mt-3 text-2xl font-semibold text-gray-950">{fixedShare}% <span class="text-sm font-medium text-gray-500">fixos</span></p>
+				<div class="mt-2 flex h-2 overflow-hidden rounded bg-gray-100">
+					<div class="h-2 bg-[#2a78d6]" style={`width: ${fixedShare}%`}></div>
+				</div>
+				<p class="mt-1 text-xs text-gray-500">
+					{formatCurrency(fixedVsVariable.fixedTotal)} recorrentes/parcelas · {formatCurrency(fixedVsVariable.variableTotal)} variáveis
+				</p>
+				{#if fixedVsVariable.topFixed.length > 0}
+					<ul class="mt-2 space-y-0.5 text-[11px] text-gray-500">
+						{#each fixedVsVariable.topFixed.slice(0, 3) as item}
+							<li class="flex justify-between gap-2"><span class="truncate">{item.name}</span><span class="shrink-0">{formatCurrency(item.total)}</span></li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+
+			{#if projection}
+				<div class="rounded-lg bg-white p-4 shadow">
+					<div class="flex items-center justify-between">
+						<p class="text-sm font-medium text-gray-500">Projeção do mês</p>
+						<CalendarClock class="h-5 w-5 text-amber-600" />
+					</div>
+					<p class="mt-3 text-2xl font-semibold text-gray-950">{formatCurrency(projection.projected)}</p>
+					<p class="mt-1 text-xs text-gray-500">nesse ritmo até o fim do mês</p>
+					{#if projection.percentVsBaseline != null && projection.baseline != null}
+						<p class={`mt-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${projection.percentVsBaseline > 5 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+							{#if projection.percentVsBaseline > 0}
+								<ArrowUpRight class="h-3.5 w-3.5" />
+							{:else}
+								<ArrowDownRight class="h-3.5 w-3.5" />
+							{/if}
+							{Math.abs(projection.percentVsBaseline)}% vs média de {formatCurrency(projection.baseline)}
+						</p>
+					{/if}
+				</div>
+			{/if}
+
+			<div class="rounded-lg bg-white p-4 shadow">
+				<div class="flex items-center justify-between">
+					<p class="text-sm font-medium text-gray-500">Parcelas futuras</p>
+					<ReceiptText class="h-5 w-5 text-violet-600" />
+				</div>
+				<p class="mt-3 text-2xl font-semibold text-gray-950">{formatCurrency(installmentForecast.totalCommitted)}</p>
+				<p class="mt-1 text-xs text-gray-500">já comprometidos em parcelas</p>
+				{#if installmentForecast.months.length > 0}
+					<p class="mt-2 text-xs text-gray-500">
+						Próximo mês: <span class="font-medium text-gray-800">{formatCurrency(installmentForecast.months[0].total)}</span>
+						({installmentForecast.months[0].count} {installmentForecast.months[0].count === 1 ? 'parcela' : 'parcelas'})
+					</p>
+				{/if}
+			</div>
+		</section>
+
 		<section class="rounded-lg bg-white p-5 shadow">
 			<div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
 				<div>
@@ -281,6 +401,101 @@
 						</div>
 					</aside>
 				{/if}
+			</div>
+		</section>
+
+		<section class="grid grid-cols-1 gap-4 xl:grid-cols-3">
+			<div class="rounded-lg bg-white p-5 shadow xl:col-span-2">
+				<h3 class="text-sm font-semibold text-gray-900">Evolução por categoria</h3>
+				<p class="text-xs text-gray-500">Despesas mensais das principais categorias (últimos {categoryTrend.months.length} meses)</p>
+				<div class="mt-4">
+					<CategoryTrendChart series={categoryTrend.series} points={categoryTrend.points} />
+				</div>
+			</div>
+
+			<div class="rounded-lg bg-white p-5 shadow">
+				<h3 class="text-sm font-semibold text-gray-900">Fora do normal em {formatMonth(selectedMonth)}</h3>
+				<p class="text-xs text-gray-500">Comparado à média dos meses anteriores</p>
+				<div class="mt-3 space-y-3">
+					{#each aboveNormal as item (item.id)}
+						<div class="flex items-start justify-between gap-3">
+							<div class="min-w-0">
+								<p class="truncate text-sm font-medium text-gray-900">{item.name}</p>
+								<p class="text-[11px] text-gray-500">{formatCurrency(item.current)} vs média {formatCurrency(item.baseline)}</p>
+							</div>
+							<span class={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${item.delta > 0 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+								{item.delta > 0 ? '+' : '−'}{formatCurrency(Math.abs(item.delta))}{item.deltaPercent != null ? ` (${item.delta > 0 ? '+' : '−'}${Math.abs(item.deltaPercent)}%)` : ''}
+							</span>
+						</div>
+					{/each}
+					{#if aboveNormal.length === 0}
+						<p class="text-xs text-gray-500">Nada fora do padrão — ou ainda não há meses anteriores suficientes para comparar.</p>
+					{/if}
+				</div>
+			</div>
+		</section>
+
+		<section class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+			<div class="rounded-lg bg-white p-5 shadow">
+				<h3 class="text-sm font-semibold text-gray-900">Parcelas nos próximos meses</h3>
+				<p class="text-xs text-gray-500">Compromissos já assumidos em compras parceladas</p>
+				<div class="mt-4 space-y-3">
+					{#each installmentForecast.months as m (m.month)}
+						<div>
+							<div class="flex items-center justify-between gap-3 text-sm">
+								<span class="capitalize text-gray-700">{formatMonth(m.month)}</span>
+								<span class="font-medium text-gray-950">{formatCurrency(m.total)} <span class="text-xs font-normal text-gray-500">· {m.count} {m.count === 1 ? 'parcela' : 'parcelas'}</span></span>
+							</div>
+							<div class="mt-1 h-2 rounded bg-gray-100">
+								<div class="h-2 rounded bg-violet-500" style={`width: ${Math.round((m.total / maxForecastTotal) * 100)}%`}></div>
+							</div>
+						</div>
+					{/each}
+					{#if installmentForecast.months.length === 0}
+						<p class="text-xs text-gray-500">Nenhuma parcela futura identificada.</p>
+					{/if}
+				</div>
+			</div>
+
+			<div class="rounded-lg bg-white p-5 shadow">
+				<div class="flex items-start justify-between gap-3">
+					<div>
+						<h3 class="text-sm font-semibold text-gray-900">Insights do mês</h3>
+						<p class="text-xs text-gray-500">Resumo gerado por IA a partir dos números de {formatMonth(selectedMonth)}</p>
+					</div>
+					<form method="POST" action="?/insights" use:enhance={insightsEnhance}>
+						<input type="hidden" name="month" value={selectedMonth} />
+						<button
+							type="submit"
+							disabled={generatingInsights || !selectedMonth}
+							class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+						>
+							{#if generatingInsights}
+								<span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true"></span>
+								Gerando...
+							{:else}
+								<Sparkles class="h-3.5 w-3.5" />
+								{insights ? 'Gerar novamente' : 'Gerar insights'}
+							{/if}
+						</button>
+					</form>
+				</div>
+				<div class="mt-4">
+					{#if insights}
+						<ul class="space-y-2.5">
+							{#each insights as insight}
+								<li class="flex items-start gap-2 text-sm text-gray-800">
+									<span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" aria-hidden="true"></span>
+									{insight}
+								</li>
+							{/each}
+						</ul>
+					{:else if form?.message && !form?.insights}
+						<p class="text-sm text-rose-700">{form.message}</p>
+					{:else if !generatingInsights}
+						<p class="text-xs text-gray-500">Clique em "Gerar insights" para um resumo do que mudou neste mês: categorias fora do padrão, gastos novos e peso dos compromissos fixos.</p>
+					{/if}
+				</div>
 			</div>
 		</section>
 
