@@ -141,6 +141,85 @@ async function markImportFailed(importId: string, message: string) {
 		.eq('id', importId);
 }
 
+type InsertedTransaction = {
+	id: string;
+	amount: number;
+	date: string;
+	description: string;
+	clean_description: string | null;
+};
+
+function buildTransactionInserts(
+	rows: ParsedRow[],
+	householdId: string,
+	userId: string,
+	sourceType: CsvSourceType,
+	referenceMonth: string
+) {
+	return rows.map((row) => ({
+		household_id: householdId,
+		date: row.date,
+		description: row.description,
+		clean_description: row.clean_description,
+		amount: row.amount,
+		currency: row.currency,
+		source_type: sourceType,
+		reference_month: referenceMonth,
+		import_dedup_key: buildImportDedupKey(row),
+		installment_number: row.installment_number ?? null,
+		installment_total: row.installment_total ?? null,
+		installment_group_key: row.installment_group_key ?? null,
+		classification_method: 'imported',
+		review_status: 'needs_review',
+		created_by_user_id: userId
+	}));
+}
+
+async function persistImportTransactions(
+	rows: ParsedRow[],
+	householdId: string,
+	userId: string,
+	sourceType: CsvSourceType,
+	referenceMonth: string
+): Promise<{ insertedTransactions: InsertedTransaction[] } | { errorMessage: string }> {
+	const inserts = buildTransactionInserts(rows, householdId, userId, sourceType, referenceMonth);
+	const { data, error } = await supabaseAdmin
+		.from('transactions')
+		.upsert(inserts, {
+			onConflict: 'household_id,reference_month,import_dedup_key',
+			ignoreDuplicates: true
+		})
+		.select('id, amount, date, description, clean_description');
+	if (error) return { errorMessage: error.message };
+	if (!data) {
+		return { errorMessage: 'A importação não conseguiu confirmar as transações gravadas. Tente novamente.' };
+	}
+	return { insertedTransactions: data };
+}
+
+async function grantImportedTransactionAccess(transactions: InsertedTransaction[], userId: string): Promise<string | null> {
+	if (transactions.length === 0) return null;
+	const { error } = await supabaseAdmin.from('transaction_access').insert(
+		transactions.map((transaction) => ({
+			transaction_id: transaction.id,
+			user_id: userId,
+			can_read: true,
+			can_edit: true
+		}))
+	);
+	return error?.message ?? null;
+}
+
+async function verifyImportedTransactions(transactionIds: string[], householdId: string): Promise<boolean> {
+	if (transactionIds.length === 0) return true;
+	const { count, error } = await supabaseAdmin
+		.from('transactions')
+		.select('id', { count: 'exact', head: true })
+		.in('id', transactionIds)
+		.eq('household_id', householdId);
+	return !error && count === transactionIds.length;
+}
+
 export const load: PageServerLoad = async () => {
 	return {};
 };
@@ -247,79 +326,30 @@ export const actions: Actions = {
 
 		let insertedCount = 0;
 		if (newRows.length > 0) {
-			const txInserts = newRows.map((r) => ({
-				household_id: householdId,
-				date: r.date,
-				description: r.description,
-				clean_description: r.clean_description,
-				amount: r.amount,
-				currency: r.currency,
-				source_type: resolved.sourceType,
-				reference_month: referenceMonth,
-				import_dedup_key: buildImportDedupKey(r),
-				installment_number: r.installment_number ?? null,
-				installment_total: r.installment_total ?? null,
-				installment_group_key: r.installment_group_key ?? null,
-				classification_method: 'imported',
-				review_status: 'needs_review',
-				created_by_user_id: user.id
-			}));
-
-			const { data: insertedTxs, error: txError } = await supabaseAdmin
-				.from('transactions')
-				.upsert(txInserts, {
-					onConflict: 'household_id,reference_month,import_dedup_key',
-					ignoreDuplicates: true
-				})
-				.select('id, amount, date, description, clean_description');
-
-			if (txError) {
-				await markImportFailed(importRecord.id, `transactions insert failed: ${txError.message}`);
-				return fail(500, { success: false, message: txError.message });
+			const persisted = await persistImportTransactions(
+				newRows,
+				householdId,
+				user.id,
+				resolved.sourceType,
+				referenceMonth
+			);
+			if ('errorMessage' in persisted) {
+				await markImportFailed(importRecord.id, `transactions insert failed: ${persisted.errorMessage}`);
+				return fail(500, { success: false, message: persisted.errorMessage });
 			}
 
-			if (!insertedTxs) {
-				await markImportFailed(
-					importRecord.id,
-					`transactions insert returned no rows for ${txInserts.length} requested rows`
-				);
-				return fail(500, {
-					success: false,
-					message: 'A importação não conseguiu confirmar as transações gravadas. Tente novamente.'
-				});
-			}
-			insertedCount = insertedTxs.length;
-
-			const accessRows: { transaction_id: string; user_id: string; can_read: boolean; can_edit: boolean }[] = [];
-			for (const tx of insertedTxs ?? []) {
-				accessRows.push({
-					transaction_id: tx.id,
-					user_id: user.id,
-					can_read: true,
-					can_edit: true
-				});
+			const insertedTransactions = persisted.insertedTransactions;
+			insertedCount = insertedTransactions.length;
+			const accessError = await grantImportedTransactionAccess(insertedTransactions, user.id);
+			if (accessError) {
+				await markImportFailed(importRecord.id, `transaction_access insert failed: ${accessError}`);
+				return fail(500, { success: false, message: accessError });
 			}
 
-			if (accessRows.length > 0) {
-				const { error: accessError } = await supabaseAdmin.from('transaction_access').insert(accessRows);
-				if (accessError) {
-					await markImportFailed(importRecord.id, `transaction_access insert failed: ${accessError.message}`);
-					return fail(500, { success: false, message: accessError.message });
-				}
-			}
-
-			const insertedIds = (insertedTxs ?? []).map((t) => t.id);
+			const insertedIds = insertedTransactions.map((transaction) => transaction.id);
 			if (insertedIds.length > 0) {
-				const { count: persistedCount, error: persistedError } = await supabaseAdmin
-					.from('transactions')
-					.select('id', { count: 'exact', head: true })
-					.in('id', insertedIds)
-					.eq('household_id', householdId);
-				if (persistedError || persistedCount !== insertedIds.length) {
-					await markImportFailed(
-						importRecord.id,
-						`persisted transaction count mismatch: ${persistedCount ?? 0}/${insertedIds.length}`
-					);
+				if (!(await verifyImportedTransactions(insertedIds, householdId))) {
+					await markImportFailed(importRecord.id, 'persisted transaction count mismatch');
 					return fail(500, {
 						success: false,
 						message: 'A importação não encontrou as transações recém-gravadas. Nada foi classificado.'

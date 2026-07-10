@@ -69,56 +69,51 @@ export function parseCsvBuffer(
 	});
 
 	const sourceType: CsvSourceType = options.sourceType ?? 'bank_account';
-
 	const rows: ParsedRow[] = [];
 	for (const record of parseResult.data) {
-		const rawDate = record[mapping.dateColumn]?.trim();
-		const rawDescription = record[mapping.descriptionColumn]?.trim();
-		const rawAmount = record[mapping.amountColumn]?.trim();
-		const rawIdentifier = mapping.identifierColumn ? record[mapping.identifierColumn]?.trim() : undefined;
-
-		if (!rawDate || !rawDescription || rawAmount === undefined) continue;
-
-		const parsedAmount = parseAmount(rawAmount);
-		if (Number.isNaN(parsedAmount)) continue;
-
-		// On credit card statements the bill payment shows up as a negative
-		// entry (a credit to the card balance) and the description usually
-		// mentions "pagamento". Skip it — it's just reconciliation, not a
-		// transaction. We require both signals so a legitimate refund
-		// ("estorno de ...", also negative) isn't dropped by mistake.
-		if (sourceType === 'credit_card' && parsedAmount < 0 && isCreditCardPayment(rawDescription)) {
-			continue;
-		}
-
-		// Credit card and voucher (vale) statements typically list charges as
-		// positive numbers. Flip the sign so charges become negative (expenses)
-		// and credits become positive, matching the bank-account convention
-		// used everywhere else in the app.
-		const amount = sourceType === 'bank_account' ? parsedAmount : -parsedAmount;
-
-		const date = normalizeDate(rawDate);
-		if (!date) continue;
-
-		const clean = cleanDescription(rawDescription);
-		const installment = parseInstallment(rawDescription);
-
-		rows.push({
-			date,
-			description: rawDescription,
-			amount,
-			currency: mapping.currency ?? 'BRL',
-			clean_description: clean,
-			external_id: rawIdentifier || undefined,
-			installment_number: installment?.number,
-			installment_total: installment?.total,
-			installment_group_key: installment
-				? installmentGroupKey(clean, amount, installment.total)
-				: undefined
-		});
+		const row = parseCsvRecord(record, mapping, sourceType);
+		if (row) rows.push(row);
 	}
 
 	return removeNeutralizedStatementPairs(rows);
+}
+
+function parseCsvRecord(
+	record: Record<string, string>,
+	mapping: CsvColumnMapping,
+	sourceType: CsvSourceType
+): ParsedRow | null {
+	const rawDate = record[mapping.dateColumn]?.trim();
+	const rawDescription = record[mapping.descriptionColumn]?.trim();
+	const rawAmount = record[mapping.amountColumn]?.trim();
+	const rawIdentifier = mapping.identifierColumn ? record[mapping.identifierColumn]?.trim() : undefined;
+	if (!rawDate || !rawDescription || rawAmount === undefined) return null;
+
+	const parsedAmount = parseAmount(rawAmount);
+	if (Number.isNaN(parsedAmount)) return null;
+	if (sourceType === 'credit_card' && parsedAmount < 0 && isCreditCardPayment(rawDescription)) {
+		return null;
+	}
+
+	const date = normalizeDate(rawDate);
+	if (!date) return null;
+
+	const amount = sourceType === 'bank_account' ? parsedAmount : -parsedAmount;
+	const clean = cleanDescription(rawDescription);
+	const installment = parseInstallment(rawDescription);
+	return {
+		date,
+		description: rawDescription,
+		amount,
+		currency: mapping.currency ?? 'BRL',
+		clean_description: clean,
+		external_id: rawIdentifier || undefined,
+		installment_number: installment?.number,
+		installment_total: installment?.total,
+		installment_group_key: installment
+			? installmentGroupKey(clean, amount, installment.total)
+			: undefined
+	};
 }
 
 function normalizeDate(raw: string): string | null {

@@ -115,6 +115,72 @@ async function getEditableTransactionIds(
 	return new Set((data ?? []).map((row) => row.transaction_id));
 }
 
+type ExistingClassification = {
+	category_id: string | null;
+	subcategory_id: string | null;
+	owner_profile_id: string | null;
+};
+
+type BulkClassificationSelection = {
+	applyCategory: boolean;
+	applyOwner: boolean;
+	categoryId: string | null | undefined;
+	subcategoryId: string | null | undefined;
+	ownerProfileId: string | null | undefined;
+};
+
+function readBulkClassificationSelection(formData: FormData): BulkClassificationSelection | { error: string } {
+	const rawCategory = String(formData.get('category_id') ?? KEEP);
+	const rawOwner = String(formData.get('owner_profile_id') ?? KEEP);
+	const applyCategory = rawCategory !== KEEP;
+	const applyOwner = rawOwner !== KEEP;
+	if (!applyCategory && !applyOwner) {
+		return { error: 'Escolha uma categoria ou atribuição para aplicar' };
+	}
+
+	const categoryId = applyCategory ? rawCategory.trim() || null : undefined;
+	return {
+		applyCategory,
+		applyOwner,
+		categoryId,
+		subcategoryId: applyCategory
+			? categoryId
+				? String(formData.get('subcategory_id') ?? '').trim() || null
+				: null
+			: undefined,
+		ownerProfileId: applyOwner ? rawOwner.trim() || null : undefined
+	};
+}
+
+function nextBulkClassification(
+	existing: ExistingClassification,
+	selection: BulkClassificationSelection
+): ExistingClassification {
+	return {
+		category_id: selection.applyCategory ? selection.categoryId ?? null : existing.category_id,
+		subcategory_id: selection.applyCategory ? selection.subcategoryId ?? null : existing.subcategory_id,
+		owner_profile_id: selection.applyOwner ? selection.ownerProfileId ?? null : existing.owner_profile_id
+	};
+}
+
+function hasClassificationChange(current: ExistingClassification, next: ExistingClassification): boolean {
+	return (
+		current.category_id !== next.category_id ||
+		current.subcategory_id !== next.subcategory_id ||
+		current.owner_profile_id !== next.owner_profile_id
+	);
+}
+
+function bulkClassificationPatch(selection: BulkClassificationSelection, now: string): Record<string, unknown> {
+	const patch: Record<string, unknown> = { review_status: 'confirmed', updated_at: now };
+	if (selection.applyCategory) {
+		patch.category_id = selection.categoryId ?? null;
+		patch.subcategory_id = selection.subcategoryId ?? null;
+	}
+	if (selection.applyOwner) patch.owner_profile_id = selection.ownerProfileId ?? null;
+	return patch;
+}
+
 export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSession } }) => {
 	const { user } = await safeGetSession();
 	if (!user) {
@@ -641,21 +707,8 @@ export const actions: Actions = {
 
 		// Each control uses the '__keep__' sentinel to mean "leave untouched", so
 		// the user can apply only a category, only an assignment, or both.
-		const rawCategory = String(formData.get('category_id') ?? KEEP);
-		const rawOwner = String(formData.get('owner_profile_id') ?? KEEP);
-		const applyCategory = rawCategory !== KEEP;
-		const applyOwner = rawOwner !== KEEP;
-		if (!applyCategory && !applyOwner) {
-			return fail(400, { success: false, message: 'Escolha uma categoria ou atribuição para aplicar' });
-		}
-
-		const categoryId = applyCategory ? rawCategory.trim() || null : undefined;
-		const subcategoryId = applyCategory
-			? categoryId
-				? String(formData.get('subcategory_id') ?? '').trim() || null
-				: null
-			: undefined;
-		const ownerProfileId = applyOwner ? rawOwner.trim() || null : undefined;
+		const selection = readBulkClassificationSelection(formData);
+		if ('error' in selection) return fail(400, { success: false, message: selection.error });
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
 		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
@@ -665,9 +718,9 @@ export const actions: Actions = {
 			supabase,
 			householdId,
 			{
-				category_id: applyCategory ? categoryId : undefined,
-				subcategory_id: applyCategory ? subcategoryId : undefined,
-				owner_profile_id: applyOwner ? ownerProfileId : undefined
+				category_id: selection.applyCategory ? selection.categoryId : undefined,
+				subcategory_id: selection.applyCategory ? selection.subcategoryId : undefined,
+				owner_profile_id: selection.applyOwner ? selection.ownerProfileId : undefined
 			},
 			user.id
 		);
@@ -694,26 +747,10 @@ export const actions: Actions = {
 			const existing = existingById.get(transactionId);
 			if (!existing) return fail(404, { success: false, message: 'Transação não encontrada' });
 
-			const nextCategory = applyCategory ? categoryId : existing.category_id;
-			const nextSubcategory = applyCategory ? subcategoryId : existing.subcategory_id;
-			const nextOwner = applyOwner ? ownerProfileId : existing.owner_profile_id;
+			const next = nextBulkClassification(existing, selection);
+			if (!hasClassificationChange(existing, next)) continue;
 
-			if (
-				existing.category_id === nextCategory &&
-				existing.subcategory_id === nextSubcategory &&
-				existing.owner_profile_id === nextOwner
-			) {
-				continue;
-			}
-
-			const patch: Record<string, unknown> = { review_status: 'confirmed', updated_at: now };
-			if (applyCategory) {
-				patch.category_id = categoryId;
-				patch.subcategory_id = subcategoryId;
-			}
-			if (applyOwner) {
-				patch.owner_profile_id = ownerProfileId;
-			}
+			const patch = bulkClassificationPatch(selection, now);
 
 			const { error } = await supabaseAdmin
 				.from('transactions')
@@ -722,14 +759,16 @@ export const actions: Actions = {
 				.eq('household_id', householdId);
 			if (error) return fail(500, { success: false, message: error.message });
 
-			if (applyCategory && categoryId) {
+			if (selection.applyCategory && selection.categoryId) {
 				await learnFromTransactionAdjustment(supabaseAdmin, {
 					householdId,
 					userId: user.id,
 					transactionId,
-					categoryId,
-					subcategoryId: subcategoryId ?? null,
-					ownerProfileId: applyOwner ? (ownerProfileId ?? null) : existing.owner_profile_id
+					categoryId: selection.categoryId,
+					subcategoryId: selection.subcategoryId ?? null,
+					ownerProfileId: selection.applyOwner
+						? (selection.ownerProfileId ?? null)
+						: existing.owner_profile_id
 				});
 			}
 

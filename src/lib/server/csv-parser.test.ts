@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildImportDedupKey, parseAmount, parseCsvBuffer, stripInstallmentMarker } from './csv-parser';
+import {
+	buildImportDedupKey,
+	detectMapping,
+	parseAmount,
+	parseCsvBuffer,
+	parseInstallment,
+	stripInstallmentMarker
+} from './csv-parser';
 
 describe('stripInstallmentMarker', () => {
 	it('strips trailing k/n markers so patterns match sibling installments', () => {
@@ -25,6 +32,26 @@ describe('buildImportDedupKey', () => {
 		});
 
 		expect(key).toBe('2026-04-01|MERCADO CENTRAL|10.50|BRL');
+	});
+});
+
+describe('detectMapping', () => {
+	it('detects common Portuguese columns and an optional identifier', () => {
+		const mapping = detectMapping(
+			Buffer.from(' Data , Descrição , Valor R$ , Identificador\n01/05/2026,Padaria,10,abc')
+		);
+
+		expect(mapping).toEqual({
+			dateColumn: ' Data ',
+			descriptionColumn: ' Descrição ',
+			amountColumn: ' Valor R$ ',
+			identifierColumn: ' Identificador',
+			currency: 'BRL'
+		});
+	});
+
+	it('rejects files without all required columns', () => {
+		expect(detectMapping(Buffer.from('Data,Descrição\n01/05/2026,Padaria'))).toBeNull();
 	});
 });
 
@@ -119,6 +146,27 @@ describe('parseCsvBuffer credit card payment filter', () => {
 		expect(rows[0].date).toBe('2026-04-01');
 		expect(rows[0].amount).toBe(1234.56);
 	});
+
+	it('skips incomplete or invalid rows and preserves installment metadata for vouchers', () => {
+		const csv = [
+			'date,title,amount',
+			'2026-04-01,Compra parcelada 2/3,25.00',
+			'2026-04-02,,10.00',
+			'2026-04-03,Valor inválido,abc',
+			'invalid-date,Data inválida,10.00'
+		].join('\n');
+
+		const rows = parseCsvBuffer(bufferOf(csv), mapping, { sourceType: 'vale_alimentacao' });
+
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({
+			date: '2026-04-01',
+			amount: -25,
+			installment_number: 2,
+			installment_total: 3,
+			installment_group_key: 'COMPRA PARCELADA|3|25.00'
+		});
+	});
 });
 
 describe('parseAmount', () => {
@@ -128,5 +176,15 @@ describe('parseAmount', () => {
 		expect(parseAmount('1.234,56')).toBe(1234.56);
 		expect(parseAmount('1,234.56')).toBe(1234.56);
 		expect(parseAmount('R$ -1.234,56')).toBe(-1234.56);
+		expect(Number.isNaN(parseAmount('sem valor'))).toBe(true);
+	});
+});
+
+describe('parseInstallment', () => {
+	it('recognizes valid markers and rejects dates or invalid ranges', () => {
+		expect(parseInstallment('Compra parcelada 3/8')).toEqual({ number: 3, total: 8 });
+		expect(parseInstallment('Posto 24/7')).toBeNull();
+		expect(parseInstallment('Parcela 0/3')).toBeNull();
+		expect(parseInstallment('Parcela 3/2')).toBeNull();
 	});
 });
