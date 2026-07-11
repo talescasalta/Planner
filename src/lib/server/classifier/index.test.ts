@@ -358,4 +358,111 @@ describe('classifyTransactions', () => {
 			})
 		);
 	});
+
+	it('treats invalid JSON as a missing response that requires review', async () => {
+		mockedApplyRules.mockReturnValue(null);
+		vi.mocked(filterCategoriesForUser).mockImplementation((categories) => categories);
+		mockedCallLlm.mockResolvedValue({ choices: [{ message: { content: 'not-json' } }] } as never);
+		const transactions = new QueryMock({
+			data: [
+				{
+					id: 'tx-a', description: 'Compra desconhecida', clean_description: null,
+					merchant: null, amount: -50, date: '2026-05-10', household_id: 'household-a'
+				}
+			],
+			error: null
+		});
+
+		await classifyTransactions(
+			supabaseForQueries([transactions, new QueryMock({ data: [], error: null })]),
+			'household-a', ['tx-a'], 'user-a'
+		);
+
+		expect(mockedRpc).toHaveBeenCalledWith(
+			'apply_transaction_classification_updates',
+			expect.objectContaining({
+				updates: [expect.objectContaining({
+					review_status: 'needs_review',
+					classification_suggestion: { type: 'error', error: 'missing_in_response' }
+				})]
+			})
+		);
+	});
+
+	it('turns provider failures into reviewable errors instead of aborting the batch', async () => {
+		mockedApplyRules.mockReturnValue(null);
+		vi.mocked(filterCategoriesForUser).mockImplementation((categories) => categories);
+		mockedCallLlm.mockRejectedValue(new Error('provider unavailable'));
+		const transactions = new QueryMock({
+			data: [
+				{
+					id: 'tx-a', description: 'Compra desconhecida', clean_description: null,
+					merchant: null, amount: -50, date: '2026-05-10', household_id: 'household-a'
+				}
+			],
+			error: null
+		});
+
+		await expect(classifyTransactions(
+			supabaseForQueries([transactions, new QueryMock({ data: [], error: null })]),
+			'household-a', ['tx-a'], 'user-a'
+		)).resolves.toEqual([{ id: 'tx-a', method: 'llm', needs_review: true }]);
+
+		expect(mockedRpc).toHaveBeenCalledWith(
+			'apply_transaction_classification_updates',
+			expect.objectContaining({
+				updates: [expect.objectContaining({
+					classification_suggestion: expect.objectContaining({ type: 'error', error: 'llm_error' })
+				})]
+			})
+		);
+	});
+
+	it('ignores unknown and duplicate ids returned by the provider', async () => {
+		mockedApplyRules.mockReturnValue(null);
+		vi.mocked(filterCategoriesForUser).mockImplementation((categories) => categories);
+		mockedCallLlm.mockResolvedValue({
+			choices: [{ message: { content: JSON.stringify({ results: [
+				{ id: 'tx-foreign', category: null, subcategory: null, confidence: 0.9, needs_review: false },
+				{ id: 'tx-a', category: null, subcategory: null, confidence: 0.5, needs_review: true },
+				{ id: 'tx-a', category: null, subcategory: null, confidence: 0.9, needs_review: false }
+			] }) } }]
+		} as never);
+		const transactions = new QueryMock({ data: [{
+			id: 'tx-a', description: 'Compra', clean_description: null, merchant: null,
+			amount: -50, date: '2026-05-10', household_id: 'household-a'
+		}], error: null });
+
+		await classifyTransactions(
+			supabaseForQueries([transactions, new QueryMock({ data: [], error: null })]),
+			'household-a', ['tx-a'], 'user-a'
+		);
+
+		const rpcPayload = mockedRpc.mock.calls[0]?.[1] as { updates: Array<{ id: string }> };
+		expect(rpcPayload.updates).toHaveLength(1);
+		expect(rpcPayload.updates[0].id).toBe('tx-a');
+	});
+
+	it('splits more than 30 uncategorized transactions into multiple provider batches', async () => {
+		mockedApplyRules.mockReturnValue(null);
+		mockedRpc.mockResolvedValue({ data: 31, error: null } as never);
+		vi.mocked(filterCategoriesForUser).mockImplementation((categories) => categories);
+		mockedCallLlm.mockResolvedValue({ choices: [{ message: { content: '{"results":[]}' } }] } as never);
+		const rows = Array.from({ length: 31 }, (_, index) => ({
+			id: `tx-${index}`, description: `Compra ${index}`, clean_description: null, merchant: null,
+			amount: -index - 1, date: '2026-05-10', household_id: 'household-a'
+		}));
+
+		const result = await classifyTransactions(
+			supabaseForQueries([
+				new QueryMock({ data: rows, error: null }),
+				new QueryMock({ data: [], error: null })
+			]),
+			'household-a', rows.map((row) => row.id), 'user-a'
+		);
+
+		expect(mockedCallLlm).toHaveBeenCalledTimes(2);
+		expect(result).toHaveLength(31);
+		expect((mockedRpc.mock.calls[0]?.[1] as { updates: unknown[] }).updates).toHaveLength(31);
+	});
 });

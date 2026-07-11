@@ -5,6 +5,18 @@ import { loadCategoriesForUser } from '$lib/server/categories';
 import { deleteRuleForHousehold, updateRuleActiveForHousehold } from '$lib/server/rules';
 import { fail } from '@sveltejs/kit';
 
+function readRuleForm(formData: FormData) {
+	const categoryId = String(formData.get('category_id') ?? '') || null;
+	return {
+		pattern: String(formData.get('pattern') ?? ''),
+		patternType: String(formData.get('pattern_type') ?? ''),
+		categoryId,
+		subcategoryId: categoryId ? String(formData.get('subcategory_id') ?? '') || null : null,
+		ownerProfileId: String(formData.get('owner_profile_id') ?? '') || null,
+		confidence: Number.parseFloat(String(formData.get('confidence') ?? '0.95'))
+	};
+}
+
 export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession } }) => {
 	const { user } = await safeGetSession();
 	if (!user) return { rules: [], categories: [], profiles: [] };
@@ -40,12 +52,7 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const pattern = formData.get('pattern') as string;
-		const patternType = formData.get('pattern_type') as string;
-		const categoryId = formData.get('category_id') as string;
-		const subcategoryId = formData.get('subcategory_id') as string;
-		const ownerProfileId = formData.get('owner_profile_id') as string;
-		const confidence = parseFloat((formData.get('confidence') as string) ?? '0.95');
+		const { pattern, patternType, categoryId, subcategoryId, ownerProfileId, confidence } = readRuleForm(formData);
 
 		if (!pattern || !patternType || !categoryId) {
 			return fail(400, { success: false, message: 'Informe padrão, tipo e categoria' });
@@ -55,9 +62,9 @@ export const actions: Actions = {
 		if (!householdId) return fail(400, { success: false, message: 'Sem grupo' });
 
 		const relationError = await validateTransactionRelations(supabase, householdId, {
-			category_id: categoryId || null,
-			subcategory_id: categoryId ? subcategoryId || null : null,
-			owner_profile_id: ownerProfileId || null
+			category_id: categoryId,
+			subcategory_id: subcategoryId,
+			owner_profile_id: ownerProfileId
 		}, user.id);
 		if (relationError) {
 			return fail(400, { success: false, message: relationError });
@@ -67,9 +74,9 @@ export const actions: Actions = {
 			household_id: householdId,
 			pattern,
 			pattern_type: patternType,
-			category_id: categoryId || null,
-			subcategory_id: categoryId ? subcategoryId || null : null,
-			owner_profile_id: ownerProfileId || null,
+			category_id: categoryId,
+			subcategory_id: subcategoryId,
+			owner_profile_id: ownerProfileId,
 			confidence,
 			created_by_user_id: user.id,
 			active: true

@@ -143,18 +143,20 @@ Return JSON in this exact shape:
 		if (!validated.success) return null;
 
 		const mapping = validated.data;
-		if (
-			!headers.includes(mapping.dateColumn) ||
-			!headers.includes(mapping.descriptionColumn) ||
-			!headers.includes(mapping.amountColumn) ||
-			(mapping.identifierColumn && !headers.includes(mapping.identifierColumn))
-		) {
-			return null;
-		}
+		if (!mappingUsesKnownHeaders(mapping, headers)) return null;
 
 		return mapping;
 	} catch (error) {
 		console.error('[imports] LLM mapping failed', error);
 		return null;
 	}
+}
+
+function mappingUsesKnownHeaders(
+	mapping: CsvColumnMapping & { identifierColumn?: string },
+	headers: string[]
+) {
+	const required = [mapping.dateColumn, mapping.descriptionColumn, mapping.amountColumn];
+	return required.every((header) => headers.includes(header)) &&
+		(!mapping.identifierColumn || headers.includes(mapping.identifierColumn));
 }

@@ -119,20 +119,28 @@
 		hovered = null;
 	}
 
+	function nodeDataValue(node: any, key: string): string {
+		return node?.data?.[key] ?? '';
+	}
+
+	function selectionFor(leaf: any): TreemapSelection {
+		const category = categoryNodeFor(leaf);
+		return {
+			categoryId: nodeDataValue(category, 'id'),
+			subcategoryId: nodeDataValue(leaf, 'id'),
+			categoryName: nodeDataValue(category, 'name'),
+			subcategoryName: nodeDataValue(leaf, 'name')
+		};
+	}
+
+	function isSameSelection(left: TreemapSelection, right: TreemapSelection): boolean {
+		return left.categoryId === right.categoryId && left.subcategoryId === right.subcategoryId;
+	}
+
 	function handleClick(leaf: any) {
 		if (!onSelect) return;
-		const cat = categoryNodeFor(leaf);
-		const sel: TreemapSelection = {
-			categoryId: cat?.data?.id ?? '',
-			subcategoryId: leaf?.data?.id ?? '',
-			categoryName: cat?.data?.name ?? '',
-			subcategoryName: leaf?.data?.name ?? ''
-		};
-		const same =
-			selected &&
-			selected.categoryId === sel.categoryId &&
-			selected.subcategoryId === sel.subcategoryId;
-		onSelect(same ? null : sel);
+		const selection = selectionFor(leaf);
+		onSelect(selected && isSameSelection(selected, selection) ? null : selection);
 	}
 
 	function isSelected(leaf: any): boolean {

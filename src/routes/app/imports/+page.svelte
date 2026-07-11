@@ -95,21 +95,26 @@
 		}
 	}
 
+	function pastedImage(items: DataTransferItemList | DataTransferItem[]): File | null {
+		for (const item of items) {
+			if (!item.type.startsWith('image/')) continue;
+			const blob = item.getAsFile();
+			if (!blob) continue;
+			const extension = item.type.split('/')[1] ?? 'png';
+			return new File([blob], `print-colado.${extension}`, { type: item.type });
+		}
+		return null;
+	}
+
 	function onPaste(e: ClipboardEvent) {
 		if (isConfirming) return;
 		const items = e.clipboardData?.items ?? [];
-		for (const item of items) {
-			if (item.type.startsWith('image/')) {
-				const blob = item.getAsFile();
-				if (blob) {
-					const ext = item.type.split('/')[1] ?? 'png';
-					const file = new File([blob], `print-colado.${ext}`, { type: item.type });
-					setFile(file);
-					syncVisibleInput(file);
-					e.preventDefault();
-					return;
-				}
-			}
+		const image = pastedImage(items);
+		if (image) {
+			setFile(image);
+			syncVisibleInput(image);
+			e.preventDefault();
+			return;
 		}
 		// Text paste: only capture when the user isn't pasting into a field
 		// (the textarea below handles its own paste natively).

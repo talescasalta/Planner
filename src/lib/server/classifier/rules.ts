@@ -44,30 +44,7 @@ export function applyRules(
 
 	const sortedRules = [...rules].sort(compareRulesBySpecificity);
 	for (const rule of sortedRules) {
-		const pattern = rule.pattern.trim().toUpperCase();
-		let matched = false;
-
-		switch (rule.pattern_type) {
-			case 'exact_merchant':
-				matched = searchMerchant === pattern;
-				break;
-			case 'merchant_contains':
-				matched = searchMerchant.includes(pattern);
-				break;
-			case 'description_contains':
-				matched = searchDesc.includes(pattern);
-				break;
-			case 'regex':
-				try {
-					const re = new RegExp(rule.pattern, 'i');
-					matched = re.test(merchant ?? '') || re.test(description ?? '');
-				} catch {
-					matched = false;
-				}
-				break;
-		}
-
-		if (matched) {
+		if (ruleMatches(rule, searchMerchant, searchDesc, merchant, description)) {
 			return {
 				category_id: rule.category_id,
 				subcategory_id: rule.subcategory_id ?? null,
@@ -79,6 +56,29 @@ export function applyRules(
 	}
 
 	return null;
+}
+
+function ruleMatches(
+	rule: ClassificationRule,
+	searchMerchant: string,
+	searchDescription: string,
+	merchant: string | null,
+	description: string
+) {
+	const pattern = rule.pattern.trim().toUpperCase();
+	switch (rule.pattern_type) {
+		case 'exact_merchant': return searchMerchant === pattern;
+		case 'merchant_contains': return searchMerchant.includes(pattern);
+		case 'description_contains': return searchDescription.includes(pattern);
+		case 'regex':
+			try {
+				const regex = new RegExp(rule.pattern, 'i');
+				return regex.test(merchant ?? '') || regex.test(description);
+			} catch {
+				return false;
+			}
+		default: return false;
+	}
 }
 
 function patternLength(rule: ClassificationRule): number {

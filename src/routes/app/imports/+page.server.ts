@@ -30,6 +30,14 @@ interface ResolvedImportInput {
 	sourceName: string;
 }
 
+function pastedImportText(formData: FormData) {
+	return (formData.get('pasted_text')?.toString() ?? '').trim();
+}
+
+function emptyImportRowsMessage(resolved: ResolvedImportInput) {
+	return resolved.notes || EMPTY_ROWS_MESSAGE;
+}
+
 // Accepts a CSV file, a statement screenshot or pasted text and normalizes
 // everything into parsed transaction rows.
 async function resolveImportInput(
@@ -38,7 +46,7 @@ async function resolveImportInput(
 ): Promise<ResolvedImportInput | null> {
 	const sourceType = readSourceType(formData);
 	const file = formData.get('file') as File | null;
-	const pastedText = (formData.get('pasted_text')?.toString() ?? '').trim();
+	const pastedText = pastedImportText(formData);
 
 	if (file && file.size > 0) {
 		const buffer = Buffer.from(await file.arrayBuffer());
@@ -220,6 +228,70 @@ async function verifyImportedTransactions(transactionIds: string[], householdId:
 	return !error && count === transactionIds.length;
 }
 
+async function importAndClassifyRows(
+	rows: ParsedRow[],
+	householdId: string,
+	userId: string,
+	sourceType: CsvSourceType,
+	referenceMonth: string,
+	importId: string
+): Promise<{ insertedCount: number } | { errorMessage: string }> {
+	const persisted = await persistImportTransactions(rows, householdId, userId, sourceType, referenceMonth);
+	if ('errorMessage' in persisted) {
+		await markImportFailed(importId, `transactions insert failed: ${persisted.errorMessage}`);
+		return { errorMessage: persisted.errorMessage };
+	}
+	const insertedTransactions = persisted.insertedTransactions;
+	const accessError = await grantImportedTransactionAccess(insertedTransactions, userId);
+	if (accessError) {
+		await markImportFailed(importId, `transaction_access insert failed: ${accessError}`);
+		return { errorMessage: accessError };
+	}
+	const insertedIds = insertedTransactions.map((transaction) => transaction.id);
+	if (insertedIds.length === 0) return { insertedCount: 0 };
+	if (!(await verifyImportedTransactions(insertedIds, householdId))) {
+		await markImportFailed(importId, 'persisted transaction count mismatch');
+		return { errorMessage: 'A importação não encontrou as transações recém-gravadas. Nada foi classificado.' };
+	}
+	try {
+		await classifyTransactions(supabaseAdmin, householdId, insertedIds, userId);
+	} catch (error) {
+		await markImportFailed(importId, `classification failed: ${String(error)}`);
+		return { errorMessage: 'As transações foram importadas, mas a classificação automática falhou. Tente classificar novamente.' };
+	}
+	return { insertedCount: insertedTransactions.length };
+}
+
+type RepairTransaction = {
+	id: string;
+	created_by_user_id: string;
+	owner_profile: { type?: string; user_id?: string | null } | null;
+};
+
+function missingAccessRows(
+	transactions: RepairTransaction[],
+	householdMembers: string[],
+	existingSet: Set<string>
+) {
+	const rows: { transaction_id: string; user_id: string; can_read: boolean; can_edit: boolean }[] = [];
+	for (const transaction of transactions) {
+		const profile = transaction.owner_profile;
+		const targetUserIds = profile?.type === 'shared'
+			? householdMembers
+			: Array.from(new Set([transaction.created_by_user_id, profile?.user_id].filter((id): id is string => !!id)));
+		for (const userId of targetUserIds) {
+			if (existingSet.has(`${transaction.id}|${userId}`)) continue;
+			rows.push({
+				transaction_id: transaction.id,
+				user_id: userId,
+				can_read: true,
+				can_edit: userId === transaction.created_by_user_id || profile?.type === 'shared'
+			});
+		}
+	}
+	return rows;
+}
+
 export const load: PageServerLoad = async () => {
 	return {};
 };
@@ -245,7 +317,7 @@ export const actions: Actions = {
 		}
 		const rows = resolved.rows;
 		if (rows.length === 0) {
-			return fail(400, { success: false, message: resolved.notes || EMPTY_ROWS_MESSAGE });
+			return fail(400, { success: false, message: emptyImportRowsMessage(resolved) });
 		}
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
@@ -294,7 +366,7 @@ export const actions: Actions = {
 		}
 		const rows = resolved.rows;
 		if (rows.length === 0) {
-			return fail(400, { success: false, message: resolved.notes || EMPTY_ROWS_MESSAGE });
+			return fail(400, { success: false, message: emptyImportRowsMessage(resolved) });
 		}
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
@@ -326,46 +398,11 @@ export const actions: Actions = {
 
 		let insertedCount = 0;
 		if (newRows.length > 0) {
-			const persisted = await persistImportTransactions(
-				newRows,
-				householdId,
-				user.id,
-				resolved.sourceType,
-				referenceMonth
+			const result = await importAndClassifyRows(
+				newRows, householdId, user.id, resolved.sourceType, referenceMonth, importRecord.id
 			);
-			if ('errorMessage' in persisted) {
-				await markImportFailed(importRecord.id, `transactions insert failed: ${persisted.errorMessage}`);
-				return fail(500, { success: false, message: persisted.errorMessage });
-			}
-
-			const insertedTransactions = persisted.insertedTransactions;
-			insertedCount = insertedTransactions.length;
-			const accessError = await grantImportedTransactionAccess(insertedTransactions, user.id);
-			if (accessError) {
-				await markImportFailed(importRecord.id, `transaction_access insert failed: ${accessError}`);
-				return fail(500, { success: false, message: accessError });
-			}
-
-			const insertedIds = insertedTransactions.map((transaction) => transaction.id);
-			if (insertedIds.length > 0) {
-				if (!(await verifyImportedTransactions(insertedIds, householdId))) {
-					await markImportFailed(importRecord.id, 'persisted transaction count mismatch');
-					return fail(500, {
-						success: false,
-						message: 'A importação não encontrou as transações recém-gravadas. Nada foi classificado.'
-					});
-				}
-
-				try {
-					await classifyTransactions(supabaseAdmin, householdId, insertedIds, user.id);
-				} catch (classificationError) {
-					await markImportFailed(importRecord.id, `classification failed: ${String(classificationError)}`);
-					return fail(500, {
-						success: false,
-						message: 'As transações foram importadas, mas a classificação automática falhou. Tente classificar novamente.'
-					});
-				}
-			}
+			if ('errorMessage' in result) return fail(500, { success: false, message: result.errorMessage });
+			insertedCount = result.insertedCount;
 		}
 
 		await supabaseAdmin
@@ -407,24 +444,7 @@ export const actions: Actions = {
 		const existingSet = new Set((existing ?? []).map((r) => `${r.transaction_id}|${r.user_id}`));
 
 		const householdMembers = await getHouseholdMembers(supabaseAdmin, householdId);
-		const toInsert: { transaction_id: string; user_id: string; can_read: boolean; can_edit: boolean }[] = [];
-		for (const tx of txs ?? []) {
-			const profile = tx.owner_profile as { type?: string; user_id?: string | null } | null;
-			const targetUserIds =
-				profile?.type === 'shared'
-					? householdMembers
-					: Array.from(new Set([tx.created_by_user_id, profile?.user_id].filter((id): id is string => !!id)));
-
-			for (const targetUserId of targetUserIds) {
-				if (existingSet.has(`${tx.id}|${targetUserId}`)) continue;
-				toInsert.push({
-					transaction_id: tx.id,
-					user_id: targetUserId,
-					can_read: true,
-					can_edit: targetUserId === tx.created_by_user_id || profile?.type === 'shared'
-				});
-			}
-		}
+		const toInsert = missingAccessRows((txs ?? []) as unknown as RepairTransaction[], householdMembers, existingSet);
 
 		if (toInsert.length === 0) {
 			return { success: true, message: 'Acesso já estava completo' };

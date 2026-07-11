@@ -141,6 +141,10 @@
 		return transactionsHref({ month, page: 0 });
 	}
 
+	function setQueryParam(params: URLSearchParams, key: string, value: string, ignored = '') {
+		if (value && value !== ignored) params.set(key, value);
+	}
+
 	function transactionsHref(overrides: {
 		month?: string;
 		sourceType?: string;
@@ -157,11 +161,11 @@
 		const status = overrides.status ?? filters.status;
 		const page = overrides.page ?? data.page;
 
-		if (month) params.set('month', month);
-		if (sourceType && sourceType !== 'all') params.set('source_type', sourceType);
-		if (categoryId) params.set('category_id', categoryId);
-		if (subcategoryId) params.set('subcategory_id', subcategoryId);
-		if (status && status !== 'all') params.set('status', status);
+		setQueryParam(params, 'month', month);
+		setQueryParam(params, 'source_type', sourceType, 'all');
+		setQueryParam(params, 'category_id', categoryId);
+		setQueryParam(params, 'subcategory_id', subcategoryId);
+		setQueryParam(params, 'status', status, 'all');
 		if (page > 0) params.set('page', String(page));
 
 		const query = params.toString();

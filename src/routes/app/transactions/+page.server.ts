@@ -84,6 +84,23 @@ function appendFilters(params: URLSearchParams, formData: FormData) {
 	if (status && status !== ALL_FILTERS) params.set('status', status);
 }
 
+function readSingleClassificationForm(formData: FormData) {
+	const categoryId = cleanFilter(formData.get('category_id')?.toString()) || null;
+	return {
+		transactionId: cleanFilter(formData.get('transaction_id')?.toString()),
+		categoryId,
+		subcategoryId: categoryId ? cleanFilter(formData.get('subcategory_id')?.toString()) || null : null,
+		ownerProfileId: cleanFilter(formData.get('owner_profile_id')?.toString()) || null,
+		month: cleanFilter(formData.get('month')?.toString()),
+		page: cleanFilter(formData.get('page')?.toString())
+	};
+}
+
+function classificationDisplaySource(hasSavedClassification: boolean, hasSuggestion: boolean) {
+	if (hasSavedClassification) return 'saved';
+	return hasSuggestion ? 'suggestion' : 'empty';
+}
+
 function withClassificationDisplay<T extends TransactionWithDisplay>(transaction: T) {
 	const suggestedCategory = suggestionText(transaction.classification_suggestion?.category);
 	const suggestedSubcategory = suggestionText(transaction.classification_suggestion?.subcategory);
@@ -96,7 +113,7 @@ function withClassificationDisplay<T extends TransactionWithDisplay>(transaction
 		...transaction,
 		category_display_name: categoryName ?? null,
 		subcategory_display_name: subcategoryName ?? null,
-		classification_display_source: hasSavedClassification ? 'saved' : hasSuggestion ? 'suggestion' : 'empty'
+		classification_display_source: classificationDisplaySource(hasSavedClassification, hasSuggestion)
 	};
 }
 
@@ -129,6 +146,15 @@ type BulkClassificationSelection = {
 	ownerProfileId: string | null | undefined;
 };
 
+function bulkCategoryFields(formData: FormData, rawCategory: string, applyCategory: boolean) {
+	if (!applyCategory) return { categoryId: undefined, subcategoryId: undefined };
+	const categoryId = rawCategory.trim() || null;
+	return {
+		categoryId,
+		subcategoryId: categoryId ? String(formData.get('subcategory_id') ?? '').trim() || null : null
+	};
+}
+
 function readBulkClassificationSelection(formData: FormData): BulkClassificationSelection | { error: string } {
 	const rawCategory = String(formData.get('category_id') ?? KEEP);
 	const rawOwner = String(formData.get('owner_profile_id') ?? KEEP);
@@ -138,16 +164,12 @@ function readBulkClassificationSelection(formData: FormData): BulkClassification
 		return { error: 'Escolha uma categoria ou atribuição para aplicar' };
 	}
 
-	const categoryId = applyCategory ? rawCategory.trim() || null : undefined;
+	const { categoryId, subcategoryId } = bulkCategoryFields(formData, rawCategory, applyCategory);
 	return {
 		applyCategory,
 		applyOwner,
 		categoryId,
-		subcategoryId: applyCategory
-			? categoryId
-				? String(formData.get('subcategory_id') ?? '').trim() || null
-				: null
-			: undefined,
+		subcategoryId,
 		ownerProfileId: applyOwner ? rawOwner.trim() || null : undefined
 	};
 }
@@ -181,6 +203,110 @@ function bulkClassificationPatch(selection: BulkClassificationSelection, now: st
 	return patch;
 }
 
+function applyTransactionQueryFilters(query: any, selectedMonth: string, filters: ReturnType<typeof readFilters>) {
+	if (selectedMonth && selectedMonth !== ALL_MONTHS) query = query.eq('reference_month', selectedMonth);
+	if (filters.sourceType === UNKNOWN_SOURCE) query = query.is('source_type', null);
+	else if (filters.sourceType !== ALL_FILTERS) query = query.eq('source_type', filters.sourceType);
+	if (filters.categoryId) query = query.eq('category_id', filters.categoryId);
+	if (filters.subcategoryId) query = query.eq('subcategory_id', filters.subcategoryId);
+	if (filters.status !== ALL_FILTERS) query = query.eq('review_status', filters.status);
+	return query;
+}
+
+function redirectToTransactionList(formData: FormData, month: string, page: string): never {
+	const params = new URLSearchParams();
+	if (month) params.set('month', month);
+	if (page && page !== '0') params.set('page', page);
+	appendFilters(params, formData);
+	const query = params.toString();
+	redirect(303, `/app/transactions${query ? `?${query}` : ''}`);
+}
+
+function readClassificationRows(formData: FormData) {
+	const transactionIds = formData.getAll('transaction_id').map((value) => String(value).trim());
+	const categoryIds = formData.getAll('category_id').map((value) => String(value).trim() || null);
+	const subcategoryIds = formData.getAll('subcategory_id').map((value) => String(value).trim() || null);
+	const ownerProfileIds = formData.getAll('owner_profile_id').map((value) => String(value).trim() || null);
+	const complete = transactionIds.length > 0 && [categoryIds, subcategoryIds, ownerProfileIds]
+		.every((values) => values.length === transactionIds.length);
+	return complete ? { transactionIds, categoryIds, subcategoryIds, ownerProfileIds } : null;
+}
+
+function readNewSubcategoryForm(formData: FormData) {
+	return {
+		transactionId: cleanName(formData.get('transaction_id')),
+		parentId: cleanName(formData.get('category_id')),
+		name: cleanName(formData.get('new_subcategory_name')),
+		ownerProfileId: cleanName(formData.get('owner_profile_id')) || null
+	};
+}
+
+function bulkRelationPatch(selection: BulkClassificationSelection) {
+	return {
+		category_id: selection.applyCategory ? selection.categoryId : undefined,
+		subcategory_id: selection.applyCategory ? selection.subcategoryId : undefined,
+		owner_profile_id: selection.applyOwner ? selection.ownerProfileId : undefined
+	};
+}
+
+function bulkLearningOwner(selection: BulkClassificationSelection, existing: ExistingClassification) {
+	return selection.applyOwner ? (selection.ownerProfileId ?? null) : existing.owner_profile_id;
+}
+
+function paginationFromUrl(url: URL) {
+	const page = Math.max(0, Number.parseInt(url.searchParams.get('page') ?? '0', 10) || 0);
+	return { page, from: page * PAGE_SIZE, to: page * PAGE_SIZE + PAGE_SIZE };
+}
+
+function selectedMonthFor(requestedMonth: string, monthOptions: string[]) {
+	if (requestedMonth === ALL_MONTHS) return ALL_MONTHS;
+	return requestedMonth || monthOptions[0] || '';
+}
+
+function selectedTransactionIds(formData: FormData) {
+	return Array.from(new Set(formData.getAll('transaction_id').map((value) => String(value).trim()).filter(Boolean)));
+}
+
+async function learnBulkAdjustment(
+	selection: BulkClassificationSelection,
+	existing: ExistingClassification,
+	householdId: string,
+	userId: string,
+	transactionId: string
+) {
+	if (!selection.applyCategory || !selection.categoryId) return;
+	await learnFromTransactionAdjustment(supabaseAdmin, {
+		householdId, userId, transactionId, categoryId: selection.categoryId,
+		subcategoryId: selection.subcategoryId ?? null,
+		ownerProfileId: bulkLearningOwner(selection, existing)
+	});
+}
+
+async function resolveSubcategory(
+	categories: Awaited<ReturnType<typeof loadCategoriesForUser>>,
+	householdId: string,
+	userId: string,
+	parentId: string,
+	name: string
+) {
+	const existing = categories.find((category) =>
+		category.parent_id === parentId && category.name.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR')
+	);
+	if (existing) return { id: existing.id, message: 'Subcategoria já existia', error: null };
+	const { data, error } = await supabaseAdmin.from('categories').insert({
+		household_id: householdId,
+		name,
+		parent_id: parentId,
+		created_by_user_id: userId,
+		is_default: false
+	}).select('id').single();
+	return {
+		id: data?.id ?? null,
+		message: 'Subcategoria criada',
+		error: error?.message ?? (data ? null : 'Erro ao criar subcategoria')
+	};
+}
+
 export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSession } }) => {
 	const { user } = await safeGetSession();
 	if (!user) {
@@ -192,9 +318,7 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		return emptyPage();
 	}
 
-	const page = Math.max(0, parseInt(url.searchParams.get('page') ?? '0', 10) || 0);
-	const from = page * PAGE_SIZE;
-	const to = from + PAGE_SIZE;
+	const { page, from, to } = paginationFromUrl(url);
 	const requestedMonth = url.searchParams.get('month') ?? '';
 	const filters = readFilters(url);
 	const readableTransactionIds = await getReadableTransactionIds(supabase, user.id);
@@ -213,18 +337,7 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 	const monthOptions = Array.from(
 		new Set((monthRows ?? []).map((row) => row.reference_month ?? monthFromDate(row.date)).filter(Boolean))
 	).sort((a, b) => b.localeCompare(a));
-	const selectedMonth =
-		requestedMonth === ALL_MONTHS ? ALL_MONTHS : requestedMonth || monthOptions[0] || '';
-
-	const applyFilters = (query: any) => {
-		if (selectedMonth && selectedMonth !== ALL_MONTHS) query = query.eq('reference_month', selectedMonth);
-		if (filters.sourceType === UNKNOWN_SOURCE) query = query.is('source_type', null);
-		else if (filters.sourceType !== ALL_FILTERS) query = query.eq('source_type', filters.sourceType);
-		if (filters.categoryId) query = query.eq('category_id', filters.categoryId);
-		if (filters.subcategoryId) query = query.eq('subcategory_id', filters.subcategoryId);
-		if (filters.status !== ALL_FILTERS) query = query.eq('review_status', filters.status);
-		return query;
-	};
+	const selectedMonth = selectedMonthFor(requestedMonth, monthOptions);
 
 	const [
 		{ data: transactions, error },
@@ -249,7 +362,7 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 			// gives no stable order among rows with the same date, so without
 			// them same-day rows shuffle every time the list refetches (e.g.
 			// after a row auto-save) and can duplicate/vanish across pages.
-			query = applyFilters(query)
+			query = applyTransactionQueryFilters(query, selectedMonth, filters)
 				.order('date', { ascending: false })
 				.order('created_at', { ascending: false })
 				.order('id', { ascending: false })
@@ -263,7 +376,7 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 				.eq('household_id', householdId)
 				.in('id', readableTransactionIds);
 			if (filters.status === ALL_FILTERS) query = query.neq('review_status', 'ignored');
-			query = applyFilters(query);
+			query = applyTransactionQueryFilters(query, selectedMonth, filters);
 			return query;
 		})(),
 		supabaseAdmin
@@ -323,12 +436,8 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const transactionId = String(formData.get('transaction_id') ?? '').trim();
-		const categoryId = String(formData.get('category_id') ?? '').trim() || null;
-		const subcategoryId = categoryId ? String(formData.get('subcategory_id') ?? '').trim() || null : null;
-		const ownerProfileId = String(formData.get('owner_profile_id') ?? '').trim() || null;
-		const month = String(formData.get('month') ?? '').trim();
-		const page = String(formData.get('page') ?? '').trim();
+		const { transactionId, categoryId, subcategoryId, ownerProfileId, month, page } =
+			readSingleClassificationForm(formData);
 
 		if (!transactionId) {
 			return fail(400, { success: false, message: 'Transação inválida' });
@@ -392,12 +501,7 @@ export const actions: Actions = {
 			});
 		}
 
-		const params = new URLSearchParams();
-		if (month) params.set('month', month);
-		if (page && page !== '0') params.set('page', page);
-		appendFilters(params, formData);
-		const query = params.toString();
-		redirect(303, `/app/transactions${query ? `?${query}` : ''}`);
+		redirectToTransactionList(formData, month, page);
 	},
 
 	confirm_single: async ({ request, locals: { supabase, safeGetSession } }) => {
@@ -514,10 +618,7 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const transactionId = cleanName(formData.get('transaction_id'));
-		const parentId = cleanName(formData.get('category_id'));
-		const name = cleanName(formData.get('new_subcategory_name'));
-		const ownerProfileId = cleanName(formData.get('owner_profile_id')) || null;
+		const { transactionId, parentId, name, ownerProfileId } = readNewSubcategoryForm(formData);
 		if (!transactionId || !parentId || !name) {
 			return fail(400, { success: false, message: 'Informe categoria e nome da subcategoria' });
 		}
@@ -534,33 +635,9 @@ export const actions: Actions = {
 		const parent = visibleCategories.find((category) => category.id === parentId && !category.parent_id);
 		if (!parent) return fail(400, { success: false, message: 'Categoria pai inválida' });
 
-		const existing = visibleCategories.find(
-			(category) =>
-				category.parent_id === parentId &&
-				category.name.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR')
-		);
-		let subcategoryId: string | null = existing?.id ?? null;
-		let message = existing ? 'Subcategoria já existia' : 'Subcategoria criada';
-
-		if (!subcategoryId) {
-			const { data: created, error } = await supabaseAdmin
-				.from('categories')
-				.insert({
-					household_id: householdId,
-					name,
-					parent_id: parentId,
-					created_by_user_id: user.id,
-					is_default: false
-				})
-				.select('id')
-				.single();
-
-			if (error || !created) {
-				return fail(500, { success: false, message: error?.message ?? 'Erro ao criar subcategoria' });
-			}
-
-			subcategoryId = created.id;
-		}
+		const resolved = await resolveSubcategory(visibleCategories, householdId, user.id, parentId, name);
+		if (resolved.error || !resolved.id) return fail(500, { success: false, message: resolved.error });
+		const subcategoryId = resolved.id;
 
 		const patch = {
 			category_id: parentId,
@@ -594,7 +671,7 @@ export const actions: Actions = {
 
 		return {
 			success: true,
-			message,
+			message: resolved.message,
 			createdSubcategoryId: subcategoryId,
 			parentId,
 			transactionId
@@ -606,19 +683,11 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const transactionIds = formData.getAll('transaction_id').map((v) => String(v).trim());
-		const categoryIds = formData.getAll('category_id').map((v) => String(v).trim() || null);
-		const subcategoryIds = formData.getAll('subcategory_id').map((v) => String(v).trim() || null);
-		const ownerProfileIds = formData.getAll('owner_profile_id').map((v) => String(v).trim() || null);
-
-		if (
-			transactionIds.length === 0 ||
-			transactionIds.length !== categoryIds.length ||
-			transactionIds.length !== subcategoryIds.length ||
-			transactionIds.length !== ownerProfileIds.length
-		) {
+		const rows = readClassificationRows(formData);
+		if (!rows) {
 			return fail(400, { success: false, message: 'Dados incompletos' });
 		}
+		const { transactionIds, categoryIds, subcategoryIds, ownerProfileIds } = rows;
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
 		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
@@ -650,13 +719,9 @@ export const actions: Actions = {
 				return fail(404, { success: false, message: 'Transação não encontrada' });
 			}
 
-			if (
-				existing.category_id === categoryId &&
-				existing.subcategory_id === subcategoryId &&
-				existing.owner_profile_id === ownerProfileId
-			) {
-				continue;
-			}
+			if (!hasClassificationChange(existing, {
+				category_id: categoryId, subcategory_id: subcategoryId, owner_profile_id: ownerProfileId
+			})) continue;
 
 			const patch = {
 				category_id: categoryId,
@@ -698,9 +763,7 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const transactionIds = Array.from(
-			new Set(formData.getAll('transaction_id').map((v) => String(v).trim()).filter(Boolean))
-		);
+		const transactionIds = selectedTransactionIds(formData);
 		if (transactionIds.length === 0) {
 			return fail(400, { success: false, message: 'Selecione ao menos uma transação' });
 		}
@@ -717,11 +780,7 @@ export const actions: Actions = {
 		const relationError = await validateTransactionRelations(
 			supabase,
 			householdId,
-			{
-				category_id: selection.applyCategory ? selection.categoryId : undefined,
-				subcategory_id: selection.applyCategory ? selection.subcategoryId : undefined,
-				owner_profile_id: selection.applyOwner ? selection.ownerProfileId : undefined
-			},
+			bulkRelationPatch(selection),
 			user.id
 		);
 		if (relationError) return fail(400, { success: false, message: relationError });
@@ -759,18 +818,7 @@ export const actions: Actions = {
 				.eq('household_id', householdId);
 			if (error) return fail(500, { success: false, message: error.message });
 
-			if (selection.applyCategory && selection.categoryId) {
-				await learnFromTransactionAdjustment(supabaseAdmin, {
-					householdId,
-					userId: user.id,
-					transactionId,
-					categoryId: selection.categoryId,
-					subcategoryId: selection.subcategoryId ?? null,
-					ownerProfileId: selection.applyOwner
-						? (selection.ownerProfileId ?? null)
-						: existing.owner_profile_id
-				});
-			}
+			await learnBulkAdjustment(selection, existing, householdId, user.id, transactionId);
 
 			updated += 1;
 		}

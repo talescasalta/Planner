@@ -54,6 +54,35 @@ function choosePattern(tx: TransactionForLearning): { pattern: string; patternTy
 // existing rule that disagrees (a low-friction ✓ must not destroy history).
 export type LearningMode = 'adjustment' | 'confirmation';
 
+type ExistingRule = {
+	id: string;
+	reinforcement_count: number | null;
+	category_id: string | null;
+	subcategory_id: string | null;
+};
+
+async function updateExistingRule(
+	supabase: SupabaseClient<Database>,
+	input: ClassificationLearningInput,
+	mode: LearningMode,
+	existing: ExistingRule,
+	basePatch: { category_id: string; subcategory_id: string | null; owner_profile_id: string | null; active: boolean }
+) {
+	const sameClassification = existing.category_id === input.categoryId &&
+		(existing.subcategory_id ?? null) === (input.subcategoryId ?? null);
+	if (mode === 'confirmation' && !sameClassification) return;
+	const reinforcementCount = sameClassification
+		? Math.max(1, Number(existing.reinforcement_count ?? 1)) + 1
+		: 1;
+	const patch = mode === 'confirmation'
+		? { active: true, reinforcement_count: reinforcementCount, confidence: confidenceForReinforcement(reinforcementCount) }
+		: { ...basePatch, reinforcement_count: reinforcementCount, confidence: confidenceForReinforcement(reinforcementCount) };
+	await supabase.from('classification_rules').update(patch)
+		.eq('id', existing.id)
+		.eq('household_id', input.householdId)
+		.eq('created_by_user_id', input.userId);
+}
+
 export async function learnFromTransactionAdjustment(
 	supabase: SupabaseClient<Database>,
 	input: ClassificationLearningInput,
@@ -90,42 +119,7 @@ export async function learnFromTransactionAdjustment(
 		.maybeSingle();
 
 	if (existing?.id) {
-		// Repeating the same classification builds trust; a contradictory one
-		// (same pattern, different category) drops the rule back to the lowest
-		// confidence instead of reinforcing the new choice.
-		const sameClassification =
-			existing.category_id === input.categoryId &&
-			(existing.subcategory_id ?? null) === (input.subcategoryId ?? null);
-
-		if (mode === 'confirmation') {
-			if (!sameClassification) return;
-			const reinforcementCount = Math.max(1, Number(existing.reinforcement_count ?? 1)) + 1;
-			await supabase
-				.from('classification_rules')
-				.update({
-					active: true,
-					reinforcement_count: reinforcementCount,
-					confidence: confidenceForReinforcement(reinforcementCount)
-				})
-				.eq('id', existing.id)
-				.eq('household_id', input.householdId)
-				.eq('created_by_user_id', input.userId);
-			return;
-		}
-
-		const reinforcementCount = sameClassification
-			? Math.max(1, Number(existing.reinforcement_count ?? 1)) + 1
-			: 1;
-		await supabase
-			.from('classification_rules')
-			.update({
-				...basePatch,
-				reinforcement_count: reinforcementCount,
-				confidence: confidenceForReinforcement(reinforcementCount)
-			})
-			.eq('id', existing.id)
-			.eq('household_id', input.householdId)
-			.eq('created_by_user_id', input.userId);
+		await updateExistingRule(supabase, input, mode, existing, basePatch);
 		return;
 	}
 
