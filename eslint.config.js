@@ -32,7 +32,7 @@ export default defineConfig(
 		files: ['src/**/*.{ts,svelte}'],
 		ignores: ['**/*.d.ts', '**/*.test.ts'],
 		rules: {
-			complexity: ['error', { max: 38, variant: 'modified' }]
+			complexity: ['error', { max: 12, variant: 'modified' }]
 		}
 	}
 );

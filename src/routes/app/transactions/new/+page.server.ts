@@ -75,6 +75,81 @@ function formatZodErrors(fieldErrors: Record<string, string[] | undefined>): str
 		.join(' ');
 }
 
+function parseTransactionDraft(formData: FormData) {
+	const rawRows = parseDraftRows(formData);
+	const rows = rawRows.length > 0 ? rawRows : Array.from({ length: 4 }, () => emptyDraftRow());
+	const parsedRows: Array<{ index: number; data: TransactionInput }> = [];
+	const rowErrors: Record<number, string> = {};
+	for (const [index, row] of rows.entries()) {
+		if (isDraftRowEmpty(row)) continue;
+		const result = transactionSchema.safeParse(row);
+		if (result.success) parsedRows.push({ index, data: result.data });
+		else rowErrors[index] = formatZodErrors(result.error.flatten().fieldErrors);
+	}
+	return { rows, parsedRows, rowErrors };
+}
+
+async function validateDraftRelations(
+	supabase: Parameters<typeof validateTransactionRelations>[0],
+	householdId: string,
+	userId: string,
+	parsedRows: Array<{ index: number; data: TransactionInput }>
+) {
+	const rowErrors: Record<number, string> = {};
+	for (const { index, data } of parsedRows) {
+		const error = await validateTransactionRelations(supabase, householdId, data, userId);
+		if (error) rowErrors[index] = error;
+	}
+	return rowErrors;
+}
+
+function transactionProfile(
+	transaction: InsertedTransaction,
+	profileById: Map<string, { id: string; type: string; user_id: string | null }>
+) {
+	return transaction.owner_profile_id ? profileById.get(transaction.owner_profile_id) : null;
+}
+
+function draftFormFailure(parsedCount: number, parsingErrors: Record<number, string>) {
+	if (parsedCount === 0 && Object.keys(parsingErrors).length === 0) {
+		return { message: 'Preencha ao menos uma transação', rowErrors: undefined };
+	}
+	if (Object.keys(parsingErrors).length > 0) {
+		return { message: 'Revise as linhas com erro antes de registrar', rowErrors: parsingErrors };
+	}
+	return null;
+}
+
+function transactionInsertError(error: { message: string } | null, insertedCount: number) {
+	if (error) return error.message;
+	return insertedCount > 0 ? null : 'Erro ao criar transações';
+}
+
+function buildTransactionAccessRows(
+	transactions: InsertedTransaction[],
+	householdMembers: string[],
+	profileById: Map<string, { id: string; type: string; user_id: string | null }>,
+	userId: string
+) {
+	const rows: { transaction_id: string; user_id: string; can_read: boolean; can_edit: boolean }[] = [];
+	for (const transaction of transactions) {
+		rows.push({ transaction_id: transaction.id, user_id: userId, can_read: true, can_edit: true });
+		const profile = transactionProfile(transaction, profileById);
+		if (profile?.type === 'shared') {
+			for (const memberId of householdMembers) {
+				if (memberId !== userId) rows.push({ transaction_id: transaction.id, user_id: memberId, can_read: true, can_edit: true });
+			}
+		} else if (profile?.type === 'individual' && profile.user_id && profile.user_id !== userId) {
+			rows.push({ transaction_id: transaction.id, user_id: profile.user_id, can_read: true, can_edit: true });
+		}
+		const payerId = transaction.paid_by_user_id;
+		if (payerId && !rows.some((row) => row.transaction_id === transaction.id && row.user_id === payerId)) {
+			rows.push({ transaction_id: transaction.id, user_id: payerId, can_read: true, can_edit: false });
+		}
+	}
+	return rows;
+}
+
 export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession } }) => {
 	const { user } = await safeGetSession();
 	if (!user) redirect(303, '/login');
@@ -115,39 +190,14 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const rawRows = parseDraftRows(formData);
-		const rows = rawRows.length > 0 ? rawRows : Array.from({ length: 4 }, () => emptyDraftRow());
-		const filledRows = rows
-			.map((row, index) => ({ row, index }))
-			.filter(({ row }) => !isDraftRowEmpty(row));
-
-		if (filledRows.length === 0) {
+		const { rows, parsedRows, rowErrors: parsingErrors } = parseTransactionDraft(formData);
+		const formFailure = draftFormFailure(parsedRows.length, parsingErrors);
+		if (formFailure) {
 			return fail(400, {
 				success: false,
-				message: 'Preencha ao menos uma transação',
-				rows
-			});
-		}
-
-		const parsedRows: Array<{ index: number; data: TransactionInput }> = [];
-		const rowErrors: Record<number, string> = {};
-
-		for (const { row, index } of filledRows) {
-			const parseResult = transactionSchema.safeParse(row);
-			if (!parseResult.success) {
-				rowErrors[index] = formatZodErrors(parseResult.error.flatten().fieldErrors);
-				continue;
-			}
-
-			parsedRows.push({ index, data: parseResult.data });
-		}
-
-		if (Object.keys(rowErrors).length > 0) {
-			return fail(400, {
-				success: false,
-				message: 'Revise as linhas com erro antes de registrar',
+				message: formFailure.message,
 				rows,
-				rowErrors
+				rowErrors: formFailure.rowErrors
 			});
 		}
 
@@ -156,19 +206,13 @@ export const actions: Actions = {
 			return fail(400, { success: false, message: 'Usuário não pertence a um grupo', rows });
 		}
 
-		for (const { index, data } of parsedRows) {
-			const relationError = await validateTransactionRelations(supabase, householdId, data, user.id);
-			if (relationError) {
-				rowErrors[index] = relationError;
-			}
-		}
-
-		if (Object.keys(rowErrors).length > 0) {
+		const relationErrors = await validateDraftRelations(supabase, householdId, user.id, parsedRows);
+		if (Object.keys(relationErrors).length > 0) {
 			return fail(400, {
 				success: false,
 				message: 'Algumas linhas precisam de ajuste antes do registro',
 				rows,
-				rowErrors
+				rowErrors: relationErrors
 			});
 		}
 
@@ -189,37 +233,20 @@ export const actions: Actions = {
 				supabase.from('financial_profiles').select('id, type, user_id').eq('household_id', householdId)
 			]);
 
-		if (txError || !insertedTransactions?.length) {
+		const insertError = transactionInsertError(txError, insertedTransactions?.length ?? 0);
+		if (insertError) {
 			return fail(500, {
 				success: false,
-				message: txError?.message ?? 'Erro ao criar transações',
+				message: insertError,
 				rows
 			});
 		}
 
 		const householdMembers = householdMembersResult;
 		const profileById = new Map((profileResult.data ?? []).map((profile) => [profile.id, profile]));
-		const accessRows: { transaction_id: string; user_id: string; can_read: boolean; can_edit: boolean }[] = [];
-
-		for (const tx of insertedTransactions as InsertedTransaction[]) {
-			accessRows.push({ transaction_id: tx.id, user_id: user.id, can_read: true, can_edit: true });
-
-			if (tx.owner_profile_id) {
-				const profile = profileById.get(tx.owner_profile_id);
-				if (profile?.type === 'shared') {
-					for (const memberId of householdMembers) {
-						if (memberId === user.id) continue;
-						accessRows.push({ transaction_id: tx.id, user_id: memberId, can_read: true, can_edit: true });
-					}
-				} else if (profile?.type === 'individual' && profile.user_id && profile.user_id !== user.id) {
-					accessRows.push({ transaction_id: tx.id, user_id: profile.user_id, can_read: true, can_edit: true });
-				}
-			}
-
-			if (tx.paid_by_user_id && !accessRows.some((row) => row.transaction_id === tx.id && row.user_id === tx.paid_by_user_id)) {
-				accessRows.push({ transaction_id: tx.id, user_id: tx.paid_by_user_id, can_read: true, can_edit: false });
-			}
-		}
+		const accessRows = buildTransactionAccessRows(
+			insertedTransactions as InsertedTransaction[], householdMembers, profileById, user.id
+		);
 
 		const { error: accessError } = await supabase.from('transaction_access').insert(accessRows);
 		if (accessError) {

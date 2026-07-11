@@ -7,6 +7,16 @@ import { filterCategoriesForUser } from '$lib/server/gabarito';
 import { loadUserCategoryExclusions } from '$lib/server/categories';
 import { fail } from '@sveltejs/kit';
 
+function readReviewClassification(formData: FormData) {
+	const categoryId = String(formData.get('category_id') ?? '') || null;
+	return {
+		transactionId: String(formData.get('transaction_id') ?? ''),
+		categoryId,
+		subcategoryId: categoryId ? String(formData.get('subcategory_id') ?? '') || null : null,
+		ownerProfileId: String(formData.get('owner_profile_id') ?? '') || null
+	};
+}
+
 export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession } }) => {
 	const { user } = await safeGetSession();
 	if (!user) return { transactions: [], categories: [], profiles: [] };
@@ -59,10 +69,7 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const transactionId = formData.get('transaction_id') as string;
-		const categoryId = formData.get('category_id') as string;
-		const subcategoryId = formData.get('subcategory_id') as string;
-		const ownerProfileId = formData.get('owner_profile_id') as string;
+		const { transactionId, categoryId, subcategoryId, ownerProfileId } = readReviewClassification(formData);
 
 		if (!transactionId) return fail(400, { success: false, message: 'ID da transação ausente' });
 
@@ -75,9 +82,9 @@ export const actions: Actions = {
 		}
 
 		const relationError = await validateTransactionRelations(supabase, householdId, {
-			category_id: categoryId || null,
-			subcategory_id: categoryId ? subcategoryId || null : null,
-			owner_profile_id: ownerProfileId || null
+			category_id: categoryId,
+			subcategory_id: subcategoryId,
+			owner_profile_id: ownerProfileId
 		}, user.id);
 		if (relationError) {
 			return fail(400, { success: false, message: relationError });
@@ -88,9 +95,9 @@ export const actions: Actions = {
 			transactionId,
 			householdId,
 			{
-				category_id: categoryId || null,
-				subcategory_id: categoryId ? subcategoryId || null : null,
-				owner_profile_id: ownerProfileId || null,
+				category_id: categoryId,
+				subcategory_id: subcategoryId,
+				owner_profile_id: ownerProfileId,
 				review_status: 'confirmed',
 				updated_at: new Date().toISOString()
 			}
@@ -104,9 +111,9 @@ export const actions: Actions = {
 			householdId,
 			userId: user.id,
 			transactionId,
-			categoryId: categoryId || null,
-			subcategoryId: categoryId ? subcategoryId || null : null,
-			ownerProfileId: ownerProfileId || null
+			categoryId,
+			subcategoryId,
+			ownerProfileId
 		});
 
 		return { success: true };

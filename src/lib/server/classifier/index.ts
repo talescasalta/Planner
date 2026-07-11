@@ -26,6 +26,8 @@ type TxRow = {
 };
 
 type TxUpdate = Database['public']['Tables']['transactions']['Update'];
+type LlmClassification = { id: string; needs_review: boolean; patch: TxUpdate };
+type CategoryOption = { id: string; name: string; parent_id: string | null };
 
 function normalizeClassificationName(value: string | null | undefined): string {
 	return (value ?? '')
@@ -49,6 +51,47 @@ function isCardStatementPayment(tx: TxRow): boolean {
 	const hasPaymentWord = /\b(pagamento|pagto|pgto|liquidacao|liq)\b/.test(text);
 	const hasStatementWord = /\b(fatura|cartao|cartao de credito|cc)\b/.test(text);
 	return hasPaymentWord && hasStatementWord;
+}
+
+function deterministicClassification(tx: TxRow, rules: Awaited<ReturnType<typeof loadActiveRules>>) {
+	if (isCardStatementPayment(tx)) {
+		return {
+			method: 'system', needs_review: false,
+			patch: {
+				category_id: null, subcategory_id: null, classification_method: 'system',
+				classification_confidence: 1, review_status: 'ignored',
+				classification_suggestion: {
+					type: 'ignored', ignored_reason: 'card_statement_payment', reason_code: 'card_statement_payment'
+				}
+			} as TxUpdate
+		};
+	}
+	const match = applyRules(rules, tx.merchant, tx.description, tx.clean_description);
+	if (!match) return null;
+	const needsReview = match.confidence < CONFIDENCE_THRESHOLD;
+	return {
+		method: 'rule', needs_review: needsReview,
+		patch: {
+			category_id: match.category_id, subcategory_id: match.subcategory_id,
+			owner_profile_id: match.owner_profile_id, classification_method: 'rule',
+			classification_confidence: match.confidence,
+			review_status: needsReview ? 'needs_review' : 'confirmed'
+		} as TxUpdate
+	};
+}
+
+function buildTaxonomy(categories: CategoryOption[]) {
+	const childrenByParent = new Map<string, CategoryOption[]>();
+	for (const category of categories) {
+		if (!category.parent_id) continue;
+		const children = childrenByParent.get(category.parent_id) ?? [];
+		children.push(category);
+		childrenByParent.set(category.parent_id, children);
+	}
+	return categories.filter((category) => !category.parent_id).map((parent) => {
+		const children = (childrenByParent.get(parent.id) ?? []).map((child) => child.name);
+		return children.length > 0 ? `- ${parent.name}: ${children.join(', ')}` : `- ${parent.name}`;
+	}).join('\n');
 }
 
 export async function classifyTransactions(
@@ -83,63 +126,18 @@ export async function classifyTransactions(
 	const uncategorizedTxs: TxRow[] = [];
 
 	for (const tx of transactions) {
-		if (isCardStatementPayment(tx)) {
-			updates.push({
-				id: tx.id,
-				patch: {
-					category_id: null,
-					subcategory_id: null,
-					classification_method: 'system',
-					classification_confidence: 1,
-					review_status: 'ignored',
-					classification_suggestion: {
-						type: 'ignored',
-						ignored_reason: 'card_statement_payment',
-						reason_code: 'card_statement_payment'
-					}
-				}
-			});
-			results.push({ id: tx.id, method: 'system', needs_review: false });
-			continue;
+		const classified = deterministicClassification(tx, rules);
+		if (classified) {
+			updates.push({ id: tx.id, patch: classified.patch });
+			results.push({ id: tx.id, method: classified.method, needs_review: classified.needs_review });
+		} else {
+			uncategorizedTxs.push(tx);
 		}
-
-		const ruleMatch = applyRules(rules, tx.merchant, tx.description, tx.clean_description);
-		if (ruleMatch) {
-			const needsReview = ruleMatch.confidence < CONFIDENCE_THRESHOLD;
-			updates.push({
-				id: tx.id,
-				patch: {
-					category_id: ruleMatch.category_id,
-					subcategory_id: ruleMatch.subcategory_id,
-					owner_profile_id: ruleMatch.owner_profile_id,
-					classification_method: 'rule',
-					classification_confidence: ruleMatch.confidence,
-					review_status: needsReview ? 'needs_review' : 'confirmed'
-				}
-			});
-			results.push({ id: tx.id, method: 'rule', needs_review: needsReview });
-			continue;
-		}
-		uncategorizedTxs.push(tx);
 	}
 
 	if (uncategorizedTxs.length > 0) {
 		const cats = filterCategoriesForUser(categories ?? [], userId, excludedCategoryIds);
-		const parents = cats.filter((c) => !c.parent_id);
-		const childrenByParent = new Map<string, typeof cats>();
-		for (const c of cats) {
-			if (!c.parent_id) continue;
-			const arr = childrenByParent.get(c.parent_id) ?? [];
-			arr.push(c);
-			childrenByParent.set(c.parent_id, arr);
-		}
-
-		const taxonomy = parents
-			.map((p) => {
-				const subs = (childrenByParent.get(p.id) ?? []).map((s) => s.name);
-				return subs.length > 0 ? `- ${p.name}: ${subs.join(', ')}` : `- ${p.name}`;
-			})
-			.join('\n');
+		const taxonomy = buildTaxonomy(cats);
 
 		for (let i = 0; i < uncategorizedTxs.length; i += LLM_BATCH_SIZE) {
 			const chunk = uncategorizedTxs.slice(i, i + LLM_BATCH_SIZE);
@@ -161,8 +159,8 @@ async function classifyChunkWithLlm(
 	userId: string,
 	chunk: TxRow[],
 	taxonomy: string,
-	categories: Array<{ id: string; name: string; parent_id: string | null }>
-): Promise<Array<{ id: string; needs_review: boolean; patch: TxUpdate }>> {
+	categories: CategoryOption[]
+): Promise<LlmClassification[]> {
 	const gabaritoSection = buildGabaritoPromptSection(chunk);
 	const userTaxonomySection = buildUserTaxonomyPromptSection(categories, userId);
 	const personalGabaritoSection = await buildPersonalGabaritoPromptSection(
@@ -224,79 +222,7 @@ ${txDescriptions}`;
 		} catch {
 			parsed = {};
 		}
-		const batch = extractResultsArray(parsed);
-
-		const out: Array<{ id: string; needs_review: boolean; patch: TxUpdate }> = [];
-		const seen = new Set<string>();
-
-		for (const item of batch) {
-			const txId = (item as Record<string, string>)?.id;
-			if (!txId) continue;
-			seen.add(txId);
-
-			const validated = classificationResultSchema.safeParse(item);
-			if (!validated.success) {
-				out.push({
-					id: txId,
-					needs_review: true,
-					patch: {
-						classification_method: 'llm',
-						classification_confidence: 0,
-						review_status: 'needs_review',
-						classification_suggestion: { type: 'error', error: 'invalid_response', raw: rawContent }
-					}
-				});
-				continue;
-			}
-
-			const suggestion = validated.data;
-			const suggestedCategory = normalizeClassificationName(suggestion.category);
-			const suggestedSubcategory = normalizeClassificationName(suggestion.subcategory);
-			const categoryRow = suggestedCategory
-				? categories.find((c) => normalizeClassificationName(c.name) === suggestedCategory && !c.parent_id) ?? null
-				: null;
-			const categoryId = categoryRow?.id ?? null;
-			const subcategoryId =
-				suggestedSubcategory && categoryId
-					? categories.find(
-							(c) => normalizeClassificationName(c.name) === suggestedSubcategory && c.parent_id === categoryId
-						)?.id ?? null
-					: null;
-			const needsReview =
-				suggestion.needs_review ||
-				suggestion.confidence < CONFIDENCE_THRESHOLD ||
-				(!!suggestion.category && !categoryId) ||
-				(!!suggestion.subcategory && !!categoryId && !subcategoryId);
-
-			out.push({
-				id: txId,
-				needs_review: needsReview,
-				patch: {
-					category_id: categoryId,
-					subcategory_id: subcategoryId,
-					classification_method: 'llm',
-					classification_confidence: suggestion.confidence,
-					review_status: needsReview ? 'needs_review' : 'confirmed',
-					classification_suggestion: suggestion
-				}
-			});
-		}
-
-		for (const tx of chunk) {
-			if (seen.has(tx.id)) continue;
-			out.push({
-				id: tx.id,
-				needs_review: true,
-				patch: {
-					classification_method: 'llm',
-					classification_confidence: 0,
-					review_status: 'needs_review',
-					classification_suggestion: { type: 'error', error: 'missing_in_response' }
-				}
-			});
-		}
-
-		return out;
+		return processLlmBatch(extractResultsArray(parsed), chunk, categories, rawContent);
 	} catch (e) {
 		console.error('[classifier] LLM classification failed', e);
 		return chunk.map((tx) => ({
@@ -310,6 +236,93 @@ ${txDescriptions}`;
 			}
 		}));
 	}
+}
+
+function invalidLlmClassification(id: string, rawContent: string): LlmClassification {
+	return {
+		id,
+		needs_review: true,
+		patch: {
+			classification_method: 'llm',
+			classification_confidence: 0,
+			review_status: 'needs_review',
+			classification_suggestion: { type: 'error', error: 'invalid_response', raw: rawContent }
+		}
+	};
+}
+
+function missingLlmClassification(id: string): LlmClassification {
+	return {
+		id,
+		needs_review: true,
+		patch: {
+			classification_method: 'llm',
+			classification_confidence: 0,
+			review_status: 'needs_review',
+			classification_suggestion: { type: 'error', error: 'missing_in_response' }
+		}
+	};
+}
+
+function suggestionNeedsReview(
+	suggestion: { category?: string | null; subcategory?: string | null; confidence: number; needs_review: boolean },
+	categoryId: string | null,
+	subcategoryId: string | null
+) {
+	return suggestion.needs_review || suggestion.confidence < CONFIDENCE_THRESHOLD ||
+		(!!suggestion.category && !categoryId) || (!!suggestion.subcategory && !!categoryId && !subcategoryId);
+}
+
+function mapLlmClassification(id: string, item: unknown, categories: CategoryOption[], rawContent: string): LlmClassification {
+	const validated = classificationResultSchema.safeParse(item);
+	if (!validated.success) return invalidLlmClassification(id, rawContent);
+
+	const suggestion = validated.data;
+	const categoryName = normalizeClassificationName(suggestion.category);
+	const subcategoryName = normalizeClassificationName(suggestion.subcategory);
+	const category = categoryName
+		? categories.find((candidate) => normalizeClassificationName(candidate.name) === categoryName && !candidate.parent_id)
+		: null;
+	const categoryId = category?.id ?? null;
+	const subcategoryId = subcategoryName && categoryId
+		? categories.find((candidate) =>
+			normalizeClassificationName(candidate.name) === subcategoryName && candidate.parent_id === categoryId)?.id ?? null
+		: null;
+	const needsReview = suggestionNeedsReview(suggestion, categoryId, subcategoryId);
+
+	return {
+		id,
+		needs_review: needsReview,
+		patch: {
+			category_id: categoryId,
+			subcategory_id: subcategoryId,
+			classification_method: 'llm',
+			classification_confidence: suggestion.confidence,
+			review_status: needsReview ? 'needs_review' : 'confirmed',
+			classification_suggestion: suggestion
+		}
+	};
+}
+
+function processLlmBatch(
+	batch: unknown[],
+	chunk: TxRow[],
+	categories: CategoryOption[],
+	rawContent: string
+): LlmClassification[] {
+	const out: LlmClassification[] = [];
+	const seen = new Set<string>();
+	const allowedIds = new Set(chunk.map((tx) => tx.id));
+	for (const item of batch) {
+		const id = (item as Record<string, string>)?.id;
+		if (!id || !allowedIds.has(id) || seen.has(id)) continue;
+		seen.add(id);
+		out.push(mapLlmClassification(id, item, categories, rawContent));
+	}
+	for (const tx of chunk) {
+		if (!seen.has(tx.id)) out.push(missingLlmClassification(tx.id));
+	}
+	return out;
 }
 
 function extractResultsArray(parsed: unknown): unknown[] {

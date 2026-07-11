@@ -8,6 +8,24 @@ function cleanName(value: FormDataEntryValue | null): string {
 	return String(value ?? '').trim().replace(/\s+/g, ' ');
 }
 
+async function categoryUsageCount(categoryId: string) {
+	const results = await Promise.all([
+		supabaseAdmin.from('categories').select('id', { count: 'exact', head: true }).eq('parent_id', categoryId),
+		supabaseAdmin.from('transactions').select('id', { count: 'exact', head: true }).eq('category_id', categoryId),
+		supabaseAdmin.from('transactions').select('id', { count: 'exact', head: true }).eq('subcategory_id', categoryId),
+		supabaseAdmin.from('classification_rules').select('id', { count: 'exact', head: true }).eq('category_id', categoryId),
+		supabaseAdmin.from('classification_rules').select('id', { count: 'exact', head: true }).eq('subcategory_id', categoryId)
+	]);
+	return results.reduce((total, result) => total + (result.count ?? 0), 0);
+}
+
+async function hideCategoryForUser(householdId: string, userId: string, categoryId: string) {
+	return supabaseAdmin.from('user_category_exclusions').upsert(
+		{ household_id: householdId, user_id: userId, category_id: categoryId },
+		{ onConflict: 'household_id,user_id,category_id' }
+	);
+}
+
 async function loadVisibleCategories(householdId: string, userId: string) {
 	return loadCategoriesForUser(supabaseAdmin, householdId, userId);
 }
@@ -106,27 +124,12 @@ export const actions: Actions = {
 		}
 
 		if (category.created_by_user_id !== user.id) {
-			const { error } = await supabaseAdmin.from('user_category_exclusions').upsert(
-				{
-					household_id: householdId,
-					user_id: user.id,
-					category_id: categoryId
-				},
-				{ onConflict: 'household_id,user_id,category_id' }
-			);
+			const { error } = await hideCategoryForUser(householdId, user.id, categoryId);
 			if (error) return fail(500, { success: false, message: error.message });
 			return { success: true, message: 'Sugestão removida do seu gabarito' };
 		}
 
-		const [{ count: childCount }, { count: txCategoryCount }, { count: txSubcategoryCount }, { count: ruleCategoryCount }, { count: ruleSubcategoryCount }] = await Promise.all([
-			supabaseAdmin.from('categories').select('id', { count: 'exact', head: true }).eq('parent_id', categoryId),
-			supabaseAdmin.from('transactions').select('id', { count: 'exact', head: true }).eq('category_id', categoryId),
-			supabaseAdmin.from('transactions').select('id', { count: 'exact', head: true }).eq('subcategory_id', categoryId),
-			supabaseAdmin.from('classification_rules').select('id', { count: 'exact', head: true }).eq('category_id', categoryId),
-			supabaseAdmin.from('classification_rules').select('id', { count: 'exact', head: true }).eq('subcategory_id', categoryId)
-		]);
-
-		const usageCount = (childCount ?? 0) + (txCategoryCount ?? 0) + (txSubcategoryCount ?? 0) + (ruleCategoryCount ?? 0) + (ruleSubcategoryCount ?? 0);
+		const usageCount = await categoryUsageCount(categoryId);
 		if (usageCount > 0) {
 			return fail(409, {
 				success: false,

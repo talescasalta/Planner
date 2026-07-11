@@ -7,6 +7,10 @@ import { learnFromTransactionAdjustment } from '$lib/server/learning';
 import { loadCategoriesForUser } from '$lib/server/categories';
 import { fail, redirect } from '@sveltejs/kit';
 
+function normalizeTransactionUpdate(data: ReturnType<typeof transactionUpdateSchema.parse>) {
+	return { ...data, subcategory_id: data.category_id ? data.subcategory_id ?? null : null };
+}
+
 export const load: PageServerLoad = async ({ params, locals: { supabase, safeGetSession } }) => {
 	const { user } = await safeGetSession();
 	if (!user) redirect(303, '/login');
@@ -88,10 +92,7 @@ export const actions: Actions = {
 		if (!parseResult.success) {
 			return fail(400, { success: false, message: 'Dados inválidos' });
 		}
-		const normalizedData = {
-			...parseResult.data,
-			subcategory_id: parseResult.data.category_id ? parseResult.data.subcategory_id ?? null : null
-		};
+		const normalizedData = normalizeTransactionUpdate(parseResult.data);
 
 		const relationError = await validateTransactionRelations(supabase, householdId, normalizedData, user.id);
 		if (relationError) {

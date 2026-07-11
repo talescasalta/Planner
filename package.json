@@ -13,7 +13,8 @@
 		"test:coverage": "vitest run --coverage",
 		"lint": "eslint \"src/**/*.{ts,svelte}\"",
 		"lint:complexity": "npm run lint",
-		"test:mutation": "stryker run",
+		"test:mutation": "stryker run && node scripts/check-mutation-modules.mjs",
+		"test:mutation:modules": "node scripts/check-mutation-modules.mjs",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
 	},

@@ -1,0 +1,38 @@
+{
+  "report": "reports/mutation/mutation.json",
+  "modules": [
+    {
+      "name": "authorization",
+      "minimum": 60,
+      "files": [
+        "src/lib/server/access.ts",
+        "src/lib/server/rules.ts",
+        "src/lib/server/rate-limit.ts"
+      ]
+    },
+    {
+      "name": "classification",
+      "minimum": 50,
+      "files": [
+        "src/lib/server/classifier/index.ts",
+        "src/lib/server/classifier/rules.ts"
+      ]
+    },
+    {
+      "name": "import_processing",
+      "minimum": 50,
+      "files": [
+        "src/lib/server/csv-parser.ts",
+        "src/lib/server/import-extract.ts"
+      ]
+    },
+    {
+      "name": "planning_learning",
+      "minimum": 45,
+      "files": [
+        "src/lib/server/installments.ts",
+        "src/lib/server/learning.ts"
+      ]
+    }
+  ]
+}
