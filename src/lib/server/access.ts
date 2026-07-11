@@ -68,6 +68,59 @@ type TransactionPatch = {
 	updated_at?: string;
 };
 
+type CategoryLookup = {
+	data: { parent_id: string | null; created_by_user_id: string | null } | null;
+	error: unknown | null;
+};
+
+type EntityLookup = {
+	data: unknown | null;
+	error: unknown | null;
+};
+
+function categoryValidationError(
+	categoryId: string | null | undefined,
+	category: CategoryLookup,
+	userId: string | undefined
+): string | null {
+	if (!categoryId) return null;
+	if (category.error || !category.data || category.data.parent_id) {
+		return 'Categoria inválida para este grupo';
+	}
+	if (category.data.created_by_user_id && category.data.created_by_user_id !== userId) {
+		return 'Categoria pertence ao gabarito de outro usuário';
+	}
+	return null;
+}
+
+function subcategoryValidationError(
+	categoryId: string | null | undefined,
+	subcategoryId: string | null | undefined,
+	subcategory: CategoryLookup,
+	userId: string | undefined
+): string | null {
+	if (!subcategoryId) return null;
+	if (subcategory.error || !subcategory.data || !subcategory.data.parent_id) {
+		return 'Subcategoria inválida para este grupo';
+	}
+	if (subcategory.data.created_by_user_id && subcategory.data.created_by_user_id !== userId) {
+		return 'Subcategoria pertence ao gabarito de outro usuário';
+	}
+	if (!categoryId) return 'Selecione uma categoria antes da subcategoria';
+	if (subcategory.data.parent_id !== categoryId) {
+		return 'Subcategoria não pertence à categoria selecionada';
+	}
+	return null;
+}
+
+function entityValidationError(
+	id: string | null | undefined,
+	entity: EntityLookup,
+	message: string
+): string | null {
+	return id && (entity.error || !entity.data) ? message : null;
+}
+
 export async function validateTransactionRelations(
 	supabase: SupabaseClient<Database>,
 	householdId: string,
@@ -109,40 +162,12 @@ export async function validateTransactionRelations(
 			: Promise.resolve({ data: null, error: null })
 	]);
 
-	if (data.category_id && (category.error || !category.data || category.data.parent_id)) {
-		return 'Categoria inválida para este grupo';
-	}
-	if (data.category_id && category.data?.created_by_user_id && category.data.created_by_user_id !== userId) {
-		return 'Categoria pertence ao gabarito de outro usuário';
-	}
-	if (data.subcategory_id && (subcategory.error || !subcategory.data || !subcategory.data.parent_id)) {
-		return 'Subcategoria inválida para este grupo';
-	}
-	if (
-		data.subcategory_id &&
-		subcategory.data?.created_by_user_id &&
-		subcategory.data.created_by_user_id !== userId
-	) {
-		return 'Subcategoria pertence ao gabarito de outro usuário';
-	}
-	if (data.subcategory_id && !data.category_id) {
-		return 'Selecione uma categoria antes da subcategoria';
-	}
-	if (
-		data.subcategory_id &&
-		data.category_id &&
-		subcategory.data?.parent_id !== data.category_id
-	) {
-		return 'Subcategoria não pertence à categoria selecionada';
-	}
-	if (data.owner_profile_id && (profile.error || !profile.data)) {
-		return 'Perfil financeiro inválido para este grupo';
-	}
-	if (data.paid_by_user_id && (payer.error || !payer.data)) {
-		return 'Pagador inválido para este grupo';
-	}
-
-	return null;
+	return (
+		categoryValidationError(data.category_id, category, userId) ??
+		subcategoryValidationError(data.category_id, data.subcategory_id, subcategory, userId) ??
+		entityValidationError(data.owner_profile_id, profile, 'Perfil financeiro inválido para este grupo') ??
+		entityValidationError(data.paid_by_user_id, payer, 'Pagador inválido para este grupo')
+	);
 }
 
 export async function canEditTransaction(

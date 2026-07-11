@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/packages/core/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "mutate": [
+    "src/lib/server/access.ts",
+    "src/lib/server/rules.ts",
+    "src/lib/server/rate-limit.ts",
+    "src/lib/server/csv-parser.ts",
+    "src/lib/server/import-extract.ts",
+    "src/lib/server/installments.ts",
+    "src/lib/server/learning.ts",
+    "src/lib/server/classifier/rules.ts",
+    "src/lib/server/classifier/index.ts"
+  ],
+  "reporters": ["clear-text", "html", "json"],
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": 45
+  }
+}

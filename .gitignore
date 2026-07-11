@@ -14,6 +14,9 @@ supabase/.temp
 .wrangler
 /.svelte-kit
 /build
+/coverage
+/reports
+/.stryker-tmp
 
 # OS
 .DS_Store
