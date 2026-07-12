@@ -70,6 +70,14 @@ INSERT INTO public.classification_rate_limits (user_id) VALUES
 	('11111111-1111-1111-1111-111111111111'),
 	('22222222-2222-2222-2222-222222222222');
 
+-- No Supabase hosted as roles da API recebem grants de tabela por default
+-- privileges e o RLS é a fronteira por linhas. O banco local do CLI não
+-- replica esses grants para objetos criados via migrations, então os
+-- concedemos aqui (dentro da transação; somem no ROLLBACK) para testar o
+-- mesmo cenário do ambiente real.
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+
 SELECT plan(49);
 
 -- ============================================================
