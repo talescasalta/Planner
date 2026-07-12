@@ -25,6 +25,10 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # svelte-kit sync only declares $env/static/* members for keys present in
+      # the environment; without them svelte-check fails on every $env import.
+      - name: Provide env keys for svelte-kit sync
+        run: cp .env.example .env
       - run: npm run quality
       - name: Check migration immutability
         if: github.event_name == 'pull_request'
@@ -42,4 +46,6 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Provide env keys for svelte-kit sync
+        run: cp .env.example .env
       - run: npm run test:mutation
