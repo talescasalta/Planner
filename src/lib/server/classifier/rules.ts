@@ -9,7 +9,8 @@ export interface RuleMatch {
 	reason_code: string;
 }
 
-export type ClassificationRule = Database['public']['Tables']['classification_rules']['Row'];
+export type ClassificationRule =
+	Database['public']['Tables']['classification_rules']['Row'];
 
 export async function loadActiveRules(
 	supabase: SupabaseClient<Database>,
@@ -40,7 +41,9 @@ export function applyRules(
 	if (rules.length === 0) return null;
 
 	const searchMerchant = (merchant ?? '').trim().toUpperCase();
-	const searchDesc = (cleanDescription ?? description ?? '').trim().toUpperCase();
+	const searchDesc = (cleanDescription ?? description ?? '')
+		.trim()
+		.toUpperCase();
 
 	const sortedRules = [...rules].sort(compareRulesBySpecificity);
 	for (const rule of sortedRules) {
@@ -67,9 +70,12 @@ function ruleMatches(
 ) {
 	const pattern = rule.pattern.trim().toUpperCase();
 	switch (rule.pattern_type) {
-		case 'exact_merchant': return searchMerchant === pattern;
-		case 'merchant_contains': return searchMerchant.includes(pattern);
-		case 'description_contains': return searchDescription.includes(pattern);
+		case 'exact_merchant':
+			return searchMerchant === pattern;
+		case 'merchant_contains':
+			return searchMerchant.includes(pattern);
+		case 'description_contains':
+			return searchDescription.includes(pattern);
 		case 'regex':
 			try {
 				const regex = new RegExp(rule.pattern, 'i');
@@ -77,7 +83,8 @@ function ruleMatches(
 			} catch {
 				return false;
 			}
-		default: return false;
+		default:
+			return false;
 	}
 }
 
@@ -100,7 +107,10 @@ function ruleRank(rule: ClassificationRule): number {
 	}
 }
 
-export function compareRulesBySpecificity(a: ClassificationRule, b: ClassificationRule): number {
+export function compareRulesBySpecificity(
+	a: ClassificationRule,
+	b: ClassificationRule
+): number {
 	const rankDiff = ruleRank(a) - ruleRank(b);
 	if (rankDiff !== 0) return rankDiff;
 	return patternLength(b) - patternLength(a);

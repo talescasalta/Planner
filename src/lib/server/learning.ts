@@ -31,7 +31,9 @@ function normalizePattern(value: string): string {
 	return value.trim().replace(/\s+/g, ' ').toUpperCase();
 }
 
-function choosePattern(tx: TransactionForLearning): { pattern: string; patternType: PatternType } | null {
+function choosePattern(
+	tx: TransactionForLearning
+): { pattern: string; patternType: PatternType } | null {
 	const merchant = normalizePattern(tx.merchant ?? '');
 	if (merchant) return { pattern: merchant, patternType: 'merchant_contains' };
 
@@ -42,7 +44,8 @@ function choosePattern(tx: TransactionForLearning): { pattern: string; patternTy
 	// their suffix instead of becoming an over-broad pattern.
 	const raw = normalizePattern(tx.clean_description ?? tx.description ?? '');
 	const description = parseInstallment(raw) ? stripInstallmentMarker(raw) : raw;
-	if (description) return { pattern: description, patternType: 'description_contains' };
+	if (description)
+		return { pattern: description, patternType: 'description_contains' };
 
 	return null;
 }
@@ -66,18 +69,35 @@ async function updateExistingRule(
 	input: ClassificationLearningInput,
 	mode: LearningMode,
 	existing: ExistingRule,
-	basePatch: { category_id: string; subcategory_id: string | null; owner_profile_id: string | null; active: boolean }
+	basePatch: {
+		category_id: string;
+		subcategory_id: string | null;
+		owner_profile_id: string | null;
+		active: boolean;
+	}
 ) {
-	const sameClassification = existing.category_id === input.categoryId &&
+	const sameClassification =
+		existing.category_id === input.categoryId &&
 		(existing.subcategory_id ?? null) === (input.subcategoryId ?? null);
 	if (mode === 'confirmation' && !sameClassification) return;
 	const reinforcementCount = sameClassification
 		? Math.max(1, Number(existing.reinforcement_count ?? 1)) + 1
 		: 1;
-	const patch = mode === 'confirmation'
-		? { active: true, reinforcement_count: reinforcementCount, confidence: confidenceForReinforcement(reinforcementCount) }
-		: { ...basePatch, reinforcement_count: reinforcementCount, confidence: confidenceForReinforcement(reinforcementCount) };
-	await supabase.from('classification_rules').update(patch)
+	const patch =
+		mode === 'confirmation'
+			? {
+					active: true,
+					reinforcement_count: reinforcementCount,
+					confidence: confidenceForReinforcement(reinforcementCount)
+				}
+			: {
+					...basePatch,
+					reinforcement_count: reinforcementCount,
+					confidence: confidenceForReinforcement(reinforcementCount)
+				};
+	await supabase
+		.from('classification_rules')
+		.update(patch)
 		.eq('id', existing.id)
 		.eq('household_id', input.householdId)
 		.eq('created_by_user_id', input.userId);
@@ -139,11 +159,17 @@ export async function buildPersonalGabaritoPromptSection(
 	supabase: SupabaseClient<Database>,
 	householdId: string,
 	userId: string,
-	transactions: Array<{ description: string; clean_description: string | null; merchant: string | null }>
+	transactions: Array<{
+		description: string;
+		clean_description: string | null;
+		merchant: string | null;
+	}>
 ): Promise<string> {
 	const { data: rules } = await supabase
 		.from('classification_rules')
-		.select('pattern, pattern_type, category_id, subcategory_id, owner_profile_id, created_at')
+		.select(
+			'pattern, pattern_type, category_id, subcategory_id, owner_profile_id, created_at'
+		)
 		.eq('household_id', householdId)
 		.eq('created_by_user_id', userId)
 		.eq('active', true)
@@ -155,10 +181,18 @@ export async function buildPersonalGabaritoPromptSection(
 	if (activeRules.length === 0) return '';
 
 	const categoryIds = Array.from(
-		new Set(activeRules.flatMap((r) => [r.category_id, r.subcategory_id]).filter((id): id is string => !!id))
+		new Set(
+			activeRules
+				.flatMap((r) => [r.category_id, r.subcategory_id])
+				.filter((id): id is string => !!id)
+		)
 	);
 	const profileIds = Array.from(
-		new Set(activeRules.map((r) => r.owner_profile_id).filter((id): id is string => !!id))
+		new Set(
+			activeRules
+				.map((r) => r.owner_profile_id)
+				.filter((id): id is string => !!id)
+		)
 	);
 
 	const [{ data: categories }, { data: profiles }] = await Promise.all([
@@ -166,11 +200,16 @@ export async function buildPersonalGabaritoPromptSection(
 			? supabase.from('categories').select('id, name').in('id', categoryIds)
 			: Promise.resolve({ data: [] }),
 		profileIds.length
-			? supabase.from('financial_profiles').select('id, name').in('id', profileIds)
+			? supabase
+					.from('financial_profiles')
+					.select('id, name')
+					.in('id', profileIds)
 			: Promise.resolve({ data: [] })
 	]);
 
-	const categoryNameById = new Map((categories ?? []).map((c) => [c.id, c.name]));
+	const categoryNameById = new Map(
+		(categories ?? []).map((c) => [c.id, c.name])
+	);
 	const profileNameById = new Map((profiles ?? []).map((p) => [p.id, p.name]));
 	const transactionNeedles = transactions.flatMap((tx) => [
 		normalizePattern(tx.merchant ?? ''),
@@ -178,16 +217,24 @@ export async function buildPersonalGabaritoPromptSection(
 	]);
 
 	const relevant = activeRules.filter((rule) =>
-		transactionNeedles.some((needle) => needle && (needle.includes(rule.pattern) || rule.pattern.includes(needle)))
+		transactionNeedles.some(
+			(needle) =>
+				needle &&
+				(needle.includes(rule.pattern) || rule.pattern.includes(needle))
+		)
 	);
 	const examples = (relevant.length > 0 ? relevant : activeRules).slice(0, 40);
 
 	const lines = examples.map((rule) => {
-		const category = rule.category_id ? categoryNameById.get(rule.category_id) ?? 'sem categoria' : 'sem categoria';
+		const category = rule.category_id
+			? (categoryNameById.get(rule.category_id) ?? 'sem categoria')
+			: 'sem categoria';
 		const subcategory = rule.subcategory_id
-			? categoryNameById.get(rule.subcategory_id) ?? 'sem subcategoria'
+			? (categoryNameById.get(rule.subcategory_id) ?? 'sem subcategoria')
 			: 'sem subcategoria';
-		const owner = rule.owner_profile_id ? profileNameById.get(rule.owner_profile_id) ?? 'sem atribuição' : 'sem atribuição';
+		const owner = rule.owner_profile_id
+			? (profileNameById.get(rule.owner_profile_id) ?? 'sem atribuição')
+			: 'sem atribuição';
 		return `- padrão "${rule.pattern}" → categoria: "${category}", subcategoria: "${subcategory}", atribuição: "${owner}"`;
 	});
 

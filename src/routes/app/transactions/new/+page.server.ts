@@ -1,5 +1,8 @@
 import type { PageServerLoad, Actions } from './$types';
-import { transactionSchema, type TransactionInput } from '$lib/schemas/transaction';
+import {
+	transactionSchema,
+	type TransactionInput
+} from '$lib/schemas/transaction';
 import { getUserHouseholdId, getHouseholdMembers } from '$lib/server/household';
 import { validateTransactionRelations } from '$lib/server/access';
 import { learnFromTransactionAdjustment } from '$lib/server/learning';
@@ -66,10 +69,14 @@ function parseDraftRows(formData: FormData): DraftTransactionRow[] {
 }
 
 function isDraftRowEmpty(row: DraftTransactionRow): boolean {
-	return Object.entries(row).every(([field, value]) => field === 'split_method' || value === '');
+	return Object.entries(row).every(
+		([field, value]) => field === 'split_method' || value === ''
+	);
 }
 
-function formatZodErrors(fieldErrors: Record<string, string[] | undefined>): string {
+function formatZodErrors(
+	fieldErrors: Record<string, string[] | undefined>
+): string {
 	return Object.entries(fieldErrors)
 		.flatMap(([, errors]) => errors ?? [])
 		.join(' ');
@@ -77,7 +84,10 @@ function formatZodErrors(fieldErrors: Record<string, string[] | undefined>): str
 
 function parseTransactionDraft(formData: FormData) {
 	const rawRows = parseDraftRows(formData);
-	const rows = rawRows.length > 0 ? rawRows : Array.from({ length: 4 }, () => emptyDraftRow());
+	const rows =
+		rawRows.length > 0
+			? rawRows
+			: Array.from({ length: 4 }, () => emptyDraftRow());
 	const parsedRows: Array<{ index: number; data: TransactionInput }> = [];
 	const rowErrors: Record<number, string> = {};
 	for (const [index, row] of rows.entries()) {
@@ -97,7 +107,12 @@ async function validateDraftRelations(
 ) {
 	const rowErrors: Record<number, string> = {};
 	for (const { index, data } of parsedRows) {
-		const error = await validateTransactionRelations(supabase, householdId, data, userId);
+		const error = await validateTransactionRelations(
+			supabase,
+			householdId,
+			data,
+			userId
+		);
 		if (error) rowErrors[index] = error;
 	}
 	return rowErrors;
@@ -107,20 +122,31 @@ function transactionProfile(
 	transaction: InsertedTransaction,
 	profileById: Map<string, { id: string; type: string; user_id: string | null }>
 ) {
-	return transaction.owner_profile_id ? profileById.get(transaction.owner_profile_id) : null;
+	return transaction.owner_profile_id
+		? profileById.get(transaction.owner_profile_id)
+		: null;
 }
 
-function draftFormFailure(parsedCount: number, parsingErrors: Record<number, string>) {
+function draftFormFailure(
+	parsedCount: number,
+	parsingErrors: Record<number, string>
+) {
 	if (parsedCount === 0 && Object.keys(parsingErrors).length === 0) {
 		return { message: 'Preencha ao menos uma transação', rowErrors: undefined };
 	}
 	if (Object.keys(parsingErrors).length > 0) {
-		return { message: 'Revise as linhas com erro antes de registrar', rowErrors: parsingErrors };
+		return {
+			message: 'Revise as linhas com erro antes de registrar',
+			rowErrors: parsingErrors
+		};
 	}
 	return null;
 }
 
-function transactionInsertError(error: { message: string } | null, insertedCount: number) {
+function transactionInsertError(
+	error: { message: string } | null,
+	insertedCount: number
+) {
 	if (error) return error.message;
 	return insertedCount > 0 ? null : 'Erro ao criar transações';
 }
@@ -128,29 +154,70 @@ function transactionInsertError(error: { message: string } | null, insertedCount
 function buildTransactionAccessRows(
 	transactions: InsertedTransaction[],
 	householdMembers: string[],
-	profileById: Map<string, { id: string; type: string; user_id: string | null }>,
+	profileById: Map<
+		string,
+		{ id: string; type: string; user_id: string | null }
+	>,
 	userId: string
 ) {
-	const rows: { transaction_id: string; user_id: string; can_read: boolean; can_edit: boolean }[] = [];
+	const rows: {
+		transaction_id: string;
+		user_id: string;
+		can_read: boolean;
+		can_edit: boolean;
+	}[] = [];
 	for (const transaction of transactions) {
-		rows.push({ transaction_id: transaction.id, user_id: userId, can_read: true, can_edit: true });
+		rows.push({
+			transaction_id: transaction.id,
+			user_id: userId,
+			can_read: true,
+			can_edit: true
+		});
 		const profile = transactionProfile(transaction, profileById);
 		if (profile?.type === 'shared') {
 			for (const memberId of householdMembers) {
-				if (memberId !== userId) rows.push({ transaction_id: transaction.id, user_id: memberId, can_read: true, can_edit: true });
+				if (memberId !== userId)
+					rows.push({
+						transaction_id: transaction.id,
+						user_id: memberId,
+						can_read: true,
+						can_edit: true
+					});
 			}
-		} else if (profile?.type === 'individual' && profile.user_id && profile.user_id !== userId) {
-			rows.push({ transaction_id: transaction.id, user_id: profile.user_id, can_read: true, can_edit: true });
+		} else if (
+			profile?.type === 'individual' &&
+			profile.user_id &&
+			profile.user_id !== userId
+		) {
+			rows.push({
+				transaction_id: transaction.id,
+				user_id: profile.user_id,
+				can_read: true,
+				can_edit: true
+			});
 		}
 		const payerId = transaction.paid_by_user_id;
-		if (payerId && !rows.some((row) => row.transaction_id === transaction.id && row.user_id === payerId)) {
-			rows.push({ transaction_id: transaction.id, user_id: payerId, can_read: true, can_edit: false });
+		if (
+			payerId &&
+			!rows.some(
+				(row) =>
+					row.transaction_id === transaction.id && row.user_id === payerId
+			)
+		) {
+			rows.push({
+				transaction_id: transaction.id,
+				user_id: payerId,
+				can_read: true,
+				can_edit: false
+			});
 		}
 	}
 	return rows;
 }
 
-export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession } }) => {
+export const load: PageServerLoad = async ({
+	locals: { supabase, safeGetSession }
+}) => {
 	const { user } = await safeGetSession();
 	if (!user) redirect(303, '/login');
 
@@ -159,7 +226,12 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 		return { categories: [], profiles: [], members: [] };
 	}
 
-	const [categories, { data: profiles }, { data: members }, { data: household }] = await Promise.all([
+	const [
+		categories,
+		{ data: profiles },
+		{ data: members },
+		{ data: household }
+	] = await Promise.all([
 		loadCategoriesForUser(supabaseAdmin, householdId, user.id),
 		supabase
 			.from('financial_profiles')
@@ -171,11 +243,17 @@ export const load: PageServerLoad = async ({ locals: { supabase, safeGetSession 
 			.from('household_members')
 			.select('user_id, profiles!inner(display_name)')
 			.eq('household_id', householdId),
-		supabase.from('households').select('id, name').eq('id', householdId).single()
+		supabase
+			.from('households')
+			.select('id, name')
+			.eq('id', householdId)
+			.single()
 	]);
 	const assignmentProfiles = (profiles ?? [])
 		.filter((p) => p.type === 'shared' || !!p.user_id)
-		.map((p) => (p.type === 'shared' ? { ...p, name: household?.name ?? p.name } : p));
+		.map((p) =>
+			p.type === 'shared' ? { ...p, name: household?.name ?? p.name } : p
+		);
 
 	return {
 		categories,
@@ -190,7 +268,11 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const { rows, parsedRows, rowErrors: parsingErrors } = parseTransactionDraft(formData);
+		const {
+			rows,
+			parsedRows,
+			rowErrors: parsingErrors
+		} = parseTransactionDraft(formData);
 		const formFailure = draftFormFailure(parsedRows.length, parsingErrors);
 		if (formFailure) {
 			return fail(400, {
@@ -203,10 +285,19 @@ export const actions: Actions = {
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
 		if (!householdId) {
-			return fail(400, { success: false, message: 'Usuário não pertence a um grupo', rows });
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo',
+				rows
+			});
 		}
 
-		const relationErrors = await validateDraftRelations(supabase, householdId, user.id, parsedRows);
+		const relationErrors = await validateDraftRelations(
+			supabase,
+			householdId,
+			user.id,
+			parsedRows
+		);
 		if (Object.keys(relationErrors).length > 0) {
 			return fail(400, {
 				success: false,
@@ -223,17 +314,28 @@ export const actions: Actions = {
 			created_by_user_id: user.id
 		}));
 
-		const [{ data: insertedTransactions, error: txError }, householdMembersResult, profileResult] =
-			await Promise.all([
-				supabase
-					.from('transactions')
-					.insert(insertPayload)
-					.select('id, owner_profile_id, paid_by_user_id, category_id, subcategory_id'),
-				getHouseholdMembers(supabase, householdId),
-				supabase.from('financial_profiles').select('id, type, user_id').eq('household_id', householdId)
-			]);
+		const [
+			{ data: insertedTransactions, error: txError },
+			householdMembersResult,
+			profileResult
+		] = await Promise.all([
+			supabase
+				.from('transactions')
+				.insert(insertPayload)
+				.select(
+					'id, owner_profile_id, paid_by_user_id, category_id, subcategory_id'
+				),
+			getHouseholdMembers(supabase, householdId),
+			supabase
+				.from('financial_profiles')
+				.select('id, type, user_id')
+				.eq('household_id', householdId)
+		]);
 
-		const insertError = transactionInsertError(txError, insertedTransactions?.length ?? 0);
+		const insertError = transactionInsertError(
+			txError,
+			insertedTransactions?.length ?? 0
+		);
 		if (insertError) {
 			return fail(500, {
 				success: false,
@@ -243,12 +345,19 @@ export const actions: Actions = {
 		}
 
 		const householdMembers = householdMembersResult;
-		const profileById = new Map((profileResult.data ?? []).map((profile) => [profile.id, profile]));
+		const profileById = new Map(
+			(profileResult.data ?? []).map((profile) => [profile.id, profile])
+		);
 		const accessRows = buildTransactionAccessRows(
-			insertedTransactions as InsertedTransaction[], householdMembers, profileById, user.id
+			insertedTransactions as InsertedTransaction[],
+			householdMembers,
+			profileById,
+			user.id
 		);
 
-		const { error: accessError } = await supabase.from('transaction_access').insert(accessRows);
+		const { error: accessError } = await supabase
+			.from('transaction_access')
+			.insert(accessRows);
 		if (accessError) {
 			return fail(500, { success: false, message: accessError.message, rows });
 		}

@@ -19,7 +19,10 @@ export async function findAuthUserByEmail(
 ): Promise<User | null> {
 	const normalizedEmail = email.trim().toLowerCase();
 	for (let page = 1; page < 1000; page += 1) {
-		const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+		const { data, error } = await supabase.auth.admin.listUsers({
+			page,
+			perPage
+		});
 		if (error) throw new Error(error.message);
 		const users = data?.users ?? [];
 		const match = users.find((u) => u.email?.toLowerCase() === normalizedEmail);

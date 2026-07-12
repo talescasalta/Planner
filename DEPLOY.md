@@ -51,14 +51,17 @@ LLM_MODEL=xiaomi/mimo-v2.5-pro
 
 1. Crie um projeto no Supabase.
 2. Aplique todas as migrations:
+
    ```bash
    npx supabase login
    npx supabase link --project-id <project-id>
    npx supabase db push
    ```
+
    Ou execute o SQL manualmente no SQL Editor do Supabase.
 
    O fluxo de divisão de despesas depende das colunas `household_members.monthly_income` e `transactions.split_method`, criadas pela migration `20260601213812_shared_expense_settlement.sql`. Se essas colunas não existirem, a tela `/app/groups` e o cadastro manual com regra de divisão não funcionarão corretamente.
+
 3. Configure o Auth (Email provider habilitado).
 
 ## Deploy

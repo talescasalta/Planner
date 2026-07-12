@@ -20,7 +20,8 @@ export const actions: Actions = {
 
 		return {
 			success: true,
-			message: 'Se existir uma conta com esse email, enviaremos um link para redefinir a senha.'
+			message:
+				'Se existir uma conta com esse email, enviaremos um link para redefinir a senha.'
 		};
 	}
 };

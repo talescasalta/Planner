@@ -29,7 +29,10 @@ export interface ExtractionResult {
 }
 
 const IMAGE_SIGNATURES: Array<{ mimeType: string; bytes: number[] }> = [
-	{ mimeType: 'image/png', bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+	{
+		mimeType: 'image/png',
+		bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+	},
 	{ mimeType: 'image/jpeg', bytes: [0xff, 0xd8, 0xff] },
 	{ mimeType: 'image/webp', bytes: [0x52, 0x49, 0x46, 0x46] }
 ];
@@ -37,7 +40,9 @@ const IMAGE_SIGNATURES: Array<{ mimeType: string; bytes: number[] }> = [
 // The browser-provided MIME type is not always reliable for pasted or renamed
 // files. OpenRouter validates the bytes behind a data URL, so use the detected
 // type whenever possible rather than sending a misleading MIME header.
-export function detectImageMimeType(buffer: Buffer): 'image/png' | 'image/jpeg' | 'image/webp' | null {
+export function detectImageMimeType(
+	buffer: Buffer
+): 'image/png' | 'image/jpeg' | 'image/webp' | null {
 	for (const signature of IMAGE_SIGNATURES) {
 		if (signature.bytes.every((byte, index) => buffer[index] === byte)) {
 			if (signature.mimeType === 'image/webp') {
@@ -52,11 +57,16 @@ export function detectImageMimeType(buffer: Buffer): 'image/png' | 'image/jpeg' 
 const SOURCE_TYPE_HINTS: Record<CsvSourceType, string> = {
 	credit_card: 'fatura de cartão de crédito',
 	bank_account: 'extrato de conta corrente',
-	vale_alimentacao: 'extrato de vale alimentação (benefício como Alelo, VR, Sodexo, Caju, Flash)',
-	vale_refeicao: 'extrato de vale refeição (benefício como Alelo, VR, Sodexo, Caju, Flash)'
+	vale_alimentacao:
+		'extrato de vale alimentação (benefício como Alelo, VR, Sodexo, Caju, Flash)',
+	vale_refeicao:
+		'extrato de vale refeição (benefício como Alelo, VR, Sodexo, Caju, Flash)'
 };
 
-function buildSystemPrompt(sourceType: CsvSourceType, referenceMonth: string): string {
+function buildSystemPrompt(
+	sourceType: CsvSourceType,
+	referenceMonth: string
+): string {
 	return `You extract financial transactions from Brazilian statements (screenshots or pasted text) for a personal finance app. The user says this is a ${SOURCE_TYPE_HINTS[sourceType]}. Respond with JSON only.
 
 Rules:
@@ -76,11 +86,14 @@ Return JSON in this exact shape:
 }`;
 }
 
-function toParsedRows(transactions: Array<{ date: string; description: string; amount: number }>): ParsedRow[] {
+function toParsedRows(
+	transactions: Array<{ date: string; description: string; amount: number }>
+): ParsedRow[] {
 	const rows: ParsedRow[] = [];
 	for (const tx of transactions) {
 		const description = tx.description.trim();
-		if (!description || !Number.isFinite(tx.amount) || tx.amount === 0) continue;
+		if (!description || !Number.isFinite(tx.amount) || tx.amount === 0)
+			continue;
 		const clean = cleanDescription(description);
 		const installment = parseInstallment(description);
 		rows.push({
@@ -107,7 +120,10 @@ async function runExtraction(
 	try {
 		const response = await callLlm({
 			messages: [
-				{ role: 'system', content: buildSystemPrompt(sourceType, referenceMonth) },
+				{
+					role: 'system',
+					content: buildSystemPrompt(sourceType, referenceMonth)
+				},
 				{ role: 'user', content: userContent }
 			],
 			temperature: 0,
@@ -118,7 +134,11 @@ async function runExtraction(
 		const parsed = JSON.parse(raw.replace(/```json\s*|\s*```/g, '').trim());
 		const validated = extractionSchema.safeParse(parsed);
 		if (!validated.success) {
-			return { rows: [], confidence: 0, notes: 'A IA não retornou transações em formato válido.' };
+			return {
+				rows: [],
+				confidence: 0,
+				notes: 'A IA não retornou transações em formato válido.'
+			};
 		}
 		return {
 			rows: toParsedRows(validated.data.transactions),
@@ -130,7 +150,11 @@ async function runExtraction(
 			model: process.env.LLM_MODEL ?? 'default',
 			error: String(error)
 		});
-		return { rows: [], confidence: 0, notes: 'Falha ao interpretar o conteúdo com IA.' };
+		return {
+			rows: [],
+			confidence: 0,
+			notes: 'Falha ao interpretar o conteúdo com IA.'
+		};
 	}
 }
 
@@ -143,7 +167,10 @@ export async function extractRowsFromImage(
 	const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
 	return runExtraction(
 		[
-			{ type: 'text', text: 'Extraia as transações desta imagem de fatura/extrato.' },
+			{
+				type: 'text',
+				text: 'Extraia as transações desta imagem de fatura/extrato.'
+			},
 			{ type: 'image_url', image_url: { url: dataUrl } }
 		],
 		sourceType,

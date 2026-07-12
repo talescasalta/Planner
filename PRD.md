@@ -660,12 +660,12 @@ Retorno esperado:
 
 ```json
 {
-  "category": "Saude",
-  "subcategory": "Farmacia",
-  "owner_profile": "Grupo",
-  "confidence": 0.84,
-  "needs_review": false,
-  "reason_code": "known_pharmacy_merchant"
+	"category": "Saude",
+	"subcategory": "Farmacia",
+	"owner_profile": "Grupo",
+	"confidence": 0.84,
+	"needs_review": false,
+	"reason_code": "known_pharmacy_merchant"
 }
 ```
 

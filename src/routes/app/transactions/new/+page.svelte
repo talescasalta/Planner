@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import type { TransactionNewPageData } from '$lib/types/page-data';
 	import type { ActionData } from './$types';
 
@@ -21,7 +22,8 @@
 		rowErrors?: Record<number, string>;
 	};
 
-	let { data, form }: { data: TransactionNewPageData; form?: BatchFormState } = $props();
+	let { data, form }: { data: TransactionNewPageData; form?: BatchFormState } =
+		$props();
 
 	let categories = $derived(data.categories ?? []);
 	let profiles = $derived(data.profiles ?? []);
@@ -72,12 +74,18 @@
 	}
 
 	function subcategoriesFor(categoryId: string) {
-		return categoryId ? categories.filter((c) => c.parent_id === categoryId) : [];
+		return categoryId
+			? categories.filter((c) => c.parent_id === categoryId)
+			: [];
 	}
 
 	function updateCategory(index: number, value: string) {
 		rows[index].category_id = value;
-		if (!subcategoriesFor(value).some((sub) => sub.id === rows[index].subcategory_id)) {
+		if (
+			!subcategoriesFor(value).some(
+				(sub) => sub.id === rows[index].subcategory_id
+			)
+		) {
 			rows[index].subcategory_id = '';
 		}
 	}
@@ -87,15 +95,20 @@
 	<div class="space-y-2">
 		<h2 class="text-xl font-semibold text-gray-900">Novas transações</h2>
 		<p class="text-sm text-gray-600">
-			Preencha várias linhas e registre tudo de uma vez. Linhas completamente vazias são ignoradas.
+			Preencha várias linhas e registre tudo de uma vez. Linhas completamente
+			vazias são ignoradas.
 		</p>
 	</div>
 
 	<form method="POST" use:enhance class="space-y-4">
-		<div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+		<div
+			class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
+		>
 			<div class="overflow-x-auto">
 				<table class="min-w-[1320px] divide-y divide-gray-200 text-sm">
-					<thead class="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+					<thead
+						class="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500"
+					>
 						<tr>
 							<th class="px-3 py-3 font-medium">Data</th>
 							<th class="px-3 py-3 font-medium">Descrição</th>
@@ -112,7 +125,7 @@
 					</thead>
 
 					<tbody class="divide-y divide-gray-100 align-top">
-						{#each rows as row, index}
+						{#each rows as row, index (row)}
 							<tr class="bg-white">
 								<td class="px-3 py-3">
 									<input
@@ -154,11 +167,15 @@
 									<select
 										name={`rows[${index}].category_id`}
 										bind:value={row.category_id}
-										onchange={(event) => updateCategory(index, (event.currentTarget as HTMLSelectElement).value)}
+										onchange={(event) =>
+											updateCategory(
+												index,
+												(event.currentTarget as HTMLSelectElement).value
+											)}
 										class="w-48 rounded-md border border-gray-300 px-3 py-2"
 									>
 										<option value="">Selecione...</option>
-										{#each parentCategories as cat}
+										{#each parentCategories as cat (cat.id)}
 											<option value={cat.id}>{cat.name}</option>
 										{/each}
 									</select>
@@ -171,7 +188,7 @@
 										class="w-48 rounded-md border border-gray-300 px-3 py-2 disabled:bg-gray-100"
 									>
 										<option value="">Selecione...</option>
-										{#each subcategoriesFor(row.category_id) as sub}
+										{#each subcategoriesFor(row.category_id) as sub (sub.id)}
 											<option value={sub.id}>{sub.name}</option>
 										{/each}
 									</select>
@@ -183,7 +200,7 @@
 										class="w-44 rounded-md border border-gray-300 px-3 py-2"
 									>
 										<option value="">Selecione...</option>
-										{#each profiles as profile}
+										{#each profiles as profile (profile.id)}
 											<option value={profile.id}>{profile.name}</option>
 										{/each}
 									</select>
@@ -205,8 +222,11 @@
 										class="w-44 rounded-md border border-gray-300 px-3 py-2"
 									>
 										<option value="">Selecione...</option>
-										{#each members as member}
-											<option value={member.user_id}>{member.profiles?.display_name ?? member.user_id}</option>
+										{#each members as member (member.user_id)}
+											<option value={member.user_id}
+												>{member.profiles?.display_name ??
+													member.user_id}</option
+											>
 										{/each}
 									</select>
 								</td>
@@ -242,7 +262,9 @@
 				</table>
 			</div>
 
-			<div class="flex items-center justify-between border-t border-gray-200 bg-gray-50 px-4 py-3">
+			<div
+				class="flex items-center justify-between border-t border-gray-200 bg-gray-50 px-4 py-3"
+			>
 				<button
 					type="button"
 					onclick={addRow}
@@ -250,12 +272,17 @@
 				>
 					Adicionar linha
 				</button>
-				<p class="text-xs text-gray-500">Dica: deixe linhas vazias no final sem problema.</p>
+				<p class="text-xs text-gray-500">
+					Dica: deixe linhas vazias no final sem problema.
+				</p>
 			</div>
 		</div>
 
 		<div class="flex items-center justify-between">
-			<a href="/app/transactions" class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a>
+			<a
+				href={resolve('/app/transactions')}
+				class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a
+			>
 			<button
 				type="submit"
 				class="rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"

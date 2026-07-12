@@ -4,39 +4,19 @@
 // statement is imported, its real installment row becomes the new anchor and
 // the projection shrinks automatically.
 
-export interface InstallmentSourceTransaction {
-	installment_number: number | null;
-	installment_total: number | null;
-	installment_group_key: string | null;
-	amount: number;
-	reference_month: string | null;
-	date: string;
-	clean_description: string | null;
-	description: string;
-	category_display_name?: string | null;
-}
+import type {
+	FutureInstallmentsSummary,
+	InstallmentMonth,
+	InstallmentSourceTransaction,
+	ProjectedInstallment
+} from '$lib/types/installments';
 
-export interface ProjectedInstallment {
-	groupKey: string;
-	merchant: string;
-	number: number;
-	total: number;
-	amount: number;
-	referenceMonth: string;
-	categoryName: string | null;
-}
-
-export interface InstallmentMonth {
-	month: string;
-	total: number;
-	items: ProjectedInstallment[];
-}
-
-export interface FutureInstallmentsSummary {
-	months: InstallmentMonth[];
-	total: number;
-	count: number;
-}
+export type {
+	FutureInstallmentsSummary,
+	InstallmentMonth,
+	InstallmentSourceTransaction,
+	ProjectedInstallment
+} from '$lib/types/installments';
 
 export function addMonths(month: string, delta: number): string {
 	const [year, m] = month.split('-').map(Number);
@@ -49,14 +29,20 @@ export function addMonths(month: string, delta: number): string {
 }
 
 function monthOf(tx: InstallmentSourceTransaction): string {
-	if (tx.reference_month && /^\d{4}-\d{2}$/.test(tx.reference_month)) return tx.reference_month;
+	if (tx.reference_month && /^\d{4}-\d{2}$/.test(tx.reference_month))
+		return tx.reference_month;
 	return (tx.date ?? '').slice(0, 7);
 }
 
 function groupInstallments(transactions: InstallmentSourceTransaction[]) {
 	const groups = new Map<string, InstallmentSourceTransaction[]>();
 	for (const transaction of transactions) {
-		if (!transaction.installment_group_key || !transaction.installment_total || !transaction.installment_number) continue;
+		if (
+			!transaction.installment_group_key ||
+			!transaction.installment_total ||
+			!transaction.installment_number
+		)
+			continue;
 		const group = groups.get(transaction.installment_group_key) ?? [];
 		group.push(transaction);
 		groups.set(transaction.installment_group_key, group);
@@ -64,21 +50,35 @@ function groupInstallments(transactions: InstallmentSourceTransaction[]) {
 	return groups;
 }
 
-function projectInstallmentGroup(groupKey: string, rows: InstallmentSourceTransaction[]) {
+function projectInstallmentGroup(
+	groupKey: string,
+	rows: InstallmentSourceTransaction[]
+) {
 	const anchor = rows.reduce((left, right) =>
-		(right.installment_number ?? 0) > (left.installment_number ?? 0) ? right : left
+		(right.installment_number ?? 0) > (left.installment_number ?? 0)
+			? right
+			: left
 	);
 	const anchorNumber = anchor.installment_number as number;
 	const total = anchor.installment_total as number;
 	const anchorMonth = monthOf(anchor);
 	if (anchorNumber >= total || !/^\d{4}-\d{2}$/.test(anchorMonth)) return [];
-	const merchant = (anchor.clean_description || anchor.description || '').trim();
+	const merchant = (
+		anchor.clean_description ||
+		anchor.description ||
+		''
+	).trim();
 	const categoryName = anchor.category_display_name ?? null;
 	return Array.from({ length: total - anchorNumber }, (_, index) => {
 		const number = anchorNumber + index + 1;
 		return {
-			groupKey, merchant, number, total, amount: anchor.amount,
-			referenceMonth: addMonths(anchorMonth, number - anchorNumber), categoryName
+			groupKey,
+			merchant,
+			number,
+			total,
+			amount: anchor.amount,
+			referenceMonth: addMonths(anchorMonth, number - anchorNumber),
+			categoryName
 		};
 	});
 }

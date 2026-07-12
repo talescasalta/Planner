@@ -12,12 +12,17 @@ export async function checkPersistentRateLimit(
 	userId: string,
 	options: RateLimitOptions
 ): Promise<boolean> {
-	const { data, error } = await supabase.rpc('check_classification_rate_limit', {
-		p_user_id: userId,
-		p_window_seconds: Math.ceil(options.windowMs / 1000),
-		p_max_requests: options.maxRequests,
-		p_cleanup_seconds: Math.ceil((options.cleanupOlderThanMs ?? 60 * 60_000) / 1000)
-	});
+	const { data, error } = await supabase.rpc(
+		'check_classification_rate_limit',
+		{
+			p_user_id: userId,
+			p_window_seconds: Math.ceil(options.windowMs / 1000),
+			p_max_requests: options.maxRequests,
+			p_cleanup_seconds: Math.ceil(
+				(options.cleanupOlderThanMs ?? 60 * 60_000) / 1000
+			)
+		}
+	);
 	if (error) return false;
 	return data === true;
 }

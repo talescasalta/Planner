@@ -12,7 +12,10 @@ describe('checkPersistentRateLimit', () => {
 		} as never;
 
 		await expect(
-			checkPersistentRateLimit(supabase, 'user-a', { windowMs: 60_000, maxRequests: 10 })
+			checkPersistentRateLimit(supabase, 'user-a', {
+				windowMs: 60_000,
+				maxRequests: 10
+			})
 		).resolves.toBe(true);
 		expect(calls).toEqual([
 			{
@@ -30,7 +33,10 @@ describe('checkPersistentRateLimit', () => {
 		} as never;
 
 		await expect(
-			checkPersistentRateLimit(supabase, 'user-a', { windowMs: 60_000, maxRequests: 10 })
+			checkPersistentRateLimit(supabase, 'user-a', {
+				windowMs: 60_000,
+				maxRequests: 10
+			})
 		).resolves.toBe(false);
 	});
 });

@@ -1,10 +1,14 @@
-export type ClassificationMethod = 'manual' | 'rule' | 'llm' | 'system' | 'imported' | 'unknown';
+export type ClassificationMethod =
+	'manual' | 'rule' | 'llm' | 'system' | 'imported' | 'unknown';
 export type ReviewStatus = 'needs_review' | 'confirmed' | 'ignored';
-export type ImportStatus = 'uploaded' | 'parsed' | 'classified' | 'reviewed' | 'failed';
-export type PatternType = 'merchant_contains' | 'description_contains' | 'exact_merchant' | 'regex';
+export type ImportStatus =
+	'uploaded' | 'parsed' | 'classified' | 'reviewed' | 'failed';
+export type PatternType =
+	'merchant_contains' | 'description_contains' | 'exact_merchant' | 'regex';
 export type FinancialProfileType = 'individual' | 'shared';
 export type SplitMethod = 'income_proportional' | 'equal';
-export type TransactionSourceType = 'credit_card' | 'bank_account' | 'vale_alimentacao' | 'vale_refeicao';
+export type TransactionSourceType =
+	'credit_card' | 'bank_account' | 'vale_alimentacao' | 'vale_refeicao';
 
 export interface SuccessfulClassificationSuggestion {
 	type?: 'classification';

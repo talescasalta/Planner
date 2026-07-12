@@ -1,6 +1,18 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { ArrowDown, ArrowUp, ArrowUpDown, Ban, Check, Plus, Search, Undo2, X } from 'lucide-svelte';
+	import { resolve } from '$app/paths';
+	import {
+		ArrowDown,
+		ArrowUp,
+		ArrowUpDown,
+		Ban,
+		Check,
+		Plus,
+		Search,
+		Undo2,
+		X
+	} from 'lucide-svelte';
+	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import type { TransactionsPageData } from '$lib/types/page-data';
 	import type { Transaction } from '$lib/types/app';
 
@@ -10,10 +22,21 @@
 	let profiles = $derived(data.profiles ?? []);
 	let monthOptions = $derived(data.monthOptions ?? []);
 	let selectedMonth = $derived(data.selectedMonth ?? '');
-	let filters = $derived(data.filters ?? { sourceType: 'all', categoryId: '', subcategoryId: '', status: 'all' });
+	let filters = $derived(
+		data.filters ?? {
+			sourceType: 'all',
+			categoryId: '',
+			subcategoryId: '',
+			status: 'all'
+		}
+	);
 	let summary = $derived(data.summary);
 	let parentCategories = $derived(categories.filter((c) => !c.parent_id));
-	let filterSubcategories = $derived(filters.categoryId ? categories.filter((c) => c.parent_id === filters.categoryId) : []);
+	let filterSubcategories = $derived(
+		filters.categoryId
+			? categories.filter((c) => c.parent_id === filters.categoryId)
+			: []
+	);
 	let selectedForDelete = $state<string[]>([]);
 	let newSubcategoryName = $state('');
 	// Per-row save state, keyed by transaction id, so saving one row never
@@ -41,13 +64,22 @@
 	let displayedRetainedIds = $derived.by(() => {
 		if (retainedRows.length === 0) return new Set<string>();
 		const present = new Set(transactions.map((t) => t.id));
-		return new Set(retainedRows.filter((r) => !present.has(r.tx.id)).map((r) => r.tx.id));
+		return new Set(
+			retainedRows.filter((r) => !present.has(r.tx.id)).map((r) => r.tx.id)
+		);
 	});
 	// Retained rows belong to the view they were edited in; navigating to a
 	// different month/filter/page drops them (a same-view reload after a row
 	// save keeps the key identical, so they survive exactly as intended).
 	let viewKey = $derived(
-		[selectedMonth, filters.sourceType, filters.categoryId, filters.subcategoryId, filters.status, data.page].join('|')
+		[
+			selectedMonth,
+			filters.sourceType,
+			filters.categoryId,
+			filters.subcategoryId,
+			filters.status,
+			data.page
+		].join('|')
 	);
 	let retainedViewKey = $state<string | null>(null);
 	$effect(() => {
@@ -59,7 +91,11 @@
 
 	// After a save, keep the row visible in place when it fell out of the
 	// active filters; drop any stale copy when it is still (or again) listed.
-	function retainAfterSave(tx: Transaction, previousIndex: number, overrides: Partial<Transaction>) {
+	function retainAfterSave(
+		tx: Transaction,
+		previousIndex: number,
+		overrides: Partial<Transaction>
+	) {
 		if (transactions.some((t) => t.id === tx.id)) {
 			retainedRows = retainedRows.filter((r) => r.tx.id !== tx.id);
 			return;
@@ -82,18 +118,27 @@
 	let bulkSubcategoryId = $state('');
 	let bulkOwnerId = $state(KEEP);
 	let bulkApplying = $state(false);
-	let bulkCategoryRealId = $derived(bulkCategoryId !== KEEP && bulkCategoryId !== '' ? bulkCategoryId : '');
-	let bulkSubcategories = $derived(bulkCategoryRealId ? categories.filter((c) => c.parent_id === bulkCategoryRealId) : []);
+	let bulkCategoryRealId = $derived(
+		bulkCategoryId !== KEEP && bulkCategoryId !== '' ? bulkCategoryId : ''
+	);
+	let bulkSubcategories = $derived(
+		bulkCategoryRealId
+			? categories.filter((c) => c.parent_id === bulkCategoryRealId)
+			: []
+	);
 	let bulkHasChange = $derived(bulkCategoryId !== KEEP || bulkOwnerId !== KEEP);
 
 	let visibleTransactions = $derived.by(() => {
 		const term = searchTerm.trim().toLowerCase();
 		let list = transactions;
 		if (retainedRows.length > 0) {
-			const toInsert = retainedRows.filter((r) => displayedRetainedIds.has(r.tx.id));
+			const toInsert = retainedRows.filter((r) =>
+				displayedRetainedIds.has(r.tx.id)
+			);
 			if (toInsert.length > 0) {
 				list = [...list];
-				for (const r of toInsert) list.splice(Math.min(r.index, list.length), 0, r.tx);
+				for (const r of toInsert)
+					list.splice(Math.min(r.index, list.length), 0, r.tx);
 			}
 		}
 		if (term) {
@@ -102,7 +147,12 @@
 				const clean = (tx.clean_description ?? '').toLowerCase();
 				const cat = (tx.category_display_name ?? '').toLowerCase();
 				const sub = (tx.subcategory_display_name ?? '').toLowerCase();
-				return desc.includes(term) || clean.includes(term) || cat.includes(term) || sub.includes(term);
+				return (
+					desc.includes(term) ||
+					clean.includes(term) ||
+					cat.includes(term) ||
+					sub.includes(term)
+				);
 			});
 		}
 		if (amountSort === 'desc') {
@@ -114,17 +164,24 @@
 	});
 
 	function cycleAmountSort() {
-		amountSort = amountSort === 'none' ? 'desc' : amountSort === 'desc' ? 'asc' : 'none';
+		amountSort =
+			amountSort === 'none' ? 'desc' : amountSort === 'desc' ? 'asc' : 'none';
 	}
 
 	$effect(() => {
-		if (bulkSubcategoryId && !bulkSubcategories.some((sub) => sub.id === bulkSubcategoryId)) {
+		if (
+			bulkSubcategoryId &&
+			!bulkSubcategories.some((sub) => sub.id === bulkSubcategoryId)
+		) {
 			bulkSubcategoryId = '';
 		}
 	});
 
 	function formatCurrency(value: number) {
-		return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+		return value.toLocaleString('pt-BR', {
+			style: 'currency',
+			currency: 'BRL'
+		});
 	}
 
 	function formatMonth(month: string) {
@@ -141,19 +198,26 @@
 		return transactionsHref({ month, page: 0 });
 	}
 
-	function setQueryParam(params: URLSearchParams, key: string, value: string, ignored = '') {
+	function setQueryParam(
+		params: URLSearchParams,
+		key: string,
+		value: string,
+		ignored = ''
+	) {
 		if (value && value !== ignored) params.set(key, value);
 	}
 
-	function transactionsHref(overrides: {
-		month?: string;
-		sourceType?: string;
-		categoryId?: string;
-		subcategoryId?: string;
-		status?: string;
-		page?: number;
-	} = {}) {
-		const params = new URLSearchParams();
+	function transactionsHref(
+		overrides: {
+			month?: string;
+			sourceType?: string;
+			categoryId?: string;
+			subcategoryId?: string;
+			status?: string;
+			page?: number;
+		} = {}
+	) {
+		const params = new SvelteURLSearchParams();
 		const month = overrides.month ?? selectedMonth;
 		const sourceType = overrides.sourceType ?? filters.sourceType;
 		const categoryId = overrides.categoryId ?? filters.categoryId;
@@ -194,7 +258,9 @@
 	}
 
 	function rowSubcategories(categoryId: string | null | undefined) {
-		return categoryId ? categories.filter((c) => c.parent_id === categoryId) : [];
+		return categoryId
+			? categories.filter((c) => c.parent_id === categoryId)
+			: [];
 	}
 
 	function suggestionLabel(tx: Transaction): string | null {
@@ -216,7 +282,8 @@
 		// The old subcategory no longer belongs to the new category; clear it
 		// before saving so the server does not reject the pair.
 		const sub = form.elements.namedItem('subcategory_id');
-		if (sub instanceof HTMLSelectElement || sub instanceof HTMLInputElement) sub.value = '';
+		if (sub instanceof HTMLSelectElement || sub instanceof HTMLInputElement)
+			sub.value = '';
 		form.requestSubmit();
 	}
 
@@ -240,17 +307,23 @@
 	function revertRowControls(formElement: HTMLFormElement, tx: Transaction) {
 		const set = (name: string, value: string) => {
 			const el = formElement.elements.namedItem(name);
-			if (el instanceof HTMLSelectElement || el instanceof HTMLInputElement) el.value = value;
+			if (el instanceof HTMLSelectElement || el instanceof HTMLInputElement)
+				el.value = value;
 		};
 		set('category_id', tx.category_id ?? '');
 		set('subcategory_id', tx.subcategory_id ?? '');
 		set('owner_profile_id', tx.owner_profile_id ?? '');
 	}
 
-	function rowEnhance(tx: Transaction, formElement: HTMLFormElement, submitter: HTMLElement | null) {
+	function rowEnhance(
+		tx: Transaction,
+		formElement: HTMLFormElement,
+		submitter: HTMLElement | null
+	) {
 		const scrollY = window.scrollY;
 		const isCreatingSubcategory =
-			submitter instanceof HTMLButtonElement && submitter.formAction.includes('create_subcategory');
+			submitter instanceof HTMLButtonElement &&
+			submitter.formAction.includes('create_subcategory');
 		savingIds[tx.id] = true;
 		delete rowErrors[tx.id];
 
@@ -258,7 +331,9 @@
 		// after update() the row may have been filtered out and unmounted.
 		const readControl = (name: string) => {
 			const el = formElement.elements.namedItem(name);
-			return el instanceof HTMLSelectElement || el instanceof HTMLInputElement ? el.value : '';
+			return el instanceof HTMLSelectElement || el instanceof HTMLInputElement
+				? el.value
+				: '';
 		};
 		const submittedCategoryId = readControl('category_id') || null;
 		const submittedSubcategoryId = readControl('subcategory_id') || null;
@@ -276,7 +351,10 @@
 				// Don't reload (nothing changed server-side); revert and surface the error.
 				revertRowControls(formElement, tx);
 				const message = result.data?.message;
-				rowErrors[tx.id] = typeof message === 'string' ? message : 'Não foi possível salvar. Tente novamente.';
+				rowErrors[tx.id] =
+					typeof message === 'string'
+						? message
+						: 'Não foi possível salvar. Tente novamente.';
 				delete savingIds[tx.id];
 				requestAnimationFrame(() => window.scrollTo({ top: scrollY }));
 				return;
@@ -292,14 +370,18 @@
 					owner_profile_id: submittedOwnerId,
 					review_status: 'confirmed',
 					classification_display_source: 'saved',
-					category_display_name: categories.find((c) => c.id === submittedCategoryId)?.name ?? null,
-					subcategory_display_name: categories.find((c) => c.id === submittedSubcategoryId)?.name ?? null
+					category_display_name:
+						categories.find((c) => c.id === submittedCategoryId)?.name ?? null,
+					subcategory_display_name:
+						categories.find((c) => c.id === submittedSubcategoryId)?.name ??
+						null
 				});
 			}
 			requestAnimationFrame(() => {
 				window.scrollTo({ top: scrollY });
 				delete savingIds[tx.id];
-				if (isCreatingSubcategory && result.type === 'success') cancelCreateSubcategory();
+				if (isCreatingSubcategory && result.type === 'success')
+					cancelCreateSubcategory();
 			});
 		};
 	}
@@ -308,12 +390,20 @@
 		const scrollY = window.scrollY;
 		bulkApplying = true;
 
-		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
+		return async ({
+			result,
+			update
+		}: {
+			result: { type: string };
+			update: () => Promise<void>;
+		}) => {
 			await update();
 			bulkApplying = false;
 			if (result.type === 'success') {
 				// Retained snapshots of bulk-edited rows are stale now; drop them.
-				retainedRows = retainedRows.filter((r) => !selectedForDelete.includes(r.tx.id));
+				retainedRows = retainedRows.filter(
+					(r) => !selectedForDelete.includes(r.tx.id)
+				);
 				selectedForDelete = [];
 				bulkCategoryId = KEEP;
 				bulkSubcategoryId = '';
@@ -328,7 +418,13 @@
 		confirmingId = tx.id;
 		const previousIndex = transactions.findIndex((t) => t.id === tx.id);
 
-		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
+		return async ({
+			result,
+			update
+		}: {
+			result: { type: string };
+			update: () => Promise<void>;
+		}) => {
 			await update();
 			if (result.type === 'success') {
 				retainAfterSave(tx, previousIndex, { review_status: 'confirmed' });
@@ -340,12 +436,21 @@
 		};
 	}
 
-	function keepScrollOnStatusChange(tx: Transaction, nextStatus: Transaction['review_status']) {
+	function keepScrollOnStatusChange(
+		tx: Transaction,
+		nextStatus: Transaction['review_status']
+	) {
 		const scrollY = window.scrollY;
 		statusChangingId = tx.id;
 		const previousIndex = transactions.findIndex((t) => t.id === tx.id);
 
-		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
+		return async ({
+			result,
+			update
+		}: {
+			result: { type: string };
+			update: () => Promise<void>;
+		}) => {
 			await update();
 			if (result.type === 'success') {
 				retainAfterSave(tx, previousIndex, { review_status: nextStatus });
@@ -359,10 +464,12 @@
 </script>
 
 <div class="space-y-4">
-	<div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+	<div
+		class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
+	>
 		<h2 class="text-xl font-semibold text-gray-900">Transações</h2>
 		<a
-			href="/app/transactions/new"
+			href={resolve('/app/transactions/new')}
 			class="inline-flex items-center self-start px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 lg:self-auto"
 		>
 			Nova transação
@@ -370,10 +477,16 @@
 	</div>
 
 	<div class="bg-white shadow rounded-lg p-4 space-y-4">
-		<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+		<div
+			class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"
+		>
 			<div class="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end">
 				<div>
-					<label for="month-filter" class="block text-xs font-medium uppercase tracking-wider text-gray-500">Mês da fatura</label>
+					<label
+						for="month-filter"
+						class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+						>Mês da fatura</label
+					>
 					<select
 						id="month-filter"
 						class="mt-1 w-56 rounded-md border-gray-300 shadow-sm text-sm px-3 py-2"
@@ -387,16 +500,22 @@
 							<option value="">Sem meses</option>
 						{/if}
 						<option value="all">Todos os meses</option>
-						{#each monthOptions as month}
+						{#each monthOptions as month (month)}
 							<option value={month}>{formatMonth(month)}</option>
 						{/each}
 					</select>
 				</div>
 
 				<div class="flex-1">
-					<label for="tx-search" class="block text-xs font-medium uppercase tracking-wider text-gray-500">Buscar</label>
+					<label
+						for="tx-search"
+						class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+						>Buscar</label
+					>
 					<div class="relative mt-1">
-						<Search class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+						<Search
+							class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+						/>
 						<input
 							id="tx-search"
 							type="search"
@@ -425,28 +544,41 @@
 				</div>
 				<div>
 					<p class="text-xs text-gray-500">Despesas</p>
-					<p class="font-semibold text-red-700">{formatCurrency(summary.expenses)}</p>
+					<p class="font-semibold text-red-700">
+						{formatCurrency(summary.expenses)}
+					</p>
 				</div>
 				<div>
 					<p class="text-xs text-gray-500">Créditos</p>
-					<p class="font-semibold text-green-700">{formatCurrency(summary.credits)}</p>
+					<p class="font-semibold text-green-700">
+						{formatCurrency(summary.credits)}
+					</p>
 				</div>
 				<div>
 					<p class="text-xs text-gray-500">Saldo</p>
-					<p class="font-semibold text-gray-900">{formatCurrency(summary.balance)}</p>
+					<p class="font-semibold text-gray-900">
+						{formatCurrency(summary.balance)}
+					</p>
 				</div>
 			</div>
 		</div>
 
 		<div class="grid gap-3 md:grid-cols-5">
 			<div>
-				<label for="source-type-filter" class="block text-xs font-medium uppercase tracking-wider text-gray-500">Origem</label>
+				<label
+					for="source-type-filter"
+					class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+					>Origem</label
+				>
 				<select
 					id="source-type-filter"
 					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
 					value={filters.sourceType}
 					onchange={(event) => {
-						window.location.href = transactionsHref({ sourceType: event.currentTarget.value, page: 0 });
+						window.location.href = transactionsHref({
+							sourceType: event.currentTarget.value,
+							page: 0
+						});
 					}}
 				>
 					<option value="all">Todas</option>
@@ -459,7 +591,11 @@
 			</div>
 
 			<div>
-				<label for="category-filter" class="block text-xs font-medium uppercase tracking-wider text-gray-500">Categoria</label>
+				<label
+					for="category-filter"
+					class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+					>Categoria</label
+				>
 				<select
 					id="category-filter"
 					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
@@ -473,38 +609,52 @@
 					}}
 				>
 					<option value="">Todas</option>
-					{#each parentCategories as cat}
+					{#each parentCategories as cat (cat.id)}
 						<option value={cat.id}>{cat.name}</option>
 					{/each}
 				</select>
 			</div>
 
 			<div>
-				<label for="subcategory-filter" class="block text-xs font-medium uppercase tracking-wider text-gray-500">Subcategoria</label>
+				<label
+					for="subcategory-filter"
+					class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+					>Subcategoria</label
+				>
 				<select
 					id="subcategory-filter"
 					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm disabled:bg-gray-100"
 					value={filters.subcategoryId}
 					disabled={!filters.categoryId}
 					onchange={(event) => {
-						window.location.href = transactionsHref({ subcategoryId: event.currentTarget.value, page: 0 });
+						window.location.href = transactionsHref({
+							subcategoryId: event.currentTarget.value,
+							page: 0
+						});
 					}}
 				>
 					<option value="">Todas</option>
-					{#each filterSubcategories as sub}
+					{#each filterSubcategories as sub (sub.id)}
 						<option value={sub.id}>{sub.name}</option>
 					{/each}
 				</select>
 			</div>
 
 			<div>
-				<label for="status-filter" class="block text-xs font-medium uppercase tracking-wider text-gray-500">Status</label>
+				<label
+					for="status-filter"
+					class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+					>Status</label
+				>
 				<select
 					id="status-filter"
 					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
 					value={filters.status}
 					onchange={(event) => {
-						window.location.href = transactionsHref({ status: event.currentTarget.value, page: 0 });
+						window.location.href = transactionsHref({
+							status: event.currentTarget.value,
+							page: 0
+						});
 					}}
 				>
 					<option value="all">Todos</option>
@@ -516,13 +666,15 @@
 
 			<div class="flex items-end">
 				<a
-					href={transactionsHref({
-						sourceType: 'all',
-						categoryId: '',
-						subcategoryId: '',
-						status: 'all',
-						page: 0
-					})}
+					href={resolve(
+						transactionsHref({
+							sourceType: 'all',
+							categoryId: '',
+							subcategoryId: '',
+							status: 'all',
+							page: 0
+						}) as `/app/transactions?${string}`
+					)}
 					class={`inline-flex w-full justify-center rounded-md border px-3 py-2 text-sm font-medium ${
 						hasActiveFilters()
 							? 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
@@ -539,16 +691,36 @@
 				method="POST"
 				action="?/delete_month"
 				onsubmit={(event) => {
-					if (!confirm(`Excluir todas as transações de ${formatMonth(selectedMonth)}?`)) event.preventDefault();
+					if (
+						!confirm(
+							`Excluir todas as transações de ${formatMonth(selectedMonth)}?`
+						)
+					)
+						event.preventDefault();
 				}}
 				class="flex justify-end"
 			>
 				<input type="hidden" name="reference_month" value={selectedMonth} />
-				<input type="hidden" name="source_type_filter" value={filters.sourceType} />
-				<input type="hidden" name="category_id_filter" value={filters.categoryId} />
-				<input type="hidden" name="subcategory_id_filter" value={filters.subcategoryId} />
+				<input
+					type="hidden"
+					name="source_type_filter"
+					value={filters.sourceType}
+				/>
+				<input
+					type="hidden"
+					name="category_id_filter"
+					value={filters.categoryId}
+				/>
+				<input
+					type="hidden"
+					name="subcategory_id_filter"
+					value={filters.subcategoryId}
+				/>
 				<input type="hidden" name="status_filter" value={filters.status} />
-				<button type="submit" class="px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100">
+				<button
+					type="submit"
+					class="px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100"
+				>
 					Excluir mês da fatura
 				</button>
 			</form>
@@ -563,25 +735,50 @@
 			method="POST"
 			action="?/delete_selected"
 			onsubmit={(event) => {
-				if (!confirm(`Excluir ${selectedForDelete.length} transações selecionadas?`)) event.preventDefault();
+				if (
+					!confirm(
+						`Excluir ${selectedForDelete.length} transações selecionadas?`
+					)
+				)
+					event.preventDefault();
 			}}
 		>
-			{#each selectedForDelete as id}
+			{#each selectedForDelete as id (id)}
 				<input type="hidden" name="transaction_id" value={id} />
 			{/each}
 			<input type="hidden" name="month" value={selectedMonth} />
 			<input type="hidden" name="page" value={data.page} />
-			<input type="hidden" name="source_type_filter" value={filters.sourceType} />
-			<input type="hidden" name="category_id_filter" value={filters.categoryId} />
-			<input type="hidden" name="subcategory_id_filter" value={filters.subcategoryId} />
+			<input
+				type="hidden"
+				name="source_type_filter"
+				value={filters.sourceType}
+			/>
+			<input
+				type="hidden"
+				name="category_id_filter"
+				value={filters.categoryId}
+			/>
+			<input
+				type="hidden"
+				name="subcategory_id_filter"
+				value={filters.subcategoryId}
+			/>
 			<input type="hidden" name="status_filter" value={filters.status} />
 		</form>
 
-		<div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+		<div
+			class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm lg:flex-row lg:items-end lg:justify-between"
+		>
 			<div class="flex items-center gap-3">
-				<p class="text-sm font-medium text-gray-700">{selectedForDelete.length} selecionadas</p>
+				<p class="text-sm font-medium text-gray-700">
+					{selectedForDelete.length} selecionadas
+				</p>
 				{#if selectedForDelete.length > 0}
-					<button type="button" onclick={() => (selectedForDelete = [])} class="text-xs text-gray-500 underline hover:text-gray-700">
+					<button
+						type="button"
+						onclick={() => (selectedForDelete = [])}
+						class="text-xs text-gray-500 underline hover:text-gray-700"
+					>
 						limpar seleção
 					</button>
 				{/if}
@@ -595,7 +792,7 @@
 					data-sveltekit-noscroll
 					class="flex flex-wrap items-end gap-2"
 				>
-					{#each selectedForDelete as id}
+					{#each selectedForDelete as id (id)}
 						<input type="hidden" name="transaction_id" value={id} />
 					{/each}
 					<label class="text-xs font-medium text-gray-600">
@@ -608,7 +805,7 @@
 						>
 							<option value={KEEP}>— manter —</option>
 							<option value="">Sem categoria</option>
-							{#each parentCategories as cat}
+							{#each parentCategories as cat (cat.id)}
 								<option value={cat.id}>{cat.name}</option>
 							{/each}
 						</select>
@@ -622,7 +819,7 @@
 							class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
 						>
 							<option value="">Sem subcategoria</option>
-							{#each bulkSubcategories as sub}
+							{#each bulkSubcategories as sub (sub.id)}
 								<option value={sub.id}>{sub.name}</option>
 							{/each}
 						</select>
@@ -636,7 +833,7 @@
 						>
 							<option value={KEEP}>— manter —</option>
 							<option value="">Sem atribuição</option>
-							{#each profiles as p}
+							{#each profiles as p (p.id)}
 								<option value={p.id}>{p.name}</option>
 							{/each}
 						</select>
@@ -646,7 +843,9 @@
 						disabled={!bulkHasChange || bulkApplying}
 						class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
 					>
-						{bulkApplying ? 'Aplicando...' : `Aplicar a ${selectedForDelete.length}`}
+						{bulkApplying
+							? 'Aplicando...'
+							: `Aplicar a ${selectedForDelete.length}`}
 					</button>
 				</form>
 			{/if}
@@ -662,45 +861,77 @@
 		</div>
 
 		<div class="overflow-x-auto">
-			<table class="min-w-full divide-y divide-gray-200 bg-white shadow rounded-lg">
+			<table
+				class="min-w-full divide-y divide-gray-200 bg-white shadow rounded-lg"
+			>
 				<thead class="bg-gray-50">
 					<tr>
 						<th class="px-4 py-3 text-left">
 							<input
 								type="checkbox"
 								aria-label="Selecionar todas as transações visíveis"
-								checked={visibleTransactions.length > 0 && selectedForDelete.length === visibleTransactions.length}
+								checked={visibleTransactions.length > 0 &&
+									selectedForDelete.length === visibleTransactions.length}
 								onchange={(event) => setAllVisible(event.currentTarget.checked)}
 							/>
 						</th>
-						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
-						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
-						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Origem</th>
-						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Classificação</th>
-						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Atribuir a</th>
-						<th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-						<button
-							type="button"
-							onclick={cycleAmountSort}
-							class="inline-flex items-center gap-1 hover:text-gray-900 {amountSort !== 'none' ? 'text-indigo-700' : ''}"
-							title={amountSort === 'none' ? 'Ordenar por valor' : amountSort === 'desc' ? 'Maior para menor' : 'Menor para maior'}
+						<th
+							class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+							>Data</th
 						>
-							Valor
-							{#if amountSort === 'desc'}
-								<ArrowDown class="h-3.5 w-3.5" />
-							{:else if amountSort === 'asc'}
-								<ArrowUp class="h-3.5 w-3.5" />
-							{:else}
-								<ArrowUpDown class="h-3.5 w-3.5 text-gray-400" />
-							{/if}
-						</button>
-					</th>
-						<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+						<th
+							class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+							>Descrição</th
+						>
+						<th
+							class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+							>Origem</th
+						>
+						<th
+							class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+							>Classificação</th
+						>
+						<th
+							class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+							>Atribuir a</th
+						>
+						<th
+							class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
+						>
+							<button
+								type="button"
+								onclick={cycleAmountSort}
+								class="inline-flex items-center gap-1 hover:text-gray-900 {amountSort !==
+								'none'
+									? 'text-indigo-700'
+									: ''}"
+								title={amountSort === 'none'
+									? 'Ordenar por valor'
+									: amountSort === 'desc'
+										? 'Maior para menor'
+										: 'Menor para maior'}
+							>
+								Valor
+								{#if amountSort === 'desc'}
+									<ArrowDown class="h-3.5 w-3.5" />
+								{:else if amountSort === 'asc'}
+									<ArrowUp class="h-3.5 w-3.5" />
+								{:else}
+									<ArrowUpDown class="h-3.5 w-3.5 text-gray-400" />
+								{/if}
+							</button>
+						</th>
+						<th
+							class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+							>Status</th
+						>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-gray-200">
 					{#each visibleTransactions as tx (tx.id)}
-						<tr class={`${savingIds[tx.id] ? 'bg-indigo-50/40' : ''} ${displayedRetainedIds.has(tx.id) ? 'opacity-60' : ''}`}>
+						<tr
+							class={`${savingIds[tx.id] ? 'bg-indigo-50/40' : ''} ${displayedRetainedIds.has(tx.id) ? 'opacity-60' : ''}`}
+						>
 							<td class="px-4 py-3 align-top">
 								<input
 									type="checkbox"
@@ -709,12 +940,22 @@
 									aria-label="Selecionar transação"
 								/>
 							</td>
-							<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 align-top">{tx.date}</td>
+							<td
+								class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 align-top"
+								>{tx.date}</td
+							>
 							<td class="px-4 py-3 text-sm text-gray-900 align-top">
-								<a href="/app/transactions/{tx.id}" class="hover:text-indigo-600">{tx.description}</a>
+								<a
+									href={resolve(`/app/transactions/${tx.id}`)}
+									class="hover:text-indigo-600">{tx.description}</a
+								>
 							</td>
-							<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700 align-top">
-								<span class="inline-flex rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
+							<td
+								class="px-4 py-3 whitespace-nowrap text-sm text-gray-700 align-top"
+							>
+								<span
+									class="inline-flex rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700"
+								>
 									{sourceTypeText(tx.source_type)}
 								</span>
 							</td>
@@ -726,16 +967,33 @@
 									id={`tx-form-${tx.id}`}
 									method="POST"
 									action="?/update_single_classification"
-									use:enhance={({ formElement, submitter }) => rowEnhance(tx, formElement, submitter)}
+									use:enhance={({ formElement, submitter }) =>
+										rowEnhance(tx, formElement, submitter)}
 									data-sveltekit-noscroll
 								>
 									<input type="hidden" name="transaction_id" value={tx.id} />
 									<input type="hidden" name="month" value={selectedMonth} />
 									<input type="hidden" name="page" value={data.page} />
-									<input type="hidden" name="source_type_filter" value={filters.sourceType} />
-									<input type="hidden" name="category_id_filter" value={filters.categoryId} />
-									<input type="hidden" name="subcategory_id_filter" value={filters.subcategoryId} />
-									<input type="hidden" name="status_filter" value={filters.status} />
+									<input
+										type="hidden"
+										name="source_type_filter"
+										value={filters.sourceType}
+									/>
+									<input
+										type="hidden"
+										name="category_id_filter"
+										value={filters.categoryId}
+									/>
+									<input
+										type="hidden"
+										name="subcategory_id_filter"
+										value={filters.subcategoryId}
+									/>
+									<input
+										type="hidden"
+										name="status_filter"
+										value={filters.status}
+									/>
 								</form>
 								<div class="flex flex-col gap-1">
 									<select
@@ -748,13 +1006,18 @@
 										class="block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
 									>
 										<option value="">Sem categoria</option>
-										{#each parentCategories as cat}
+										{#each parentCategories as cat (cat.id)}
 											<option value={cat.id}>{cat.name}</option>
 										{/each}
 									</select>
 									{#if creatingSubcategoryForId === tx.id}
 										<div class="flex w-40 gap-1">
-											<input type="hidden" name="subcategory_id" value={tx.subcategory_id ?? ''} form={`tx-form-${tx.id}`} />
+											<input
+												type="hidden"
+												name="subcategory_id"
+												value={tx.subcategory_id ?? ''}
+												form={`tx-form-${tx.id}`}
+											/>
 											<input
 												name="new_subcategory_name"
 												form={`tx-form-${tx.id}`}
@@ -767,7 +1030,8 @@
 												type="submit"
 												form={`tx-form-${tx.id}`}
 												formaction="?/create_subcategory"
-												disabled={!newSubcategoryName.trim() || savingIds[tx.id]}
+												disabled={!newSubcategoryName.trim() ||
+													savingIds[tx.id]}
 												class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-green-600 text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
 												title="Criar subcategoria"
 												aria-label="Criar subcategoria"
@@ -795,7 +1059,7 @@
 											class="block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
 										>
 											<option value="">Sem subcategoria</option>
-											{#each rowSubcategories(tx.category_id) as sub}
+											{#each rowSubcategories(tx.category_id) as sub (sub.id)}
 												<option value={sub.id}>{sub.name}</option>
 											{/each}
 											{#if tx.category_id}
@@ -804,10 +1068,14 @@
 										</select>
 									{/if}
 									{#if suggestionLabel(tx)}
-										<span class="w-40 text-xs text-amber-700">sugerido: {suggestionLabel(tx)}</span>
+										<span class="w-40 text-xs text-amber-700"
+											>sugerido: {suggestionLabel(tx)}</span
+										>
 									{/if}
 									{#if rowErrors[tx.id]}
-										<span class="w-40 text-xs text-red-600" role="alert">{rowErrors[tx.id]}</span>
+										<span class="w-40 text-xs text-red-600" role="alert"
+											>{rowErrors[tx.id]}</span
+										>
 									{/if}
 								</div>
 							</td>
@@ -822,21 +1090,38 @@
 									class="block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
 								>
 									<option value="">Sem atribuição</option>
-									{#each profiles as p}
+									{#each profiles as p (p.id)}
 										<option value={p.id}>{p.name}</option>
 									{/each}
 								</select>
 							</td>
 
-							<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right align-top">
-								{tx.amount.toLocaleString('pt-BR', { style: 'currency', currency: tx.currency ?? 'BRL' })}
+							<td
+								class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right align-top"
+							>
+								{tx.amount.toLocaleString('pt-BR', {
+									style: 'currency',
+									currency: tx.currency ?? 'BRL'
+								})}
 							</td>
 							<td class="px-4 py-3 whitespace-nowrap text-sm align-top">
 								{#if tx.review_status === 'needs_review'}
 									<div class="flex items-center gap-2">
-										<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">Revisar</span>
-										<form method="POST" action="?/confirm_single" use:enhance={() => keepScrollOnConfirm(tx)} data-sveltekit-noscroll>
-											<input type="hidden" name="transaction_id" value={tx.id} />
+										<span
+											class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
+											>Revisar</span
+										>
+										<form
+											method="POST"
+											action="?/confirm_single"
+											use:enhance={() => keepScrollOnConfirm(tx)}
+											data-sveltekit-noscroll
+										>
+											<input
+												type="hidden"
+												name="transaction_id"
+												value={tx.id}
+											/>
 											<button
 												type="submit"
 												disabled={confirmingId === tx.id}
@@ -847,8 +1132,18 @@
 												<Check class="h-4 w-4" />
 											</button>
 										</form>
-										<form method="POST" action="?/ignore_single" use:enhance={() => keepScrollOnStatusChange(tx, 'ignored')} data-sveltekit-noscroll>
-											<input type="hidden" name="transaction_id" value={tx.id} />
+										<form
+											method="POST"
+											action="?/ignore_single"
+											use:enhance={() =>
+												keepScrollOnStatusChange(tx, 'ignored')}
+											data-sveltekit-noscroll
+										>
+											<input
+												type="hidden"
+												name="transaction_id"
+												value={tx.id}
+											/>
 											<button
 												type="submit"
 												disabled={statusChangingId === tx.id}
@@ -862,9 +1157,22 @@
 									</div>
 								{:else if tx.review_status === 'confirmed'}
 									<div class="flex items-center gap-2">
-										<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Confirmado</span>
-										<form method="POST" action="?/ignore_single" use:enhance={() => keepScrollOnStatusChange(tx, 'ignored')} data-sveltekit-noscroll>
-											<input type="hidden" name="transaction_id" value={tx.id} />
+										<span
+											class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
+											>Confirmado</span
+										>
+										<form
+											method="POST"
+											action="?/ignore_single"
+											use:enhance={() =>
+												keepScrollOnStatusChange(tx, 'ignored')}
+											data-sveltekit-noscroll
+										>
+											<input
+												type="hidden"
+												name="transaction_id"
+												value={tx.id}
+											/>
 											<button
 												type="submit"
 												disabled={statusChangingId === tx.id}
@@ -878,9 +1186,22 @@
 									</div>
 								{:else if tx.review_status === 'ignored'}
 									<div class="flex items-center gap-2">
-										<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">Ignorado</span>
-										<form method="POST" action="?/restore_single" use:enhance={() => keepScrollOnStatusChange(tx, 'needs_review')} data-sveltekit-noscroll>
-											<input type="hidden" name="transaction_id" value={tx.id} />
+										<span
+											class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
+											>Ignorado</span
+										>
+										<form
+											method="POST"
+											action="?/restore_single"
+											use:enhance={() =>
+												keepScrollOnStatusChange(tx, 'needs_review')}
+											data-sveltekit-noscroll
+										>
+											<input
+												type="hidden"
+												name="transaction_id"
+												value={tx.id}
+											/>
 											<button
 												type="submit"
 												disabled={statusChangingId === tx.id}
@@ -893,10 +1214,15 @@
 										</form>
 									</div>
 								{:else}
-									<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">{tx.review_status}</span>
+									<span
+										class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
+										>{tx.review_status}</span
+									>
 								{/if}
 								{#if displayedRetainedIds.has(tx.id)}
-									<span class="mt-1 block text-xs text-gray-400">Fora do filtro atual</span>
+									<span class="mt-1 block text-xs text-gray-400"
+										>Fora do filtro atual</span
+									>
 								{/if}
 							</td>
 						</tr>
@@ -909,10 +1235,24 @@
 			<p>Página {data.page + 1}</p>
 			<div class="flex gap-2">
 				{#if data.page > 0}
-					<a class="px-3 py-2 border rounded-md bg-white hover:bg-gray-50" href={transactionsHref({ page: data.page - 1 })}>Anterior</a>
+					<a
+						class="px-3 py-2 border rounded-md bg-white hover:bg-gray-50"
+						href={resolve(
+							transactionsHref({
+								page: data.page - 1
+							}) as `/app/transactions?${string}`
+						)}>Anterior</a
+					>
 				{/if}
 				{#if data.hasMore}
-					<a class="px-3 py-2 border rounded-md bg-white hover:bg-gray-50" href={transactionsHref({ page: data.page + 1 })}>Próxima</a>
+					<a
+						class="px-3 py-2 border rounded-md bg-white hover:bg-gray-50"
+						href={resolve(
+							transactionsHref({
+								page: data.page + 1
+							}) as `/app/transactions?${string}`
+						)}>Próxima</a
+					>
 				{/if}
 			</div>
 		</div>

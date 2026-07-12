@@ -29,34 +29,73 @@ type TransactionRow = {
 	installment_number: number | null;
 	installment_total: number | null;
 	installment_group_key: string | null;
-	category: { id: string | null; name: string | null; parent_id: string | null } | null;
-	subcategory: { id: string | null; name: string | null; parent_id: string | null } | null;
+	category: {
+		id: string | null;
+		name: string | null;
+		parent_id: string | null;
+	} | null;
+	subcategory: {
+		id: string | null;
+		name: string | null;
+		parent_id: string | null;
+	} | null;
 	owner_profile: { id: string | null; name: string | null } | null;
 };
 
 type CategoryRef = { id: string; name: string };
-type CategoryMap = Map<string, { id: string; name: string; parent_id: string | null }>;
+type CategoryMap = Map<
+	string,
+	{ id: string; name: string; parent_id: string | null }
+>;
 
-function buildCategoryMap(categories: Array<{ id: string; name: string | null; parent_id: string | null }> | null | undefined): CategoryMap {
-	return new Map((categories ?? []).map((category) => [category.id, {
-		id: category.id,
-		name: category.name ?? '',
-		parent_id: category.parent_id ?? null
-	}]));
+function buildCategoryMap(
+	categories:
+		| Array<{ id: string; name: string | null; parent_id: string | null }>
+		| null
+		| undefined
+): CategoryMap {
+	return new Map(
+		(categories ?? []).map((category) => [
+			category.id,
+			{
+				id: category.id,
+				name: category.name ?? '',
+				parent_id: category.parent_id ?? null
+			}
+		])
+	);
 }
 
-function resolveCategory(rawCategory: TransactionRow['category'], categoryMap: CategoryMap) {
+function resolveCategory(
+	rawCategory: TransactionRow['category'],
+	categoryMap: CategoryMap
+) {
 	if (!rawCategory?.id) return { category: null, derivedSubcategory: null };
 	if (!rawCategory.parent_id) {
-		return { category: { id: rawCategory.id, name: rawCategory.name ?? 'Sem categoria' }, derivedSubcategory: null };
+		return {
+			category: {
+				id: rawCategory.id,
+				name: rawCategory.name ?? 'Sem categoria'
+			},
+			derivedSubcategory: null
+		};
 	}
 	const parent = categoryMap.get(rawCategory.parent_id);
 	if (!parent) {
-		return { category: { id: rawCategory.id, name: rawCategory.name ?? 'Sem categoria' }, derivedSubcategory: null };
+		return {
+			category: {
+				id: rawCategory.id,
+				name: rawCategory.name ?? 'Sem categoria'
+			},
+			derivedSubcategory: null
+		};
 	}
 	return {
 		category: { id: parent.id, name: parent.name ?? 'Sem categoria' },
-		derivedSubcategory: { id: rawCategory.id, name: rawCategory.name ?? 'Sem subcategoria' }
+		derivedSubcategory: {
+			id: rawCategory.id,
+			name: rawCategory.name ?? 'Sem subcategoria'
+		}
 	};
 }
 
@@ -65,7 +104,10 @@ function resolveTaxonomy(
 	categoryMap: CategoryMap
 ): { category: CategoryRef | null; subcategory: CategoryRef | null } {
 	const rawSub = tx.subcategory;
-	const { category, derivedSubcategory } = resolveCategory(tx.category, categoryMap);
+	const { category, derivedSubcategory } = resolveCategory(
+		tx.category,
+		categoryMap
+	);
 	let subcategory: CategoryRef | null = derivedSubcategory;
 	if (rawSub && rawSub.id && rawSub.id !== category?.id) {
 		subcategory = { id: rawSub.id, name: rawSub.name ?? 'Sem subcategoria' };
@@ -91,18 +133,44 @@ function creditValue(amount: number) {
 }
 
 function summarize(rows: TransactionRow[]) {
-	const expenses = rows.reduce((sum, row) => sum + expenseValue(Number(row.amount)), 0);
-	const credits = rows.reduce((sum, row) => sum + creditValue(Number(row.amount)), 0);
+	const expenses = rows.reduce(
+		(sum, row) => sum + expenseValue(Number(row.amount)),
+		0
+	);
+	const credits = rows.reduce(
+		(sum, row) => sum + creditValue(Number(row.amount)),
+		0
+	);
 	const balance = rows.reduce((sum, row) => sum + Number(row.amount), 0);
-	const needsReview = rows.filter((row) => row.review_status === 'needs_review').length;
-	const uncategorized = rows.filter((row) => !row.category_id && Number(row.amount) < 0).length;
-	return { count: rows.length, expenses, credits, balance, needsReview, uncategorized };
+	const needsReview = rows.filter(
+		(row) => row.review_status === 'needs_review'
+	).length;
+	const uncategorized = rows.filter(
+		(row) => !row.category_id && Number(row.amount) < 0
+	).length;
+	return {
+		count: rows.length,
+		expenses,
+		credits,
+		balance,
+		needsReview,
+		uncategorized
+	};
 }
 
 type HierarchyChild = { id: string; name: string; total: number };
-type HierarchyNode = { id: string; name: string; total: number; children: HierarchyChild[] };
+type HierarchyNode = {
+	id: string;
+	name: string;
+	total: number;
+	children: HierarchyChild[];
+};
 
-function hierarchyNode(map: Map<string, HierarchyNode>, id: string, name: string) {
+function hierarchyNode(
+	map: Map<string, HierarchyNode>,
+	id: string,
+	name: string
+) {
 	const existing = map.get(id);
 	if (existing) return existing;
 	const created: HierarchyNode = { id, name, total: 0, children: [] };
@@ -135,11 +203,17 @@ function buildHierarchy(rows: TransactionRow[], categoryMap: CategoryMap) {
 		child.total += expense;
 	}
 	return Array.from(map.values())
-		.map((n) => ({ ...n, children: n.children.sort((a, b) => b.total - a.total) }))
+		.map((n) => ({
+			...n,
+			children: n.children.sort((a, b) => b.total - a.total)
+		}))
 		.sort((a, b) => b.total - a.total);
 }
 
-function aggregateBy(rows: TransactionRow[], keyFor: (row: TransactionRow) => { id: string; name: string }) {
+function aggregateBy(
+	rows: TransactionRow[],
+	keyFor: (row: TransactionRow) => { id: string; name: string }
+) {
 	const map = new Map<string, { id: string; name: string; total: number }>();
 	for (const row of rows) {
 		const expense = expenseValue(Number(row.amount));
@@ -152,7 +226,10 @@ function aggregateBy(rows: TransactionRow[], keyFor: (row: TransactionRow) => { 
 	const total = Array.from(map.values()).reduce((s, n) => s + n.total, 0);
 	return Array.from(map.values())
 		.sort((a, b) => b.total - a.total)
-		.map((n) => ({ ...n, share: total > 0 ? Math.round((n.total / total) * 100) : 0 }));
+		.map((n) => ({
+			...n,
+			share: total > 0 ? Math.round((n.total / total) * 100) : 0
+		}));
 }
 
 function buildMonthlyTrend(rows: TransactionRow[]) {
@@ -166,7 +243,11 @@ function buildMonthlyTrend(rows: TransactionRow[]) {
 		bucket.credits += creditValue(amount);
 		map.set(month, bucket);
 	}
-	return Array.from(map, ([month, value]) => ({ month, ...value, balance: value.credits - value.expenses }))
+	return Array.from(map, ([month, value]) => ({
+		month,
+		...value,
+		balance: value.credits - value.expenses
+	}))
 		.sort((a, b) => a.month.localeCompare(b.month))
 		.slice(-6);
 }
@@ -182,8 +263,14 @@ function addMonths(month: string, delta: number): string {
 
 // Per-month expense totals keyed by top-level category, over every month that
 // has data. Feeds the category trend chart and the above-normal comparison.
-function buildCategoryMonthTotals(rows: TransactionRow[], categoryMap: CategoryMap) {
-	const byMonth = new Map<string, Map<string, { id: string; name: string; total: number }>>();
+function buildCategoryMonthTotals(
+	rows: TransactionRow[],
+	categoryMap: CategoryMap
+) {
+	const byMonth = new Map<
+		string,
+		Map<string, { id: string; name: string; total: number }>
+	>();
 	for (const tx of rows) {
 		const amount = Number(tx.amount);
 		if (!(amount < 0)) continue;
@@ -205,14 +292,25 @@ const TREND_WINDOW = 12;
 const TREND_TOP_CATEGORIES = 5;
 const OTHERS_ID = '__others__';
 
-function buildCategoryTrend(byMonth: ReturnType<typeof buildCategoryMonthTotals>) {
+function buildCategoryTrend(
+	byMonth: ReturnType<typeof buildCategoryMonthTotals>
+) {
 	const months = Array.from(byMonth.keys()).sort().slice(-TREND_WINDOW);
-	if (months.length === 0) return { months: [], series: [] as { id: string; name: string }[], points: [] };
+	if (months.length === 0)
+		return {
+			months: [],
+			series: [] as { id: string; name: string }[],
+			points: []
+		};
 
 	const totals = new Map<string, { id: string; name: string; total: number }>();
 	for (const month of months) {
 		for (const entry of byMonth.get(month)?.values() ?? []) {
-			const acc = totals.get(entry.id) ?? { id: entry.id, name: entry.name, total: 0 };
+			const acc = totals.get(entry.id) ?? {
+				id: entry.id,
+				name: entry.name,
+				total: 0
+			};
 			acc.total += entry.total;
 			totals.set(entry.id, acc);
 		}
@@ -220,7 +318,10 @@ function buildCategoryTrend(byMonth: ReturnType<typeof buildCategoryMonthTotals>
 	const ranked = Array.from(totals.values()).sort((a, b) => b.total - a.total);
 	const top = ranked.slice(0, TREND_TOP_CATEGORIES);
 	const hasOthers = ranked.length > TREND_TOP_CATEGORIES;
-	const series = [...top.map((c) => ({ id: c.id, name: c.name })), ...(hasOthers ? [{ id: OTHERS_ID, name: 'Outras' }] : [])];
+	const series = [
+		...top.map((c) => ({ id: c.id, name: c.name })),
+		...(hasOthers ? [{ id: OTHERS_ID, name: 'Outras' }] : [])
+	];
 	const topIds = new Set(top.map((c) => c.id));
 
 	const points = months.map((month) => {
@@ -273,10 +374,21 @@ function buildAboveNormal(
 	const baseline = categoryTotalsForMonths(byMonth, previousMonths);
 	const names = new Map([...baseline.names, ...current.names]);
 
-	const out: Array<{ id: string; name: string; current: number; baseline: number; delta: number; deltaPercent: number | null }> = [];
-	for (const id of new Set([...current.totals.keys(), ...baseline.totals.keys()])) {
+	const out: Array<{
+		id: string;
+		name: string;
+		current: number;
+		baseline: number;
+		delta: number;
+		deltaPercent: number | null;
+	}> = [];
+	for (const id of new Set([
+		...current.totals.keys(),
+		...baseline.totals.keys()
+	])) {
 		const currentTotal = current.totals.get(id) ?? 0;
-		const baselineTotal = (baseline.totals.get(id) ?? 0) / previousMonths.length;
+		const baselineTotal =
+			(baseline.totals.get(id) ?? 0) / previousMonths.length;
 		const delta = currentTotal - baselineTotal;
 		if (Math.abs(delta) < ABOVE_NORMAL_MIN_DELTA) continue;
 		out.push({
@@ -285,7 +397,8 @@ function buildAboveNormal(
 			current: currentTotal,
 			baseline: baselineTotal,
 			delta,
-			deltaPercent: baselineTotal > 0 ? Math.round((delta / baselineTotal) * 100) : null
+			deltaPercent:
+				baselineTotal > 0 ? Math.round((delta / baselineTotal) * 100) : null
 		});
 	}
 	return out.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 8);
@@ -342,9 +455,16 @@ function recurringMonthsByKey(rows: TransactionRow[], lookback: Set<string>) {
 // A selected-month expense counts as "fixed" when it is an installment or when
 // the same establishment shows up in at least 2 of the 3 previous months.
 function buildFixedVsVariable(rows: TransactionRow[], selectedMonth: string) {
-	if (!selectedMonth) return { fixedTotal: 0, variableTotal: 0, topFixed: [] as Array<{ name: string; total: number }> };
+	if (!selectedMonth)
+		return {
+			fixedTotal: 0,
+			variableTotal: 0,
+			topFixed: [] as Array<{ name: string; total: number }>
+		};
 	const lookback = new Set(
-		Array.from({ length: RECURRENCE_LOOKBACK_MONTHS }, (_, i) => addMonths(selectedMonth, -(i + 1)))
+		Array.from({ length: RECURRENCE_LOOKBACK_MONTHS }, (_, i) =>
+			addMonths(selectedMonth, -(i + 1))
+		)
 	);
 	const keyMonths = recurringMonthsByKey(rows, lookback);
 
@@ -360,7 +480,10 @@ function buildFixedVsVariable(rows: TransactionRow[], selectedMonth: string) {
 		const isInstallment = (tx.installment_total ?? 0) >= 2;
 		if (recurring || isInstallment) {
 			fixedTotal += expense;
-			const entry = fixedByKey.get(key) ?? { name: tx.clean_description || tx.description, total: 0 };
+			const entry = fixedByKey.get(key) ?? {
+				name: tx.clean_description || tx.description,
+				total: 0
+			};
 			entry.total += expense;
 			fixedByKey.set(key, entry);
 		} else {
@@ -378,10 +501,18 @@ const FORECAST_MONTHS = 6;
 function latestInstallments(rows: TransactionRow[]) {
 	const latestByGroup = new Map<string, TransactionRow>();
 	for (const transaction of rows) {
-		if (!transaction.installment_group_key || !transaction.installment_number || !transaction.installment_total) continue;
+		if (
+			!transaction.installment_group_key ||
+			!transaction.installment_number ||
+			!transaction.installment_total
+		)
+			continue;
 		if (Number(transaction.amount) >= 0) continue;
 		const current = latestByGroup.get(transaction.installment_group_key);
-		if (!current || transaction.installment_number > (current.installment_number ?? 0)) {
+		if (
+			!current ||
+			transaction.installment_number > (current.installment_number ?? 0)
+		) {
 			latestByGroup.set(transaction.installment_group_key, transaction);
 		}
 	}
@@ -393,7 +524,9 @@ function addInstallmentProjection(
 	transaction: TransactionRow,
 	baseMonth: string
 ) {
-	const remaining = (transaction.installment_total ?? 0) - (transaction.installment_number ?? 0);
+	const remaining =
+		(transaction.installment_total ?? 0) -
+		(transaction.installment_number ?? 0);
 	const startMonth = rowMonth(transaction);
 	if (remaining <= 0 || startMonth === NO_MONTH) return 0;
 	const amount = Math.abs(Number(transaction.amount));
@@ -430,25 +563,41 @@ function buildInstallmentForecast(rows: TransactionRow[], baseMonth: string) {
 // inside the current calendar month count as "spent so far" — an imported
 // statement lands as a lump in the reference month with purchase dates mostly
 // from the previous month, and extrapolating that lump would wildly overshoot.
-function buildProjection(monthRows: TransactionRow[], selectedMonth: string, savingsHistory: ReturnType<typeof buildSavingsHistory>) {
+function buildProjection(
+	monthRows: TransactionRow[],
+	selectedMonth: string,
+	savingsHistory: ReturnType<typeof buildSavingsHistory>
+) {
 	const now = new Date();
 	const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 	if (!selectedMonth || selectedMonth !== currentMonth) return null;
 	const dayOfMonth = now.getDate();
-	const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+	const daysInMonth = new Date(
+		now.getFullYear(),
+		now.getMonth() + 1,
+		0
+	).getDate();
 	if (dayOfMonth < 3) return null;
 	const spent = monthRows
 		.filter((row) => row.date?.startsWith(currentMonth))
 		.reduce((sum, row) => sum + expenseValue(Number(row.amount)), 0);
 	if (spent === 0) return null;
 	const projected = (spent / dayOfMonth) * daysInMonth;
-	const previous = savingsHistory.filter((h) => h.month < selectedMonth).slice(-3);
-	const baseline = previous.length > 0 ? previous.reduce((s, h) => s + h.expenses, 0) / previous.length : null;
+	const previous = savingsHistory
+		.filter((h) => h.month < selectedMonth)
+		.slice(-3);
+	const baseline =
+		previous.length > 0
+			? previous.reduce((s, h) => s + h.expenses, 0) / previous.length
+			: null;
 	return {
 		spent,
 		projected,
 		baseline,
-		percentVsBaseline: baseline && baseline > 0 ? Math.round(((projected - baseline) / baseline) * 100) : null
+		percentVsBaseline:
+			baseline && baseline > 0
+				? Math.round(((projected - baseline) / baseline) * 100)
+				: null
 	};
 }
 
@@ -457,11 +606,15 @@ async function fetchVisibleRows(
 	userId: string,
 	householdId: string
 ): Promise<TransactionRow[]> {
-	const readableTransactionIds = await getReadableTransactionIds(supabase, userId);
+	const readableTransactionIds = await getReadableTransactionIds(
+		supabase,
+		userId
+	);
 	if (readableTransactionIds.length === 0) return [];
 	const { data } = await supabaseAdmin
 		.from('transactions')
-		.select(`
+		.select(
+			`
 			id,
 			amount,
 			currency,
@@ -480,7 +633,8 @@ async function fetchVisibleRows(
 			category:categories!transactions_category_id_fkey ( id, name, parent_id ),
 			subcategory:categories!transactions_subcategory_id_fkey ( id, name, parent_id ),
 			owner_profile:financial_profiles ( id, name )
-		`)
+		`
+		)
 		.eq('household_id', householdId)
 		.in('id', readableTransactionIds)
 		.order('date', { ascending: false });
@@ -488,43 +642,74 @@ async function fetchVisibleRows(
 }
 
 function selectDashboardRows(transactions: TransactionRow[], url: URL) {
-	const visibleAllMonths = transactions.filter((transaction) => transaction.review_status !== 'ignored');
+	const visibleAllMonths = transactions.filter(
+		(transaction) => transaction.review_status !== 'ignored'
+	);
 	const monthOptions = Array.from(
-		new Set(visibleAllMonths.map(rowMonth).filter((month) => month !== NO_MONTH))
+		new Set(
+			visibleAllMonths.map(rowMonth).filter((month) => month !== NO_MONTH)
+		)
 	).sort((left, right) => right.localeCompare(left));
 	const selectedMonth = url.searchParams.get('month') || monthOptions[0] || '';
 	const selectedIndex = monthOptions.indexOf(selectedMonth);
-	const previousMonth = selectedIndex >= 0 ? monthOptions[selectedIndex + 1] || '' : '';
+	const previousMonth =
+		selectedIndex >= 0 ? monthOptions[selectedIndex + 1] || '' : '';
 	const monthRows = selectedMonth
-		? visibleAllMonths.filter((transaction) => rowMonth(transaction) === selectedMonth)
+		? visibleAllMonths.filter(
+				(transaction) => rowMonth(transaction) === selectedMonth
+			)
 		: visibleAllMonths;
 	const previousRows = previousMonth
-		? visibleAllMonths.filter((transaction) => rowMonth(transaction) === previousMonth)
+		? visibleAllMonths.filter(
+				(transaction) => rowMonth(transaction) === previousMonth
+			)
 		: [];
 	const profileId = url.searchParams.get('profile') ?? '';
 	const categoryId = url.searchParams.get('category') ?? '';
 	const reviewStatus = url.searchParams.get('review_status') ?? '';
-	const filtered = monthRows.filter((transaction) =>
-		(!profileId || transaction.owner_profile_id === profileId) &&
-		(!categoryId || transaction.category_id === categoryId) &&
-		(!reviewStatus || transaction.review_status === reviewStatus)
+	const filtered = monthRows.filter(
+		(transaction) =>
+			(!profileId || transaction.owner_profile_id === profileId) &&
+			(!categoryId || transaction.category_id === categoryId) &&
+			(!reviewStatus || transaction.review_status === reviewStatus)
 	);
 	return {
-		visibleAllMonths, monthOptions, selectedMonth, previousMonth, monthRows, previousRows, filtered,
+		visibleAllMonths,
+		monthOptions,
+		selectedMonth,
+		previousMonth,
+		monthRows,
+		previousRows,
+		filtered,
 		filters: { profileId, categoryId, reviewStatus }
 	};
 }
 
 async function loadPayerNames(transactions: TransactionRow[]) {
 	const payerIds = Array.from(
-		new Set(transactions.map((transaction) => transaction.paid_by_user_id).filter((id): id is string => !!id))
+		new Set(
+			transactions
+				.map((transaction) => transaction.paid_by_user_id)
+				.filter((id): id is string => !!id)
+		)
 	);
 	if (payerIds.length === 0) return new Map<string, string>();
-	const { data } = await supabaseAdmin.from('profiles').select('user_id, display_name').in('user_id', payerIds);
-	return new Map((data ?? []).map((profile) => [profile.user_id, profile.display_name ?? 'Sem nome']));
+	const { data } = await supabaseAdmin
+		.from('profiles')
+		.select('user_id, display_name')
+		.in('user_id', payerIds);
+	return new Map(
+		(data ?? []).map((profile) => [
+			profile.user_id,
+			profile.display_name ?? 'Sem nome'
+		])
+	);
 }
 
-export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSession } }) => {
+export const load: PageServerLoad = async ({
+	url,
+	locals: { supabase, safeGetSession }
+}) => {
 	const empty = {
 		monthOptions: [] as string[],
 		selectedMonth: '',
@@ -534,11 +719,19 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		monthlyTrend: [] as ReturnType<typeof buildMonthlyTrend>,
 		expenseHierarchy: [] as ReturnType<typeof buildHierarchy>,
 		totalExpenses: 0,
-		categoryTrend: { months: [], series: [], points: [] } as ReturnType<typeof buildCategoryTrend>,
+		categoryTrend: { months: [], series: [], points: [] } as ReturnType<
+			typeof buildCategoryTrend
+		>,
 		aboveNormal: [] as ReturnType<typeof buildAboveNormal>,
 		savingsHistory: [] as ReturnType<typeof buildSavingsHistory>,
-		fixedVsVariable: { fixedTotal: 0, variableTotal: 0, topFixed: [] } as ReturnType<typeof buildFixedVsVariable>,
-		installmentForecast: { months: [], totalCommitted: 0 } as ReturnType<typeof buildInstallmentForecast>,
+		fixedVsVariable: {
+			fixedTotal: 0,
+			variableTotal: 0,
+			topFixed: []
+		} as ReturnType<typeof buildFixedVsVariable>,
+		installmentForecast: { months: [], totalCommitted: 0 } as ReturnType<
+			typeof buildInstallmentForecast
+		>,
 		projection: null as ReturnType<typeof buildProjection>,
 		byProfile: [] as ReturnType<typeof aggregateBy>,
 		byPayer: [] as ReturnType<typeof aggregateBy>,
@@ -566,12 +759,23 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 	const transactions = await fetchVisibleRows(supabase, user.id, householdId);
 	if (transactions.length === 0) return empty;
 	const {
-		visibleAllMonths, monthOptions, selectedMonth, previousMonth, monthRows, previousRows, filtered, filters
+		visibleAllMonths,
+		monthOptions,
+		selectedMonth,
+		previousMonth,
+		monthRows,
+		previousRows,
+		filtered,
+		filters
 	} = selectDashboardRows(transactions, url);
 	const payerNameById = await loadPayerNames(filtered);
 
 	const [{ data: profilesData }, categoriesData] = await Promise.all([
-		supabaseAdmin.from('financial_profiles').select('id, name').eq('household_id', householdId).order('name'),
+		supabaseAdmin
+			.from('financial_profiles')
+			.select('id, name')
+			.eq('household_id', householdId)
+			.order('name'),
 		loadCategoriesForUser(supabaseAdmin, householdId, user.id)
 	]);
 
@@ -580,7 +784,10 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 	const hierarchy = buildHierarchy(filtered, categoryMap);
 	// Health/time analyses intentionally ignore the secondary filters: they
 	// describe the household month as a whole, like the monthly trend does.
-	const categoryMonthTotals = buildCategoryMonthTotals(visibleAllMonths, categoryMap);
+	const categoryMonthTotals = buildCategoryMonthTotals(
+		visibleAllMonths,
+		categoryMap
+	);
 	const savingsHistory = buildSavingsHistory(visibleAllMonths);
 	const resolvedFiltered = filtered.map((t) => {
 		const { category, subcategory } = resolveTaxonomy(t, categoryMap);
@@ -608,7 +815,10 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		aboveNormal: buildAboveNormal(categoryMonthTotals, selectedMonth),
 		savingsHistory,
 		fixedVsVariable: buildFixedVsVariable(visibleAllMonths, selectedMonth),
-		installmentForecast: buildInstallmentForecast(visibleAllMonths, selectedMonth),
+		installmentForecast: buildInstallmentForecast(
+			visibleAllMonths,
+			selectedMonth
+		),
 		projection: buildProjection(monthRows, selectedMonth, savingsHistory),
 		byProfile: aggregateBy(filtered, (t) => ({
 			id: t.owner_profile?.id ?? 'unknown',
@@ -616,7 +826,9 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		})),
 		byPayer: aggregateBy(filtered, (t) => ({
 			id: t.paid_by_user_id ?? 'unknown',
-			name: t.paid_by_user_id ? payerNameById.get(t.paid_by_user_id) ?? 'Sem nome' : 'Sem pagador'
+			name: t.paid_by_user_id
+				? (payerNameById.get(t.paid_by_user_id) ?? 'Sem nome')
+				: 'Sem pagador'
 		})),
 		filteredTransactions: resolvedFiltered,
 		recentTransactions: filtered.slice(0, 8),
@@ -632,17 +844,31 @@ const insightsResponseSchema = z.object({
 
 const NEW_MERCHANT_MIN_TOTAL = 40;
 
-function findNewMerchants(visible: TransactionRow[], monthRows: TransactionRow[], month: string) {
-	const lookback = new Set(Array.from({ length: 3 }, (_, index) => addMonths(month, -(index + 1))));
+function findNewMerchants(
+	visible: TransactionRow[],
+	monthRows: TransactionRow[],
+	month: string
+) {
+	const lookback = new Set(
+		Array.from({ length: 3 }, (_, index) => addMonths(month, -(index + 1)))
+	);
 	const previousKeys = new Set(
-		visible.filter((transaction) => lookback.has(rowMonth(transaction)) && Number(transaction.amount) < 0).map(recurrenceKey)
+		visible
+			.filter(
+				(transaction) =>
+					lookback.has(rowMonth(transaction)) && Number(transaction.amount) < 0
+			)
+			.map(recurrenceKey)
 	);
 	const totals = new Map<string, number>();
 	for (const transaction of monthRows) {
 		if (Number(transaction.amount) >= 0) continue;
 		const key = recurrenceKey(transaction);
 		if (!key || previousKeys.has(key)) continue;
-		totals.set(key, (totals.get(key) ?? 0) + Math.abs(Number(transaction.amount)));
+		totals.set(
+			key,
+			(totals.get(key) ?? 0) + Math.abs(Number(transaction.amount))
+		);
 	}
 	return Array.from(totals, ([name, total]) => ({ name, total }))
 		.filter((merchant) => merchant.total >= NEW_MERCHANT_MIN_TOTAL)
@@ -662,16 +888,27 @@ export const actions: Actions = {
 		}
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
-		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+		if (!householdId)
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
 
 		const transactions = await fetchVisibleRows(supabase, user.id, householdId);
 		const visible = transactions.filter((t) => t.review_status !== 'ignored');
 		const monthRows = visible.filter((t) => rowMonth(t) === month);
 		if (monthRows.length === 0) {
-			return fail(400, { success: false, message: 'Sem transações neste mês para analisar.' });
+			return fail(400, {
+				success: false,
+				message: 'Sem transações neste mês para analisar.'
+			});
 		}
 
-		const categoriesData = await loadCategoriesForUser(supabaseAdmin, householdId, user.id);
+		const categoriesData = await loadCategoriesForUser(
+			supabaseAdmin,
+			householdId,
+			user.id
+		);
 		const categoryMap = buildCategoryMap(categoriesData);
 
 		const categoryMonthTotals = buildCategoryMonthTotals(visible, categoryMap);
@@ -687,8 +924,15 @@ export const actions: Actions = {
 			mes: month,
 			despesas_total: Math.round(summary.expenses),
 			receitas_total: Math.round(summary.credits),
-			taxa_poupanca_pct: summary.credits > 0 ? Math.round(((summary.credits - summary.expenses) / summary.credits) * 100) : null,
-			historico_despesas: savingsHistory.slice(-6).map((h) => ({ mes: h.month, despesas: Math.round(h.expenses) })),
+			taxa_poupanca_pct:
+				summary.credits > 0
+					? Math.round(
+							((summary.credits - summary.expenses) / summary.credits) * 100
+						)
+					: null,
+			historico_despesas: savingsHistory
+				.slice(-6)
+				.map((h) => ({ mes: h.month, despesas: Math.round(h.expenses) })),
 			categorias_fora_do_normal: aboveNormal.map((a) => ({
 				categoria: a.name,
 				atual: Math.round(a.current),
@@ -697,8 +941,13 @@ export const actions: Actions = {
 			})),
 			gastos_fixos: Math.round(fixedVsVariable.fixedTotal),
 			gastos_variaveis: Math.round(fixedVsVariable.variableTotal),
-			parcelas_comprometidas_proximos_meses: Math.round(forecast.totalCommitted),
-			estabelecimentos_novos: newMerchants.map((m) => ({ nome: m.name, total: Math.round(m.total) }))
+			parcelas_comprometidas_proximos_meses: Math.round(
+				forecast.totalCommitted
+			),
+			estabelecimentos_novos: newMerchants.map((m) => ({
+				nome: m.name,
+				total: Math.round(m.total)
+			}))
 		};
 
 		const systemPrompt = `Você é um analista de finanças pessoais de uma família brasileira. Receberá agregados de um mês e deve responder APENAS com JSON no formato {"insights": ["...", "..."]}.
@@ -723,12 +972,23 @@ Regras:
 			const parsed = JSON.parse(raw.replace(/```json\s*|\s*```/g, '').trim());
 			const validated = insightsResponseSchema.safeParse(parsed);
 			if (!validated.success) {
-				return fail(500, { success: false, message: 'A IA não retornou insights válidos. Tente novamente.' });
+				return fail(500, {
+					success: false,
+					message: 'A IA não retornou insights válidos. Tente novamente.'
+				});
 			}
-			return { success: true, insights: validated.data.insights, insightsMonth: month };
+			return {
+				success: true,
+				insights: validated.data.insights,
+				insightsMonth: month
+			};
 		} catch (error) {
 			console.error('[dashboard] insights failed', error);
-			return fail(500, { success: false, message: 'Não foi possível gerar os insights agora. Verifique a configuração da IA.' });
+			return fail(500, {
+				success: false,
+				message:
+					'Não foi possível gerar os insights agora. Verifique a configuração da IA.'
+			});
 		}
 	}
 };

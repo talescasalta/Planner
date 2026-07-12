@@ -47,33 +47,54 @@ function normalizeDescription(value: string | null | undefined): string {
 
 function isCardStatementPayment(tx: TxRow): boolean {
 	if (Number(tx.amount) <= 0) return false;
-	const text = normalizeDescription(`${tx.clean_description ?? tx.description} ${tx.merchant ?? ''}`);
+	const text = normalizeDescription(
+		`${tx.clean_description ?? tx.description} ${tx.merchant ?? ''}`
+	);
 	const hasPaymentWord = /\b(pagamento|pagto|pgto|liquidacao|liq)\b/.test(text);
-	const hasStatementWord = /\b(fatura|cartao|cartao de credito|cc)\b/.test(text);
+	const hasStatementWord = /\b(fatura|cartao|cartao de credito|cc)\b/.test(
+		text
+	);
 	return hasPaymentWord && hasStatementWord;
 }
 
-function deterministicClassification(tx: TxRow, rules: Awaited<ReturnType<typeof loadActiveRules>>) {
+function deterministicClassification(
+	tx: TxRow,
+	rules: Awaited<ReturnType<typeof loadActiveRules>>
+) {
 	if (isCardStatementPayment(tx)) {
 		return {
-			method: 'system', needs_review: false,
+			method: 'system',
+			needs_review: false,
 			patch: {
-				category_id: null, subcategory_id: null, classification_method: 'system',
-				classification_confidence: 1, review_status: 'ignored',
+				category_id: null,
+				subcategory_id: null,
+				classification_method: 'system',
+				classification_confidence: 1,
+				review_status: 'ignored',
 				classification_suggestion: {
-					type: 'ignored', ignored_reason: 'card_statement_payment', reason_code: 'card_statement_payment'
+					type: 'ignored',
+					ignored_reason: 'card_statement_payment',
+					reason_code: 'card_statement_payment'
 				}
 			} as TxUpdate
 		};
 	}
-	const match = applyRules(rules, tx.merchant, tx.description, tx.clean_description);
+	const match = applyRules(
+		rules,
+		tx.merchant,
+		tx.description,
+		tx.clean_description
+	);
 	if (!match) return null;
 	const needsReview = match.confidence < CONFIDENCE_THRESHOLD;
 	return {
-		method: 'rule', needs_review: needsReview,
+		method: 'rule',
+		needs_review: needsReview,
 		patch: {
-			category_id: match.category_id, subcategory_id: match.subcategory_id,
-			owner_profile_id: match.owner_profile_id, classification_method: 'rule',
+			category_id: match.category_id,
+			subcategory_id: match.subcategory_id,
+			owner_profile_id: match.owner_profile_id,
+			classification_method: 'rule',
 			classification_confidence: match.confidence,
 			review_status: needsReview ? 'needs_review' : 'confirmed'
 		} as TxUpdate
@@ -88,10 +109,17 @@ function buildTaxonomy(categories: CategoryOption[]) {
 		children.push(category);
 		childrenByParent.set(category.parent_id, children);
 	}
-	return categories.filter((category) => !category.parent_id).map((parent) => {
-		const children = (childrenByParent.get(parent.id) ?? []).map((child) => child.name);
-		return children.length > 0 ? `- ${parent.name}: ${children.join(', ')}` : `- ${parent.name}`;
-	}).join('\n');
+	return categories
+		.filter((category) => !category.parent_id)
+		.map((parent) => {
+			const children = (childrenByParent.get(parent.id) ?? []).map(
+				(child) => child.name
+			);
+			return children.length > 0
+				? `- ${parent.name}: ${children.join(', ')}`
+				: `- ${parent.name}`;
+		})
+		.join('\n');
 }
 
 export async function classifyTransactions(
@@ -104,7 +132,9 @@ export async function classifyTransactions(
 
 	const { data: transactions } = await supabase
 		.from('transactions')
-		.select('id, description, clean_description, merchant, amount, date, household_id')
+		.select(
+			'id, description, clean_description, merchant, amount, date, household_id'
+		)
 		.in('id', transactionIds)
 		.eq('household_id', householdId)
 		.eq('review_status', 'needs_review');
@@ -121,7 +151,8 @@ export async function classifyTransactions(
 		loadUserCategoryExclusions(supabase, householdId, userId)
 	]);
 
-	const results: Array<{ id: string; method: string; needs_review: boolean }> = [];
+	const results: Array<{ id: string; method: string; needs_review: boolean }> =
+		[];
 	const updates: Array<{ id: string; patch: TxUpdate }> = [];
 	const uncategorizedTxs: TxRow[] = [];
 
@@ -129,19 +160,34 @@ export async function classifyTransactions(
 		const classified = deterministicClassification(tx, rules);
 		if (classified) {
 			updates.push({ id: tx.id, patch: classified.patch });
-			results.push({ id: tx.id, method: classified.method, needs_review: classified.needs_review });
+			results.push({
+				id: tx.id,
+				method: classified.method,
+				needs_review: classified.needs_review
+			});
 		} else {
 			uncategorizedTxs.push(tx);
 		}
 	}
 
 	if (uncategorizedTxs.length > 0) {
-		const cats = filterCategoriesForUser(categories ?? [], userId, excludedCategoryIds);
+		const cats = filterCategoriesForUser(
+			categories ?? [],
+			userId,
+			excludedCategoryIds
+		);
 		const taxonomy = buildTaxonomy(cats);
 
 		for (let i = 0; i < uncategorizedTxs.length; i += LLM_BATCH_SIZE) {
 			const chunk = uncategorizedTxs.slice(i, i + LLM_BATCH_SIZE);
-			const chunkResults = await classifyChunkWithLlm(supabase, householdId, userId, chunk, taxonomy, cats);
+			const chunkResults = await classifyChunkWithLlm(
+				supabase,
+				householdId,
+				userId,
+				chunk,
+				taxonomy,
+				cats
+			);
 			for (const r of chunkResults) {
 				updates.push({ id: r.id, patch: r.patch });
 				results.push({ id: r.id, method: 'llm', needs_review: r.needs_review });
@@ -162,7 +208,10 @@ async function classifyChunkWithLlm(
 	categories: CategoryOption[]
 ): Promise<LlmClassification[]> {
 	const gabaritoSection = buildGabaritoPromptSection(chunk);
-	const userTaxonomySection = buildUserTaxonomyPromptSection(categories, userId);
+	const userTaxonomySection = buildUserTaxonomyPromptSection(
+		categories,
+		userId
+	);
 	const personalGabaritoSection = await buildPersonalGabaritoPromptSection(
 		supabase,
 		householdId,
@@ -222,7 +271,12 @@ ${txDescriptions}`;
 		} catch {
 			parsed = {};
 		}
-		return processLlmBatch(extractResultsArray(parsed), chunk, categories, rawContent);
+		return processLlmBatch(
+			extractResultsArray(parsed),
+			chunk,
+			categories,
+			rawContent
+		);
 	} catch (e) {
 		console.error('[classifier] LLM classification failed', e);
 		return chunk.map((tx) => ({
@@ -232,13 +286,20 @@ ${txDescriptions}`;
 				classification_method: 'llm',
 				classification_confidence: 0,
 				review_status: 'needs_review',
-				classification_suggestion: { type: 'error', error: 'llm_error', message: String(e) }
+				classification_suggestion: {
+					type: 'error',
+					error: 'llm_error',
+					message: String(e)
+				}
 			}
 		}));
 	}
 }
 
-function invalidLlmClassification(id: string, rawContent: string): LlmClassification {
+function invalidLlmClassification(
+	id: string,
+	rawContent: string
+): LlmClassification {
 	return {
 		id,
 		needs_review: true,
@@ -246,7 +307,11 @@ function invalidLlmClassification(id: string, rawContent: string): LlmClassifica
 			classification_method: 'llm',
 			classification_confidence: 0,
 			review_status: 'needs_review',
-			classification_suggestion: { type: 'error', error: 'invalid_response', raw: rawContent }
+			classification_suggestion: {
+				type: 'error',
+				error: 'invalid_response',
+				raw: rawContent
+			}
 		}
 	};
 }
@@ -265,15 +330,29 @@ function missingLlmClassification(id: string): LlmClassification {
 }
 
 function suggestionNeedsReview(
-	suggestion: { category?: string | null; subcategory?: string | null; confidence: number; needs_review: boolean },
+	suggestion: {
+		category?: string | null;
+		subcategory?: string | null;
+		confidence: number;
+		needs_review: boolean;
+	},
 	categoryId: string | null,
 	subcategoryId: string | null
 ) {
-	return suggestion.needs_review || suggestion.confidence < CONFIDENCE_THRESHOLD ||
-		(!!suggestion.category && !categoryId) || (!!suggestion.subcategory && !!categoryId && !subcategoryId);
+	return (
+		suggestion.needs_review ||
+		suggestion.confidence < CONFIDENCE_THRESHOLD ||
+		(!!suggestion.category && !categoryId) ||
+		(!!suggestion.subcategory && !!categoryId && !subcategoryId)
+	);
 }
 
-function mapLlmClassification(id: string, item: unknown, categories: CategoryOption[], rawContent: string): LlmClassification {
+function mapLlmClassification(
+	id: string,
+	item: unknown,
+	categories: CategoryOption[],
+	rawContent: string
+): LlmClassification {
 	const validated = classificationResultSchema.safeParse(item);
 	if (!validated.success) return invalidLlmClassification(id, rawContent);
 
@@ -281,14 +360,26 @@ function mapLlmClassification(id: string, item: unknown, categories: CategoryOpt
 	const categoryName = normalizeClassificationName(suggestion.category);
 	const subcategoryName = normalizeClassificationName(suggestion.subcategory);
 	const category = categoryName
-		? categories.find((candidate) => normalizeClassificationName(candidate.name) === categoryName && !candidate.parent_id)
+		? categories.find(
+				(candidate) =>
+					normalizeClassificationName(candidate.name) === categoryName &&
+					!candidate.parent_id
+			)
 		: null;
 	const categoryId = category?.id ?? null;
-	const subcategoryId = subcategoryName && categoryId
-		? categories.find((candidate) =>
-			normalizeClassificationName(candidate.name) === subcategoryName && candidate.parent_id === categoryId)?.id ?? null
-		: null;
-	const needsReview = suggestionNeedsReview(suggestion, categoryId, subcategoryId);
+	const subcategoryId =
+		subcategoryName && categoryId
+			? (categories.find(
+					(candidate) =>
+						normalizeClassificationName(candidate.name) === subcategoryName &&
+						candidate.parent_id === categoryId
+				)?.id ?? null)
+			: null;
+	const needsReview = suggestionNeedsReview(
+		suggestion,
+		categoryId,
+		subcategoryId
+	);
 
 	return {
 		id,
@@ -356,14 +447,19 @@ async function runUpdates(
 		review_status: u.patch.review_status ?? 'needs_review',
 		classification_suggestion: u.patch.classification_suggestion ?? null
 	}));
-	const { data, error } = await supabaseAdmin.rpc('apply_transaction_classification_updates', {
-		updates: payload
-	});
+	const { data, error } = await supabaseAdmin.rpc(
+		'apply_transaction_classification_updates',
+		{
+			updates: payload
+		}
+	);
 	if (error) {
 		console.error('[classifier] batch classification update failed', error);
 		throw error;
 	}
 	if (Number(data ?? 0) !== payload.length) {
-		throw new Error(`Batch classification update mismatch: ${data ?? 0}/${payload.length}`);
+		throw new Error(
+			`Batch classification update mismatch: ${data ?? 0}/${payload.length}`
+		);
 	}
 }

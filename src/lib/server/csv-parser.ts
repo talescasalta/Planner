@@ -1,6 +1,7 @@
 import Papa from 'papaparse';
 
-export type CsvSourceType = 'credit_card' | 'bank_account' | 'vale_alimentacao' | 'vale_refeicao';
+export type CsvSourceType =
+	'credit_card' | 'bank_account' | 'vale_alimentacao' | 'vale_refeicao';
 
 export interface CsvColumnMapping {
 	dateColumn: string;
@@ -26,10 +27,43 @@ export interface ParsedRow {
 	installment_group_key?: string;
 }
 
-const DATE_CANDIDATES = ['date', 'data', 'data lançamento', 'data lancamento', 'dt', 'fecha'];
-const DESCRIPTION_CANDIDATES = ['title', 'description', 'descrição', 'descricao', 'historico', 'histórico', 'lançamento', 'lancamento', 'estabelecimento', 'memo'];
-const AMOUNT_CANDIDATES = ['amount', 'valor', 'valor r$', 'valor (r$)', 'value', 'montante', 'quantia'];
-const IDENTIFIER_CANDIDATES = ['identificador', 'id', 'identifier', 'transaction id', 'id transação', 'id transacao'];
+const DATE_CANDIDATES = [
+	'date',
+	'data',
+	'data lançamento',
+	'data lancamento',
+	'dt',
+	'fecha'
+];
+const DESCRIPTION_CANDIDATES = [
+	'title',
+	'description',
+	'descrição',
+	'descricao',
+	'historico',
+	'histórico',
+	'lançamento',
+	'lancamento',
+	'estabelecimento',
+	'memo'
+];
+const AMOUNT_CANDIDATES = [
+	'amount',
+	'valor',
+	'valor r$',
+	'valor (r$)',
+	'value',
+	'montante',
+	'quantia'
+];
+const IDENTIFIER_CANDIDATES = [
+	'identificador',
+	'id',
+	'identifier',
+	'transaction id',
+	'id transação',
+	'id transacao'
+];
 
 function pickColumn(headers: string[], candidates: string[]): string | null {
 	const lowerHeaders = headers.map((h) => h.toLowerCase().trim());
@@ -52,8 +86,15 @@ export function detectMapping(buffer: Buffer): CsvColumnMapping | null {
 	const descriptionColumn = pickColumn(headers, DESCRIPTION_CANDIDATES);
 	const amountColumn = pickColumn(headers, AMOUNT_CANDIDATES);
 	if (!dateColumn || !descriptionColumn || !amountColumn) return null;
-	const identifierColumn = pickColumn(headers, IDENTIFIER_CANDIDATES) ?? undefined;
-	return { dateColumn, descriptionColumn, amountColumn, identifierColumn, currency: 'BRL' };
+	const identifierColumn =
+		pickColumn(headers, IDENTIFIER_CANDIDATES) ?? undefined;
+	return {
+		dateColumn,
+		descriptionColumn,
+		amountColumn,
+		identifierColumn,
+		currency: 'BRL'
+	};
 }
 
 export function parseCsvBuffer(
@@ -83,12 +124,16 @@ function parseCsvRecord(
 	mapping: CsvColumnMapping,
 	sourceType: CsvSourceType
 ): ParsedRow | null {
-	const { rawDate, rawDescription, rawAmount, rawIdentifier } = readCsvRecord(record, mapping);
+	const { rawDate, rawDescription, rawAmount, rawIdentifier } = readCsvRecord(
+		record,
+		mapping
+	);
 	if (!rawDate || !rawDescription || rawAmount === undefined) return null;
 
 	const parsedAmount = parseAmount(rawAmount);
 	if (Number.isNaN(parsedAmount)) return null;
-	if (shouldSkipCardPayment(sourceType, parsedAmount, rawDescription)) return null;
+	if (shouldSkipCardPayment(sourceType, parsedAmount, rawDescription))
+		return null;
 
 	const date = normalizeDate(rawDate);
 	if (!date) return null;
@@ -111,20 +156,33 @@ function parseCsvRecord(
 	};
 }
 
-function shouldSkipCardPayment(sourceType: CsvSourceType, amount: number, description: string) {
-	return sourceType === 'credit_card' && amount < 0 && isCreditCardPayment(description);
+function shouldSkipCardPayment(
+	sourceType: CsvSourceType,
+	amount: number,
+	description: string
+) {
+	return (
+		sourceType === 'credit_card' &&
+		amount < 0 &&
+		isCreditCardPayment(description)
+	);
 }
 
 function nonEmptyValue(value: string | undefined) {
 	return value || undefined;
 }
 
-function readCsvRecord(record: Record<string, string>, mapping: CsvColumnMapping) {
+function readCsvRecord(
+	record: Record<string, string>,
+	mapping: CsvColumnMapping
+) {
 	return {
 		rawDate: record[mapping.dateColumn]?.trim(),
 		rawDescription: record[mapping.descriptionColumn]?.trim(),
 		rawAmount: record[mapping.amountColumn]?.trim(),
-		rawIdentifier: mapping.identifierColumn ? record[mapping.identifierColumn]?.trim() : undefined
+		rawIdentifier: mapping.identifierColumn
+			? record[mapping.identifierColumn]?.trim()
+			: undefined
 	};
 }
 
@@ -155,7 +213,9 @@ export function parseAmount(raw: string): number {
 	if (lastComma >= 0 && lastDot >= 0) {
 		const decimalSeparator = lastComma > lastDot ? ',' : '.';
 		const thousandsSeparator = decimalSeparator === ',' ? '.' : ',';
-		return Number(value.replaceAll(thousandsSeparator, '').replace(decimalSeparator, '.'));
+		return Number(
+			value.replaceAll(thousandsSeparator, '').replace(decimalSeparator, '.')
+		);
 	}
 	if (lastComma >= 0) {
 		return Number(value.replaceAll('.', '').replace(',', '.'));
@@ -174,15 +234,23 @@ export function cleanDescription(desc: string): string {
 		.replace(/^IOF de volta de /i, '')
 		.trim();
 
-	const pixMatch = compact.match(/^Transferência (enviada|recebida|Recebida) pelo Pix - ([^-]+?)(?: - |$)/i);
+	const pixMatch = compact.match(
+		/^Transferência (enviada|recebida|Recebida) pelo Pix - ([^-]+?)(?: - |$)/i
+	);
 	if (pixMatch) {
-		const direction = normalizeToken(pixMatch[1]).startsWith('RECEBIDA') ? 'PIX RECEBIDO' : 'PIX ENVIADO';
+		const direction = normalizeToken(pixMatch[1]).startsWith('RECEBIDA')
+			? 'PIX RECEBIDO'
+			: 'PIX ENVIADO';
 		return `${direction} - ${normalizePartyName(pixMatch[2])}`;
 	}
 
-	const transferMatch = compact.match(/^Transferência (Recebida|Enviada) - ([^-]+?)(?: - |$)/i);
+	const transferMatch = compact.match(
+		/^Transferência (Recebida|Enviada) - ([^-]+?)(?: - |$)/i
+	);
 	if (transferMatch) {
-		const direction = normalizeToken(transferMatch[1]).startsWith('RECEBIDA') ? 'TRANSFERENCIA RECEBIDA' : 'TRANSFERENCIA ENVIADA';
+		const direction = normalizeToken(transferMatch[1]).startsWith('RECEBIDA')
+			? 'TRANSFERENCIA RECEBIDA'
+			: 'TRANSFERENCIA ENVIADA';
 		return `${direction} - ${normalizePartyName(transferMatch[2])}`;
 	}
 
@@ -199,8 +267,13 @@ export function buildDuplicateKey(row: ParsedRow): string {
 	return buildImportDedupKey(row);
 }
 
-export function buildImportDedupKey(row: Pick<ParsedRow, 'date' | 'clean_description' | 'amount' | 'currency'>): string {
-	const cleanDescription = row.clean_description.trim().replace(/\s+/g, ' ').toUpperCase();
+export function buildImportDedupKey(
+	row: Pick<ParsedRow, 'date' | 'clean_description' | 'amount' | 'currency'>
+): string {
+	const cleanDescription = row.clean_description
+		.trim()
+		.replace(/\s+/g, ' ')
+		.toUpperCase();
 	return `${row.date}|${cleanDescription}|${row.amount.toFixed(2)}|${row.currency || 'BRL'}`;
 }
 
@@ -215,7 +288,9 @@ const INSTALLMENT_PATTERNS: RegExp[] = [
 	/(?:^|[\s-])(\d{1,2})\s+de\s+(\d{1,2})\s*$/i
 ];
 
-export function parseInstallment(description: string): { number: number; total: number } | null {
+export function parseInstallment(
+	description: string
+): { number: number; total: number } | null {
 	const text = description.normalize('NFD').replace(/\p{Diacritic}/gu, '');
 	for (const re of INSTALLMENT_PATTERNS) {
 		const match = text.match(re);
@@ -245,9 +320,16 @@ export function stripInstallmentMarker(value: string): string {
 // Ties installments of the same purchase together across statements. The clean
 // description has the "k/n" marker stripped so every month lands on the same
 // key; the per-installment amount and total keep unrelated purchases apart.
-export function installmentGroupKey(cleanDescription: string, amount: number, total: number): string {
+export function installmentGroupKey(
+	cleanDescription: string,
+	amount: number,
+	total: number
+): string {
 	const base = stripInstallmentMarker(
-		cleanDescription.normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase()
+		cleanDescription
+			.normalize('NFD')
+			.replace(/\p{Diacritic}/gu, '')
+			.toUpperCase()
 	);
 	return `${base}|${total}|${Math.abs(amount).toFixed(2)}`;
 }

@@ -6,15 +6,29 @@ import { validateTransactionRelations } from '$lib/server/access';
 import { learnFromTransactionAdjustment } from '$lib/server/learning';
 
 vi.mock('@sveltejs/kit', () => ({
-	fail: (status: number, data: Record<string, unknown>) => ({ status, ...data }),
+	fail: (status: number, data: Record<string, unknown>) => ({
+		status,
+		...data
+	}),
 	redirect: vi.fn()
 }));
 vi.mock('$lib/server/supabase', () => ({ supabaseAdmin: { from: vi.fn() } }));
-vi.mock('$lib/server/household', () => ({ getUserHouseholdId: vi.fn(), attachPayerProfiles: vi.fn() }));
-vi.mock('$lib/server/access', () => ({ getReadableTransactionIds: vi.fn(), validateTransactionRelations: vi.fn() }));
-vi.mock('$lib/server/learning', () => ({ learnFromTransactionAdjustment: vi.fn() }));
+vi.mock('$lib/server/household', () => ({
+	getUserHouseholdId: vi.fn(),
+	attachPayerProfiles: vi.fn()
+}));
+vi.mock('$lib/server/access', () => ({
+	getReadableTransactionIds: vi.fn(),
+	validateTransactionRelations: vi.fn()
+}));
+vi.mock('$lib/server/learning', () => ({
+	learnFromTransactionAdjustment: vi.fn()
+}));
 vi.mock('$lib/server/gabarito', () => ({ filterCategoriesForUser: vi.fn() }));
-vi.mock('$lib/server/categories', () => ({ loadCategoriesForUser: vi.fn(), loadUserCategoryExclusions: vi.fn() }));
+vi.mock('$lib/server/categories', () => ({
+	loadCategoriesForUser: vi.fn(),
+	loadUserCategoryExclusions: vi.fn()
+}));
 
 type QueryResult = { data?: unknown; error?: { message: string } | null };
 
@@ -23,13 +37,32 @@ class QueryMock {
 
 	constructor(private readonly result: QueryResult) {}
 
-	select(...args: unknown[]) { this.calls.push({ method: 'select', args }); return this; }
-	update(...args: unknown[]) { this.calls.push({ method: 'update', args }); return this; }
-	delete(...args: unknown[]) { this.calls.push({ method: 'delete', args }); return this; }
-	eq(...args: unknown[]) { this.calls.push({ method: 'eq', args }); return this; }
-	in(...args: unknown[]) { this.calls.push({ method: 'in', args }); return this; }
-	then(resolve: (value: QueryResult) => unknown) { return Promise.resolve(resolve(this.result)); }
-	maybeSingle() { return Promise.resolve(this.result); }
+	select(...args: unknown[]) {
+		this.calls.push({ method: 'select', args });
+		return this;
+	}
+	update(...args: unknown[]) {
+		this.calls.push({ method: 'update', args });
+		return this;
+	}
+	delete(...args: unknown[]) {
+		this.calls.push({ method: 'delete', args });
+		return this;
+	}
+	eq(...args: unknown[]) {
+		this.calls.push({ method: 'eq', args });
+		return this;
+	}
+	in(...args: unknown[]) {
+		this.calls.push({ method: 'in', args });
+		return this;
+	}
+	then(resolve: (value: QueryResult) => unknown) {
+		return Promise.resolve(resolve(this.result));
+	}
+	maybeSingle() {
+		return Promise.resolve(this.result);
+	}
 }
 
 function requestForIds(ids: string[]) {
@@ -52,7 +85,10 @@ beforeEach(() => {
 
 describe('transaction delete action', () => {
 	it('deletes only the selected editable transactions in the current household', async () => {
-		const access = new QueryMock({ data: [{ transaction_id: 'tx-a' }, { transaction_id: 'tx-b' }], error: null });
+		const access = new QueryMock({
+			data: [{ transaction_id: 'tx-a' }, { transaction_id: 'tx-b' }],
+			error: null
+		});
 		const deletion = new QueryMock({ data: null, error: null });
 		mockedAdminFrom.mockReturnValue(deletion as never);
 
@@ -65,12 +101,21 @@ describe('transaction delete action', () => {
 			}
 		} as never);
 
-		expect(deletion.calls).toContainEqual({ method: 'eq', args: ['household_id', 'household-a'] });
-		expect(deletion.calls).toContainEqual({ method: 'in', args: ['id', ['tx-a', 'tx-b']] });
+		expect(deletion.calls).toContainEqual({
+			method: 'eq',
+			args: ['household_id', 'household-a']
+		});
+		expect(deletion.calls).toContainEqual({
+			method: 'in',
+			args: ['id', ['tx-a', 'tx-b']]
+		});
 	});
 
 	it('refuses deletion when any selected transaction is not editable', async () => {
-		const access = new QueryMock({ data: [{ transaction_id: 'tx-a' }], error: null });
+		const access = new QueryMock({
+			data: [{ transaction_id: 'tx-a' }],
+			error: null
+		});
 
 		const result = await actions.delete_selected({
 			request: requestForIds(['tx-a', 'tx-b']),
@@ -91,9 +136,19 @@ describe('transaction delete action', () => {
 		formData.set('category_id', 'category-a');
 		formData.set('subcategory_id', 'subcategory-a');
 		formData.set('owner_profile_id', '__keep__');
-		const access = new QueryMock({ data: [{ transaction_id: 'tx-a' }], error: null });
+		const access = new QueryMock({
+			data: [{ transaction_id: 'tx-a' }],
+			error: null
+		});
 		const existing = new QueryMock({
-			data: [{ id: 'tx-a', category_id: null, subcategory_id: null, owner_profile_id: 'profile-a' }],
+			data: [
+				{
+					id: 'tx-a',
+					category_id: null,
+					subcategory_id: null,
+					owner_profile_id: 'profile-a'
+				}
+			],
 			error: null
 		});
 		const update = new QueryMock({ data: null, error: null });
@@ -112,7 +167,10 @@ describe('transaction delete action', () => {
 					safeGetSession: async () => ({ user: { id: 'user-a' } })
 				}
 			} as never)
-		).resolves.toMatchObject({ success: true, message: '1 transações atualizadas' });
+		).resolves.toMatchObject({
+			success: true,
+			message: '1 transações atualizadas'
+		});
 
 		expect(update.calls).toContainEqual({
 			method: 'update',
@@ -124,7 +182,10 @@ describe('transaction delete action', () => {
 				})
 			]
 		});
-		expect(update.calls).toContainEqual({ method: 'eq', args: ['household_id', 'household-a'] });
+		expect(update.calls).toContainEqual({
+			method: 'eq',
+			args: ['household_id', 'household-a']
+		});
 		const updateCall = update.calls.find((call) => call.method === 'update');
 		expect(updateCall?.args[0]).not.toHaveProperty('owner_profile_id');
 	});
@@ -135,20 +196,35 @@ describe('transaction delete action', () => {
 		formData.append('category_id', 'category-a');
 		formData.append('subcategory_id', 'subcategory-a');
 		formData.append('owner_profile_id', 'profile-a');
-		const access = new QueryMock({ data: [{ transaction_id: 'tx-a' }], error: null });
+		const access = new QueryMock({
+			data: [{ transaction_id: 'tx-a' }],
+			error: null
+		});
 		const existing = new QueryMock({
-			data: [{ id: 'tx-a', category_id: 'category-a', subcategory_id: 'subcategory-a', owner_profile_id: 'profile-a' }],
+			data: [
+				{
+					id: 'tx-a',
+					category_id: 'category-a',
+					subcategory_id: 'subcategory-a',
+					owner_profile_id: 'profile-a'
+				}
+			],
 			error: null
 		});
 		mockedAdminFrom.mockReturnValue(existing as never);
 
-		await expect(actions.update_classification({
-			request: { formData: async () => formData } as never,
-			locals: {
-				supabase: { from: () => access } as never,
-				safeGetSession: async () => ({ user: { id: 'user-a' } })
-			}
-		} as never)).resolves.toMatchObject({ success: true, message: '0 transações atualizadas' });
+		await expect(
+			actions.update_classification({
+				request: { formData: async () => formData } as never,
+				locals: {
+					supabase: { from: () => access } as never,
+					safeGetSession: async () => ({ user: { id: 'user-a' } })
+				}
+			} as never)
+		).resolves.toMatchObject({
+			success: true,
+			message: '0 transações atualizadas'
+		});
 
 		expect(mockedAdminFrom).toHaveBeenCalledTimes(1);
 		expect(vi.mocked(validateTransactionRelations)).not.toHaveBeenCalled();
@@ -161,12 +237,25 @@ describe('transaction delete action', () => {
 		formData.append('category_id', 'category-a');
 		formData.append('subcategory_id', 'subcategory-foreign');
 		formData.append('owner_profile_id', 'profile-foreign');
-		const access = new QueryMock({ data: [{ transaction_id: 'tx-a' }], error: null });
+		const access = new QueryMock({
+			data: [{ transaction_id: 'tx-a' }],
+			error: null
+		});
 		const existing = new QueryMock({
-			data: [{ id: 'tx-a', category_id: null, subcategory_id: null, owner_profile_id: null }], error: null
+			data: [
+				{
+					id: 'tx-a',
+					category_id: null,
+					subcategory_id: null,
+					owner_profile_id: null
+				}
+			],
+			error: null
 		});
 		mockedAdminFrom.mockReturnValue(existing as never);
-		vi.mocked(validateTransactionRelations).mockResolvedValue('Relação de classificação inválida');
+		vi.mocked(validateTransactionRelations).mockResolvedValue(
+			'Relação de classificação inválida'
+		);
 
 		const result = await actions.update_classification({
 			request: { formData: async () => formData } as never,
@@ -176,7 +265,10 @@ describe('transaction delete action', () => {
 			}
 		} as never);
 
-		expect(result).toMatchObject({ status: 400, message: 'Relação de classificação inválida' });
+		expect(result).toMatchObject({
+			status: 400,
+			message: 'Relação de classificação inválida'
+		});
 		expect(mockedAdminFrom).toHaveBeenCalledTimes(1);
 		expect(vi.mocked(learnFromTransactionAdjustment)).not.toHaveBeenCalled();
 	});
@@ -201,36 +293,53 @@ describe('transaction delete action', () => {
 	it.each([
 		['ignore_single', 'ignored', 'manual'],
 		['restore_single', 'needs_review', undefined]
-	] as const)('scopes %s status changes to the current household', async (actionName, status, method) => {
-		const formData = new FormData();
-		formData.set('transaction_id', 'tx-a');
-		const access = new QueryMock({ data: [{ transaction_id: 'tx-a' }], error: null });
-		const update = new QueryMock({ data: null, error: null });
-		mockedAdminFrom.mockReturnValue(update as never);
+	] as const)(
+		'scopes %s status changes to the current household',
+		async (actionName, status, method) => {
+			const formData = new FormData();
+			formData.set('transaction_id', 'tx-a');
+			const access = new QueryMock({
+				data: [{ transaction_id: 'tx-a' }],
+				error: null
+			});
+			const update = new QueryMock({ data: null, error: null });
+			mockedAdminFrom.mockReturnValue(update as never);
 
-		await actions[actionName]({
-			request: { formData: async () => formData } as never,
-			locals: {
-				supabase: { from: () => access } as never,
-				safeGetSession: async () => ({ user: { id: 'user-a' } })
-			}
-		} as never);
+			await actions[actionName]({
+				request: { formData: async () => formData } as never,
+				locals: {
+					supabase: { from: () => access } as never,
+					safeGetSession: async () => ({ user: { id: 'user-a' } })
+				}
+			} as never);
 
-		expect(update.calls).toContainEqual({ method: 'eq', args: ['household_id', 'household-a'] });
-		expect(update.calls).toContainEqual({
-			method: 'update',
-			args: [expect.objectContaining({
-				review_status: status,
-				...(method ? { classification_method: method } : {})
-			})]
-		});
-	});
+			expect(update.calls).toContainEqual({
+				method: 'eq',
+				args: ['household_id', 'household-a']
+			});
+			expect(update.calls).toContainEqual({
+				method: 'update',
+				args: [
+					expect.objectContaining({
+						review_status: status,
+						...(method ? { classification_method: method } : {})
+					})
+				]
+			});
+		}
+	);
 
 	it('does not delete a month unless every row in it is editable', async () => {
 		const formData = new FormData();
 		formData.set('reference_month', '2026-05');
-		const monthRows = new QueryMock({ data: [{ id: 'tx-a' }, { id: 'tx-b' }], error: null });
-		const access = new QueryMock({ data: [{ transaction_id: 'tx-a' }], error: null });
+		const monthRows = new QueryMock({
+			data: [{ id: 'tx-a' }, { id: 'tx-b' }],
+			error: null
+		});
+		const access = new QueryMock({
+			data: [{ transaction_id: 'tx-a' }],
+			error: null
+		});
 		mockedAdminFrom.mockReturnValue(monthRows as never);
 
 		const result = await actions.delete_month({
@@ -243,6 +352,8 @@ describe('transaction delete action', () => {
 
 		expect(result).toMatchObject({ status: 403 });
 		expect(mockedAdminFrom).toHaveBeenCalledTimes(1);
-		expect(monthRows.calls.some((call) => call.method === 'delete')).toBe(false);
+		expect(monthRows.calls.some((call) => call.method === 'delete')).toBe(
+			false
+		);
 	});
 });

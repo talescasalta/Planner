@@ -2,14 +2,24 @@
 	import { scaleBand } from 'd3-scale';
 	import { Axis, Chart, Spline, Svg } from 'layerchart';
 
-	type Point = { month: string; expenses: number; credits: number; balance: number };
+	type Point = {
+		month: string;
+		expenses: number;
+		credits: number;
+		balance: number;
+	};
 
-	let { data, currency = 'BRL' }: { data: Point[]; currency?: string } = $props();
+	let { data, currency = 'BRL' }: { data: Point[]; currency?: string } =
+		$props();
 
 	function fmtCompact(value: number) {
 		const abs = Math.abs(value);
 		if (abs >= 1000) return `R$ ${(value / 1000).toFixed(1)}k`;
-		return value.toLocaleString('pt-BR', { style: 'currency', currency, maximumFractionDigits: 0 });
+		return value.toLocaleString('pt-BR', {
+			style: 'currency',
+			currency,
+			maximumFractionDigits: 0
+		});
 	}
 
 	function fmtFull(value: number) {
@@ -19,14 +29,20 @@
 	function shortMonth(month: string) {
 		const [year, monthNumber] = month.split('-').map(Number);
 		if (!year || !monthNumber) return month;
-		return new Date(year, monthNumber - 1, 1).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+		return new Date(year, monthNumber - 1, 1)
+			.toLocaleDateString('pt-BR', { month: 'short' })
+			.replace('.', '');
 	}
 
-	let yMax = $derived(Math.max(0, ...data.flatMap((d) => [d.expenses, d.credits])));
+	let yMax = $derived(
+		Math.max(0, ...data.flatMap((d) => [d.expenses, d.credits]))
+	);
 </script>
 
 {#if data.length === 0}
-	<div class="flex h-56 items-center justify-center rounded-md border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500">
+	<div
+		class="flex h-56 items-center justify-center rounded-md border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500"
+	>
 		Sem dados de evolução.
 	</div>
 {:else}
@@ -41,8 +57,20 @@
 			padding={{ top: 16, right: 16, bottom: 28, left: 56 }}
 		>
 			<Svg>
-				<Axis placement="left" ticks={4} format={(v: number) => fmtCompact(v)} grid rule={false} classes={{ tickLabel: 'text-[11px] fill-gray-500' }} />
-				<Axis placement="bottom" format={(m: string) => shortMonth(m)} rule classes={{ tickLabel: 'text-[11px] fill-gray-600 capitalize' }} />
+				<Axis
+					placement="left"
+					ticks={4}
+					format={(v: number) => fmtCompact(v)}
+					grid
+					rule={false}
+					classes={{ tickLabel: 'text-[11px] fill-gray-500' }}
+				/>
+				<Axis
+					placement="bottom"
+					format={(m: string) => shortMonth(m)}
+					rule
+					classes={{ tickLabel: 'text-[11px] fill-gray-600 capitalize' }}
+				/>
 				<Spline y="credits" class="stroke-emerald-500" stroke-width="2" />
 				<Spline y="expenses" class="stroke-rose-500" stroke-width="2" />
 			</Svg>

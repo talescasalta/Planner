@@ -1,0 +1,15 @@
+{
+	"auditReportVersion": 2,
+	"vulnerabilities": {
+		"fixture-moderate": {
+			"name": "fixture-moderate",
+			"severity": "moderate",
+			"via": []
+		},
+		"fixture-low": {
+			"name": "fixture-low",
+			"severity": "low",
+			"via": []
+		}
+	}
+}
