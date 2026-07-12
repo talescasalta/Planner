@@ -17,7 +17,7 @@ This app holds real household financial data. Read [SECURITY.md](SECURITY.md) be
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 24+ (see `.nvmrc`)
 - npm
 - Supabase project
 - OpenRouter or OpenAI API key for automatic classification
@@ -125,17 +125,17 @@ Credit card statements are imported one month at a time, so a purchase split int
 
 ## Environment Variables
 
-| Variable | Required | Description |
-| --- | --- | --- |
-| `PUBLIC_SUPABASE_URL` | Yes | Supabase project URL. Exposed to the browser. |
-| `PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon public key. Exposed to the browser. |
-| `PUBLIC_APP_URL` | Recommended | Public app origin used for OAuth/email redirects. Use the Vercel production URL online. |
-| `SUPABASE_SECRET_KEY` | Yes | Supabase `service_role` key for server-side admin operations. It bypasses RLS; never expose publicly. |
-| `SUPABASE_DB_URL` | Recommended | Direct Postgres connection string, useful for Supabase CLI/database workflows. |
-| `CRON_SECRET` | Production cron only | Long random secret used by Vercel Cron to authorize `/api/health/supabase`. |
-| `OPENROUTER_API_KEY` | One LLM key required | Uses OpenRouter when set. |
-| `OPENAI_API_KEY` | One LLM key required | Used only when `OPENROUTER_API_KEY` is empty. |
-| `LLM_MODEL` | Recommended | Model id sent to the selected provider. |
+| Variable                   | Required             | Description                                                                                           |
+| -------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------- |
+| `PUBLIC_SUPABASE_URL`      | Yes                  | Supabase project URL. Exposed to the browser.                                                         |
+| `PUBLIC_SUPABASE_ANON_KEY` | Yes                  | Supabase anon public key. Exposed to the browser.                                                     |
+| `PUBLIC_APP_URL`           | Recommended          | Public app origin used for OAuth/email redirects. Use the Vercel production URL online.               |
+| `SUPABASE_SECRET_KEY`      | Yes                  | Supabase `service_role` key for server-side admin operations. It bypasses RLS; never expose publicly. |
+| `SUPABASE_DB_URL`          | Recommended          | Direct Postgres connection string, useful for Supabase CLI/database workflows.                        |
+| `CRON_SECRET`              | Production cron only | Long random secret used by Vercel Cron to authorize `/api/health/supabase`.                           |
+| `OPENROUTER_API_KEY`       | One LLM key required | Uses OpenRouter when set.                                                                             |
+| `OPENAI_API_KEY`           | One LLM key required | Used only when `OPENROUTER_API_KEY` is empty.                                                         |
+| `LLM_MODEL`                | Recommended          | Model id sent to the selected provider.                                                               |
 
 ## Useful Commands
 

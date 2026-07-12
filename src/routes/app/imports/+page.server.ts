@@ -8,11 +8,20 @@ import {
 	type ParsedRow
 } from '$lib/server/csv-parser';
 import { resolveImportMapping } from '$lib/server/import-mapping';
-import { detectImageMimeType, extractRowsFromImage, extractRowsFromText } from '$lib/server/import-extract';
+import {
+	detectImageMimeType,
+	extractRowsFromImage,
+	extractRowsFromText
+} from '$lib/server/import-extract';
 
 function readSourceType(formData: FormData): CsvSourceType {
 	const raw = formData.get('source_type');
-	if (raw === 'credit_card' || raw === 'vale_alimentacao' || raw === 'vale_refeicao') return raw;
+	if (
+		raw === 'credit_card' ||
+		raw === 'vale_alimentacao' ||
+		raw === 'vale_refeicao'
+	)
+		return raw;
 	return 'bank_account';
 }
 
@@ -58,11 +67,17 @@ async function resolveImportInput(
 					sourceType,
 					mappingSource: 'vision',
 					confidence: 0,
-					notes: 'A imagem enviada não está em um formato suportado. Envie PNG, JPEG ou WebP.',
+					notes:
+						'A imagem enviada não está em um formato suportado. Envie PNG, JPEG ou WebP.',
 					sourceName: file.name || 'imagem'
 				};
 			}
-			const extraction = await extractRowsFromImage(buffer, detectedImageMimeType, sourceType, referenceMonth);
+			const extraction = await extractRowsFromImage(
+				buffer,
+				detectedImageMimeType,
+				sourceType,
+				referenceMonth
+			);
 			return {
 				rows: extraction.rows,
 				sourceType,
@@ -101,7 +116,11 @@ async function resolveImportInput(
 				};
 			}
 		}
-		const extraction = await extractRowsFromText(pastedText, sourceType, referenceMonth);
+		const extraction = await extractRowsFromText(
+			pastedText,
+			sourceType,
+			referenceMonth
+		);
 		return {
 			rows: extraction.rows,
 			sourceType,
@@ -138,7 +157,11 @@ async function loadExistingKeysForRange(
 		.eq('household_id', householdId)
 		.gte('date', minDate)
 		.lte('date', maxDate);
-	return new Set((data ?? []).map((t) => t.import_dedup_key).filter((key): key is string => !!key));
+	return new Set(
+		(data ?? [])
+			.map((t) => t.import_dedup_key)
+			.filter((key): key is string => !!key)
+	);
 }
 
 async function markImportFailed(importId: string, message: string) {
@@ -189,8 +212,16 @@ async function persistImportTransactions(
 	userId: string,
 	sourceType: CsvSourceType,
 	referenceMonth: string
-): Promise<{ insertedTransactions: InsertedTransaction[] } | { errorMessage: string }> {
-	const inserts = buildTransactionInserts(rows, householdId, userId, sourceType, referenceMonth);
+): Promise<
+	{ insertedTransactions: InsertedTransaction[] } | { errorMessage: string }
+> {
+	const inserts = buildTransactionInserts(
+		rows,
+		householdId,
+		userId,
+		sourceType,
+		referenceMonth
+	);
 	const { data, error } = await supabaseAdmin
 		.from('transactions')
 		.upsert(inserts, {
@@ -200,12 +231,18 @@ async function persistImportTransactions(
 		.select('id, amount, date, description, clean_description');
 	if (error) return { errorMessage: error.message };
 	if (!data) {
-		return { errorMessage: 'A importação não conseguiu confirmar as transações gravadas. Tente novamente.' };
+		return {
+			errorMessage:
+				'A importação não conseguiu confirmar as transações gravadas. Tente novamente.'
+		};
 	}
 	return { insertedTransactions: data };
 }
 
-async function grantImportedTransactionAccess(transactions: InsertedTransaction[], userId: string): Promise<string | null> {
+async function grantImportedTransactionAccess(
+	transactions: InsertedTransaction[],
+	userId: string
+): Promise<string | null> {
 	if (transactions.length === 0) return null;
 	const { error } = await supabaseAdmin.from('transaction_access').insert(
 		transactions.map((transaction) => ({
@@ -218,7 +255,10 @@ async function grantImportedTransactionAccess(transactions: InsertedTransaction[
 	return error?.message ?? null;
 }
 
-async function verifyImportedTransactions(transactionIds: string[], householdId: string): Promise<boolean> {
+async function verifyImportedTransactions(
+	transactionIds: string[],
+	householdId: string
+): Promise<boolean> {
 	if (transactionIds.length === 0) return true;
 	const { count, error } = await supabaseAdmin
 		.from('transactions')
@@ -236,28 +276,49 @@ async function importAndClassifyRows(
 	referenceMonth: string,
 	importId: string
 ): Promise<{ insertedCount: number } | { errorMessage: string }> {
-	const persisted = await persistImportTransactions(rows, householdId, userId, sourceType, referenceMonth);
+	const persisted = await persistImportTransactions(
+		rows,
+		householdId,
+		userId,
+		sourceType,
+		referenceMonth
+	);
 	if ('errorMessage' in persisted) {
-		await markImportFailed(importId, `transactions insert failed: ${persisted.errorMessage}`);
+		await markImportFailed(
+			importId,
+			`transactions insert failed: ${persisted.errorMessage}`
+		);
 		return { errorMessage: persisted.errorMessage };
 	}
 	const insertedTransactions = persisted.insertedTransactions;
-	const accessError = await grantImportedTransactionAccess(insertedTransactions, userId);
+	const accessError = await grantImportedTransactionAccess(
+		insertedTransactions,
+		userId
+	);
 	if (accessError) {
-		await markImportFailed(importId, `transaction_access insert failed: ${accessError}`);
+		await markImportFailed(
+			importId,
+			`transaction_access insert failed: ${accessError}`
+		);
 		return { errorMessage: accessError };
 	}
 	const insertedIds = insertedTransactions.map((transaction) => transaction.id);
 	if (insertedIds.length === 0) return { insertedCount: 0 };
 	if (!(await verifyImportedTransactions(insertedIds, householdId))) {
 		await markImportFailed(importId, 'persisted transaction count mismatch');
-		return { errorMessage: 'A importação não encontrou as transações recém-gravadas. Nada foi classificado.' };
+		return {
+			errorMessage:
+				'A importação não encontrou as transações recém-gravadas. Nada foi classificado.'
+		};
 	}
 	try {
 		await classifyTransactions(supabaseAdmin, householdId, insertedIds, userId);
 	} catch (error) {
 		await markImportFailed(importId, `classification failed: ${String(error)}`);
-		return { errorMessage: 'As transações foram importadas, mas a classificação automática falhou. Tente classificar novamente.' };
+		return {
+			errorMessage:
+				'As transações foram importadas, mas a classificação automática falhou. Tente classificar novamente.'
+		};
 	}
 	return { insertedCount: insertedTransactions.length };
 }
@@ -273,19 +334,33 @@ function missingAccessRows(
 	householdMembers: string[],
 	existingSet: Set<string>
 ) {
-	const rows: { transaction_id: string; user_id: string; can_read: boolean; can_edit: boolean }[] = [];
+	const rows: {
+		transaction_id: string;
+		user_id: string;
+		can_read: boolean;
+		can_edit: boolean;
+	}[] = [];
 	for (const transaction of transactions) {
 		const profile = transaction.owner_profile;
-		const targetUserIds = profile?.type === 'shared'
-			? householdMembers
-			: Array.from(new Set([transaction.created_by_user_id, profile?.user_id].filter((id): id is string => !!id)));
+		const targetUserIds =
+			profile?.type === 'shared'
+				? householdMembers
+				: Array.from(
+						new Set(
+							[transaction.created_by_user_id, profile?.user_id].filter(
+								(id): id is string => !!id
+							)
+						)
+					);
 		for (const userId of targetUserIds) {
 			if (existingSet.has(`${transaction.id}|${userId}`)) continue;
 			rows.push({
 				transaction_id: transaction.id,
 				user_id: userId,
 				can_read: true,
-				can_edit: userId === transaction.created_by_user_id || profile?.type === 'shared'
+				can_edit:
+					userId === transaction.created_by_user_id ||
+					profile?.type === 'shared'
 			});
 		}
 	}
@@ -305,27 +380,41 @@ export const actions: Actions = {
 		const referenceMonth = formData.get('reference_month') as string;
 
 		if (!referenceMonth) {
-			return fail(400, { success: false, message: 'Mês de referência não informado' });
+			return fail(400, {
+				success: false,
+				message: 'Mês de referência não informado'
+			});
 		}
 
 		const resolved = await resolveImportInput(formData, referenceMonth);
 		if (!resolved) {
 			return fail(400, {
 				success: false,
-				message: 'Envie um arquivo CSV, uma imagem (print) ou cole o conteúdo da fatura.'
+				message:
+					'Envie um arquivo CSV, uma imagem (print) ou cole o conteúdo da fatura.'
 			});
 		}
 		const rows = resolved.rows;
 		if (rows.length === 0) {
-			return fail(400, { success: false, message: emptyImportRowsMessage(resolved) });
+			return fail(400, {
+				success: false,
+				message: emptyImportRowsMessage(resolved)
+			});
 		}
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
 		if (!householdId) {
-			return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
 		}
 
-		const existingKeys = await loadExistingKeysForRange(supabase, householdId, rows);
+		const existingKeys = await loadExistingKeysForRange(
+			supabase,
+			householdId,
+			rows
+		);
 
 		const previewRows = rows.slice(0, 10).map((r) => ({
 			...r,
@@ -336,7 +425,8 @@ export const actions: Actions = {
 			success: true,
 			preview: previewRows,
 			total: rows.length,
-			duplicates: rows.filter((r) => existingKeys.has(buildImportDedupKey(r))).length,
+			duplicates: rows.filter((r) => existingKeys.has(buildImportDedupKey(r)))
+				.length,
 			filename: resolved.sourceName,
 			reference_month: referenceMonth,
 			source_type: resolved.sourceType,
@@ -354,24 +444,34 @@ export const actions: Actions = {
 		const referenceMonth = formData.get('reference_month') as string;
 
 		if (!referenceMonth) {
-			return fail(400, { success: false, message: 'Mês de referência não informado' });
+			return fail(400, {
+				success: false,
+				message: 'Mês de referência não informado'
+			});
 		}
 
 		const resolved = await resolveImportInput(formData, referenceMonth);
 		if (!resolved) {
 			return fail(400, {
 				success: false,
-				message: 'Envie um arquivo CSV, uma imagem (print) ou cole o conteúdo da fatura.'
+				message:
+					'Envie um arquivo CSV, uma imagem (print) ou cole o conteúdo da fatura.'
 			});
 		}
 		const rows = resolved.rows;
 		if (rows.length === 0) {
-			return fail(400, { success: false, message: emptyImportRowsMessage(resolved) });
+			return fail(400, {
+				success: false,
+				message: emptyImportRowsMessage(resolved)
+			});
 		}
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
 		if (!householdId) {
-			return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
 		}
 
 		const { data: importRecord, error: importError } = await supabaseAdmin
@@ -389,19 +489,34 @@ export const actions: Actions = {
 			.single();
 
 		if (importError || !importRecord) {
-			return fail(500, { success: false, message: importError?.message ?? 'Erro ao registrar importação' });
+			return fail(500, {
+				success: false,
+				message: importError?.message ?? 'Erro ao registrar importação'
+			});
 		}
 
-		const existingKeys = await loadExistingKeysForRange(supabase, householdId, rows);
+		const existingKeys = await loadExistingKeysForRange(
+			supabase,
+			householdId,
+			rows
+		);
 
-		const newRows = rows.filter((r) => !existingKeys.has(buildImportDedupKey(r)));
+		const newRows = rows.filter(
+			(r) => !existingKeys.has(buildImportDedupKey(r))
+		);
 
 		let insertedCount = 0;
 		if (newRows.length > 0) {
 			const result = await importAndClassifyRows(
-				newRows, householdId, user.id, resolved.sourceType, referenceMonth, importRecord.id
+				newRows,
+				householdId,
+				user.id,
+				resolved.sourceType,
+				referenceMonth,
+				importRecord.id
 			);
-			if ('errorMessage' in result) return fail(500, { success: false, message: result.errorMessage });
+			if ('errorMessage' in result)
+				return fail(500, { success: false, message: result.errorMessage });
 			insertedCount = result.insertedCount;
 		}
 
@@ -418,16 +533,22 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
-		if (!householdId) return fail(400, { success: false, message: 'Sem grupo' });
+		if (!householdId)
+			return fail(400, { success: false, message: 'Sem grupo' });
 
 		const isAdmin = await isHouseholdAdmin(supabase, householdId, user.id);
 		if (!isAdmin) {
-			return fail(403, { success: false, message: 'Apenas administradores podem reparar acessos' });
+			return fail(403, {
+				success: false,
+				message: 'Apenas administradores podem reparar acessos'
+			});
 		}
 
 		const { data: txs, error: txErr } = await supabaseAdmin
 			.from('transactions')
-			.select('id, created_by_user_id, owner_profile:financial_profiles!transactions_owner_profile_id_fkey ( type, user_id )')
+			.select(
+				'id, created_by_user_id, owner_profile:financial_profiles!transactions_owner_profile_id_fkey ( type, user_id )'
+			)
 			.eq('household_id', householdId);
 		if (txErr) return fail(500, { success: false, message: txErr.message });
 
@@ -441,18 +562,32 @@ export const actions: Actions = {
 			.select('transaction_id, user_id')
 			.in('transaction_id', txIds);
 
-		const existingSet = new Set((existing ?? []).map((r) => `${r.transaction_id}|${r.user_id}`));
+		const existingSet = new Set(
+			(existing ?? []).map((r) => `${r.transaction_id}|${r.user_id}`)
+		);
 
-		const householdMembers = await getHouseholdMembers(supabaseAdmin, householdId);
-		const toInsert = missingAccessRows((txs ?? []) as unknown as RepairTransaction[], householdMembers, existingSet);
+		const householdMembers = await getHouseholdMembers(
+			supabaseAdmin,
+			householdId
+		);
+		const toInsert = missingAccessRows(
+			(txs ?? []) as unknown as RepairTransaction[],
+			householdMembers,
+			existingSet
+		);
 
 		if (toInsert.length === 0) {
 			return { success: true, message: 'Acesso já estava completo' };
 		}
 
-		const { error: insErr } = await supabaseAdmin.from('transaction_access').insert(toInsert);
+		const { error: insErr } = await supabaseAdmin
+			.from('transaction_access')
+			.insert(toInsert);
 		if (insErr) return fail(500, { success: false, message: insErr.message });
 
-		return { success: true, message: `${toInsert.length} permissões adicionadas em ${txIds.length} transações` };
+		return {
+			success: true,
+			message: `${toInsert.length} permissões adicionadas em ${txIds.length} transações`
+		};
 	}
 };

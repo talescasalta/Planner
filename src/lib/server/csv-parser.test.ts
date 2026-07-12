@@ -11,13 +11,17 @@ import {
 describe('stripInstallmentMarker', () => {
 	it('strips trailing k/n markers so patterns match sibling installments', () => {
 		expect(stripInstallmentMarker('MAGAZINE LUIZA 3/5')).toBe('MAGAZINE LUIZA');
-		expect(stripInstallmentMarker('MAGAZINE LUIZA - 3/5')).toBe('MAGAZINE LUIZA');
+		expect(stripInstallmentMarker('MAGAZINE LUIZA - 3/5')).toBe(
+			'MAGAZINE LUIZA'
+		);
 		expect(stripInstallmentMarker('LOJA PARCELA 2/10')).toBe('LOJA');
 		expect(stripInstallmentMarker('LOJA PARC. 2 DE 10')).toBe('LOJA');
 	});
 
 	it('keeps descriptions without markers untouched', () => {
-		expect(stripInstallmentMarker('IFOOD RESTAURANTE')).toBe('IFOOD RESTAURANTE');
+		expect(stripInstallmentMarker('IFOOD RESTAURANTE')).toBe(
+			'IFOOD RESTAURANTE'
+		);
 		expect(stripInstallmentMarker('POSTO 24/7 LTDA')).toBe('POSTO 24/7 LTDA');
 	});
 });
@@ -38,7 +42,9 @@ describe('buildImportDedupKey', () => {
 describe('detectMapping', () => {
 	it('detects common Portuguese columns and an optional identifier', () => {
 		const mapping = detectMapping(
-			Buffer.from(' Data , Descrição , Valor R$ , Identificador\n01/05/2026,Padaria,10,abc')
+			Buffer.from(
+				' Data , Descrição , Valor R$ , Identificador\n01/05/2026,Padaria,10,abc'
+			)
 		);
 
 		expect(mapping).toEqual({
@@ -51,7 +57,9 @@ describe('detectMapping', () => {
 	});
 
 	it('rejects files without all required columns', () => {
-		expect(detectMapping(Buffer.from('Data,Descrição\n01/05/2026,Padaria'))).toBeNull();
+		expect(
+			detectMapping(Buffer.from('Data,Descrição\n01/05/2026,Padaria'))
+		).toBeNull();
 	});
 });
 
@@ -77,7 +85,9 @@ describe('statement cleanup', () => {
 			'09/05/2026,-2.00,jkl,Compra no débito - IFD*Gilceia Caetano De'
 		].join('\n');
 
-		const rows = parseCsvBuffer(bufferOf(csv), nubankBankMapping, { sourceType: 'bank_account' });
+		const rows = parseCsvBuffer(bufferOf(csv), nubankBankMapping, {
+			sourceType: 'bank_account'
+		});
 
 		expect(rows.map((r) => r.clean_description)).toEqual([
 			'PIX ENVIADO - AGORA SOU MAE',
@@ -95,7 +105,9 @@ describe('statement cleanup', () => {
 			'13/05/2026,212.50,other-id,Crédito em conta'
 		].join('\n');
 
-		const rows = parseCsvBuffer(bufferOf(csv), nubankBankMapping, { sourceType: 'bank_account' });
+		const rows = parseCsvBuffer(bufferOf(csv), nubankBankMapping, {
+			sourceType: 'bank_account'
+		});
 
 		expect(rows).toHaveLength(1);
 		expect(rows[0].description).toBe('Crédito em conta');
@@ -122,25 +134,40 @@ describe('parseCsvBuffer credit card payment filter', () => {
 			'2026-04-15,Estorno de Loja XYZ,-30.00'
 		].join('\n');
 
-		const rows = parseCsvBuffer(bufferOf(csv), mapping, { sourceType: 'credit_card' });
+		const rows = parseCsvBuffer(bufferOf(csv), mapping, {
+			sourceType: 'credit_card'
+		});
 
 		expect(rows).toHaveLength(2);
-		expect(rows.map((r) => r.description)).toEqual(['Mercado Central', 'Estorno de Loja XYZ']);
+		expect(rows.map((r) => r.description)).toEqual([
+			'Mercado Central',
+			'Estorno de Loja XYZ'
+		]);
 		// charge flipped to negative, refund flipped to positive
 		expect(rows[0].amount).toBe(-100);
 		expect(rows[1].amount).toBe(30);
 	});
 
 	it('does not drop payment rows when source is bank_account', () => {
-		const csv = ['date,title,amount', '2026-04-10,Pagamento de boleto,-500.00'].join('\n');
-		const rows = parseCsvBuffer(bufferOf(csv), mapping, { sourceType: 'bank_account' });
+		const csv = [
+			'date,title,amount',
+			'2026-04-10,Pagamento de boleto,-500.00'
+		].join('\n');
+		const rows = parseCsvBuffer(bufferOf(csv), mapping, {
+			sourceType: 'bank_account'
+		});
 		expect(rows).toHaveLength(1);
 		expect(rows[0].amount).toBe(-500);
 	});
 
 	it('parses Brazilian currency values and dash-separated dates', () => {
-		const csv = ['date,title,amount', '01-04-2026,Mercado Central,"R$ 1.234,56"'].join('\n');
-		const rows = parseCsvBuffer(bufferOf(csv), mapping, { sourceType: 'bank_account' });
+		const csv = [
+			'date,title,amount',
+			'01-04-2026,Mercado Central,"R$ 1.234,56"'
+		].join('\n');
+		const rows = parseCsvBuffer(bufferOf(csv), mapping, {
+			sourceType: 'bank_account'
+		});
 
 		expect(rows).toHaveLength(1);
 		expect(rows[0].date).toBe('2026-04-01');
@@ -156,7 +183,9 @@ describe('parseCsvBuffer credit card payment filter', () => {
 			'invalid-date,Data inválida,10.00'
 		].join('\n');
 
-		const rows = parseCsvBuffer(bufferOf(csv), mapping, { sourceType: 'vale_alimentacao' });
+		const rows = parseCsvBuffer(bufferOf(csv), mapping, {
+			sourceType: 'vale_alimentacao'
+		});
 
 		expect(rows).toHaveLength(1);
 		expect(rows[0]).toMatchObject({
@@ -182,7 +211,10 @@ describe('parseAmount', () => {
 
 describe('parseInstallment', () => {
 	it('recognizes valid markers and rejects dates or invalid ranges', () => {
-		expect(parseInstallment('Compra parcelada 3/8')).toEqual({ number: 3, total: 8 });
+		expect(parseInstallment('Compra parcelada 3/8')).toEqual({
+			number: 3,
+			total: 8
+		});
 		expect(parseInstallment('Posto 24/7')).toBeNull();
 		expect(parseInstallment('Parcela 0/3')).toBeNull();
 		expect(parseInstallment('Parcela 3/2')).toBeNull();

@@ -1,4 +1,9 @@
-import type { Transaction, Category, FinancialProfile, HouseholdMember } from './app';
+import type {
+	Transaction,
+	Category,
+	FinancialProfile,
+	HouseholdMember
+} from './app';
 
 export interface TransactionsPageData {
 	transactions: Transaction[];

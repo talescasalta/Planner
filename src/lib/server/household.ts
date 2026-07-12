@@ -7,10 +7,14 @@ export interface PayerProfile {
 	display_name: string | null;
 }
 
-export async function attachPayerProfiles<T extends { paid_by_user_id: string | null }>(
-	rows: T[]
-): Promise<Array<T & { paid_by: PayerProfile | null }>> {
-	const ids = Array.from(new Set(rows.map((r) => r.paid_by_user_id).filter((id): id is string => !!id)));
+export async function attachPayerProfiles<
+	T extends { paid_by_user_id: string | null }
+>(rows: T[]): Promise<Array<T & { paid_by: PayerProfile | null }>> {
+	const ids = Array.from(
+		new Set(
+			rows.map((r) => r.paid_by_user_id).filter((id): id is string => !!id)
+		)
+	);
 	const map = new Map<string, PayerProfile>();
 	if (ids.length > 0) {
 		const { data } = await supabaseAdmin
@@ -23,7 +27,7 @@ export async function attachPayerProfiles<T extends { paid_by_user_id: string | 
 	}
 	return rows.map((r) => ({
 		...r,
-		paid_by: r.paid_by_user_id ? map.get(r.paid_by_user_id) ?? null : null
+		paid_by: r.paid_by_user_id ? (map.get(r.paid_by_user_id) ?? null) : null
 	}));
 }
 
@@ -62,7 +66,9 @@ export async function seedDefaultCategories(
 	supabase: SupabaseClient<Database>,
 	householdId: string
 ): Promise<void> {
-	const { error } = await supabase.rpc('seed_default_categories', { p_household_id: householdId });
+	const { error } = await supabase.rpc('seed_default_categories', {
+		p_household_id: householdId
+	});
 	if (error) throw new Error(`seed_default_categories: ${error.message}`);
 }
 
@@ -70,6 +76,9 @@ export async function seedDefaultFinancialProfiles(
 	supabase: SupabaseClient<Database>,
 	householdId: string
 ): Promise<void> {
-	const { error } = await supabase.rpc('seed_default_financial_profiles', { p_household_id: householdId });
-	if (error) throw new Error(`seed_default_financial_profiles: ${error.message}`);
+	const { error } = await supabase.rpc('seed_default_financial_profiles', {
+		p_household_id: householdId
+	});
+	if (error)
+		throw new Error(`seed_default_financial_profiles: ${error.message}`);
 }

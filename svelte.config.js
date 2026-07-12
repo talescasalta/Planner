@@ -6,7 +6,9 @@ const adapter =
 		: {
 				name: 'local-validation-adapter',
 				adapt(builder) {
-					builder.log.minor('Skipping Vercel output locally. Set FORCE_VERCEL_ADAPTER=1 to test it.');
+					builder.log.minor(
+						'Skipping Vercel output locally. Set FORCE_VERCEL_ADAPTER=1 to test it.'
+					);
 				}
 			};
 
@@ -14,7 +16,8 @@ const adapter =
 const config = {
 	compilerOptions: {
 		// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
-		runes: ({ filename }) => filename.split(/[/\\]/).includes('node_modules') ? undefined : true
+		runes: ({ filename }) =>
+			filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 	},
 	kit: {
 		adapter,
@@ -33,7 +36,11 @@ const config = {
 				// Chrome enforces form-action on redirects that follow a form
 				// submission; the login action 303-redirects to Supabase, which
 				// then forwards to Google for OAuth.
-				'form-action': ['self', 'https://*.supabase.co', 'https://accounts.google.com']
+				'form-action': [
+					'self',
+					'https://*.supabase.co',
+					'https://accounts.google.com'
+				]
 			}
 		}
 	}

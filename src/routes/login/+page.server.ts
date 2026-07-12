@@ -25,12 +25,18 @@ export const actions: Actions = {
 				redirect(303, data.url);
 			}
 
-			return { success: false, message: 'Não foi possível iniciar o login com Google.' };
+			return {
+				success: false,
+				message: 'Não foi possível iniciar o login com Google.'
+			};
 		}
 
 		if (action === 'signup') {
 			if (!password || password.length < 8) {
-				return { success: false, message: 'A senha precisa ter pelo menos 8 caracteres.' };
+				return {
+					success: false,
+					message: 'A senha precisa ter pelo menos 8 caracteres.'
+				};
 			}
 
 			const { error } = await supabase.auth.signUp({
@@ -45,10 +51,16 @@ export const actions: Actions = {
 				return { success: false, message: error.message };
 			}
 
-			return { success: true, message: 'Verifique seu email para confirmar o cadastro.' };
+			return {
+				success: true,
+				message: 'Verifique seu email para confirmar o cadastro.'
+			};
 		}
 
-		const { error } = await supabase.auth.signInWithPassword({ email, password });
+		const { error } = await supabase.auth.signInWithPassword({
+			email,
+			password
+		});
 
 		if (error) {
 			return { success: false, message: error.message };

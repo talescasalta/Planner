@@ -1,25 +1,32 @@
 import { createServerClient } from '@supabase/ssr';
-import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
+import {
+	PUBLIC_SUPABASE_URL,
+	PUBLIC_SUPABASE_ANON_KEY
+} from '$env/static/public';
 import type { Handle } from '@sveltejs/kit';
 import type { Database } from '$lib/types/database';
 
 export const handle: Handle = async ({ event, resolve }) => {
-	event.locals.supabase = createServerClient<Database>(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
-		cookies: {
-			getAll: () => event.cookies.getAll(),
-			setAll: (cookiesToSet) => {
-				cookiesToSet.forEach(({ name, value, options }) => {
-					try {
-						event.cookies.set(name, value, { ...options, path: '/' });
-					} catch {
-						// Supabase auth subscribers may fire after the response is sent
-						// (e.g. token refresh on a stale request). Ignoring is safe — the
-						// next request will refresh cookies normally.
-					}
-				});
+	event.locals.supabase = createServerClient<Database>(
+		PUBLIC_SUPABASE_URL,
+		PUBLIC_SUPABASE_ANON_KEY,
+		{
+			cookies: {
+				getAll: () => event.cookies.getAll(),
+				setAll: (cookiesToSet) => {
+					cookiesToSet.forEach(({ name, value, options }) => {
+						try {
+							event.cookies.set(name, value, { ...options, path: '/' });
+						} catch {
+							// Supabase auth subscribers may fire after the response is sent
+							// (e.g. token refresh on a stale request). Ignoring is safe — the
+							// next request will refresh cookies normally.
+						}
+					});
+				}
 			}
 		}
-	});
+	);
 
 	event.locals.safeGetSession = async () => {
 		// getUser authenticates the JWT against the Supabase Auth server, which
@@ -42,7 +49,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 		// We don't need the full Session object anywhere downstream; callers only
 		// branch on truthy/falsy. Hand back a minimal stub that satisfies the type.
-		const session = { user } as unknown as import('@supabase/supabase-js').Session;
+		const session = {
+			user
+		} as unknown as import('@supabase/supabase-js').Session;
 		return { session, user, profile };
 	};
 
@@ -55,8 +64,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('X-Frame-Options', 'DENY');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-	response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+	response.headers.set(
+		'Permissions-Policy',
+		'camera=(), microphone=(), geolocation=()'
+	);
+	response.headers.set(
+		'Strict-Transport-Security',
+		'max-age=31536000; includeSubDomains'
+	);
 	response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
 
 	return response;

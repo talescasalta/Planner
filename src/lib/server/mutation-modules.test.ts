@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { calculateModuleScore, evaluateModules } from '../../../scripts/check-mutation-modules.mjs';
+import {
+	calculateModuleScore,
+	evaluateModules
+} from '../../../scripts/check-mutation-modules.mjs';
 
 const filesReport = {
-	'a.ts': { mutants: [{ status: 'Killed' }, { status: 'Survived' }, { status: 'NoCoverage' }] },
+	'a.ts': {
+		mutants: [
+			{ status: 'Killed' },
+			{ status: 'Survived' },
+			{ status: 'NoCoverage' }
+		]
+	},
 	'b.ts': { mutants: [{ status: 'Timeout' }, { status: 'Ignored' }] }
 };
 
@@ -16,12 +25,15 @@ describe('mutation module gate', () => {
 	});
 
 	it('evaluates independent module thresholds from the same report', () => {
-		const results = evaluateModules({ files: filesReport }, {
-			modules: [
-				{ name: 'a', minimum: 30, files: ['a.ts'] },
-				{ name: 'b', minimum: 90, files: ['b.ts'] }
-			]
-		});
+		const results = evaluateModules(
+			{ files: filesReport },
+			{
+				modules: [
+					{ name: 'a', minimum: 30, files: ['a.ts'] },
+					{ name: 'b', minimum: 90, files: ['b.ts'] }
+				]
+			}
+		);
 
 		expect(results[0]).toMatchObject({ name: 'a' });
 		expect(results[0].score).toBeCloseTo(100 / 3);

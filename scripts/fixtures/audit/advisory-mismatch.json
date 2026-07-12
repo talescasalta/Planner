@@ -1,0 +1,41 @@
+{
+	"exceptions": {
+		"version": 1,
+		"exceptions": [
+			{
+				"advisory": "GHSA-authorized-0000",
+				"packages": ["same-package"],
+				"justification": "Fixture exception",
+				"impact": "Fixture impact",
+				"mitigation": "Fixture mitigation",
+				"expires": "2026-12-31"
+			}
+		]
+	},
+	"differentAdvisory": {
+		"auditReportVersion": 2,
+		"vulnerabilities": {
+			"same-package": {
+				"name": "same-package",
+				"severity": "high",
+				"via": [
+					{
+						"source": 8888888,
+						"url": "https://github.com/advisories/GHSA-different-0000",
+						"title": "Fixture different advisory"
+					}
+				]
+			}
+		}
+	},
+	"missingAdvisory": {
+		"auditReportVersion": 2,
+		"vulnerabilities": {
+			"same-package": {
+				"name": "same-package",
+				"severity": "high",
+				"via": ["transitive-package"]
+			}
+		}
+	}
+}

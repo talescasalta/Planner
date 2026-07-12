@@ -3,10 +3,16 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
 import { getUserHouseholdId, attachPayerProfiles } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
-import { getReadableTransactionIds, validateTransactionRelations } from '$lib/server/access';
+import {
+	getReadableTransactionIds,
+	validateTransactionRelations
+} from '$lib/server/access';
 import { learnFromTransactionAdjustment } from '$lib/server/learning';
 import { filterCategoriesForUser } from '$lib/server/gabarito';
-import { loadCategoriesForUser, loadUserCategoryExclusions } from '$lib/server/categories';
+import {
+	loadCategoriesForUser,
+	loadUserCategoryExclusions
+} from '$lib/server/categories';
 import { fail, redirect } from '@sveltejs/kit';
 
 const PAGE_SIZE = 100;
@@ -15,7 +21,13 @@ const ALL_FILTERS = 'all';
 // Sentinel used by the bulk-apply bar to leave a field untouched.
 const KEEP = '__keep__';
 const UNKNOWN_SOURCE = 'unknown';
-const VALID_SOURCE_TYPES = new Set(['credit_card', 'bank_account', 'vale_alimentacao', 'vale_refeicao', UNKNOWN_SOURCE]);
+const VALID_SOURCE_TYPES = new Set([
+	'credit_card',
+	'bank_account',
+	'vale_alimentacao',
+	'vale_refeicao',
+	UNKNOWN_SOURCE
+]);
 const VALID_REVIEW_STATUSES = new Set(['needs_review', 'confirmed', 'ignored']);
 
 type ClassificationSuggestionLike = {
@@ -32,7 +44,9 @@ type TransactionWithDisplay = {
 };
 
 function cleanName(value: FormDataEntryValue | null): string {
-	return String(value ?? '').trim().replace(/\s+/g, ' ');
+	return String(value ?? '')
+		.trim()
+		.replace(/\s+/g, ' ');
 }
 
 function emptyPage() {
@@ -42,7 +56,12 @@ function emptyPage() {
 		profiles: [],
 		monthOptions: [],
 		selectedMonth: '',
-		filters: { sourceType: ALL_FILTERS, categoryId: '', subcategoryId: '', status: ALL_FILTERS },
+		filters: {
+			sourceType: ALL_FILTERS,
+			categoryId: '',
+			subcategoryId: '',
+			status: ALL_FILTERS
+		},
 		page: 0,
 		pageSize: PAGE_SIZE,
 		hasMore: false,
@@ -74,46 +93,70 @@ function readFilters(url: URL) {
 }
 
 function appendFilters(params: URLSearchParams, formData: FormData) {
-	const sourceType = cleanFilter(formData.get('source_type_filter')?.toString());
-	const categoryId = cleanFilter(formData.get('category_id_filter')?.toString());
-	const subcategoryId = cleanFilter(formData.get('subcategory_id_filter')?.toString());
+	const sourceType = cleanFilter(
+		formData.get('source_type_filter')?.toString()
+	);
+	const categoryId = cleanFilter(
+		formData.get('category_id_filter')?.toString()
+	);
+	const subcategoryId = cleanFilter(
+		formData.get('subcategory_id_filter')?.toString()
+	);
 	const status = cleanFilter(formData.get('status_filter')?.toString());
-	if (sourceType && sourceType !== ALL_FILTERS) params.set('source_type', sourceType);
+	if (sourceType && sourceType !== ALL_FILTERS)
+		params.set('source_type', sourceType);
 	if (categoryId) params.set('category_id', categoryId);
 	if (subcategoryId) params.set('subcategory_id', subcategoryId);
 	if (status && status !== ALL_FILTERS) params.set('status', status);
 }
 
 function readSingleClassificationForm(formData: FormData) {
-	const categoryId = cleanFilter(formData.get('category_id')?.toString()) || null;
+	const categoryId =
+		cleanFilter(formData.get('category_id')?.toString()) || null;
 	return {
 		transactionId: cleanFilter(formData.get('transaction_id')?.toString()),
 		categoryId,
-		subcategoryId: categoryId ? cleanFilter(formData.get('subcategory_id')?.toString()) || null : null,
-		ownerProfileId: cleanFilter(formData.get('owner_profile_id')?.toString()) || null,
+		subcategoryId: categoryId
+			? cleanFilter(formData.get('subcategory_id')?.toString()) || null
+			: null,
+		ownerProfileId:
+			cleanFilter(formData.get('owner_profile_id')?.toString()) || null,
 		month: cleanFilter(formData.get('month')?.toString()),
 		page: cleanFilter(formData.get('page')?.toString())
 	};
 }
 
-function classificationDisplaySource(hasSavedClassification: boolean, hasSuggestion: boolean) {
+function classificationDisplaySource(
+	hasSavedClassification: boolean,
+	hasSuggestion: boolean
+) {
 	if (hasSavedClassification) return 'saved';
 	return hasSuggestion ? 'suggestion' : 'empty';
 }
 
-function withClassificationDisplay<T extends TransactionWithDisplay>(transaction: T) {
-	const suggestedCategory = suggestionText(transaction.classification_suggestion?.category);
-	const suggestedSubcategory = suggestionText(transaction.classification_suggestion?.subcategory);
+function withClassificationDisplay<T extends TransactionWithDisplay>(
+	transaction: T
+) {
+	const suggestedCategory = suggestionText(
+		transaction.classification_suggestion?.category
+	);
+	const suggestedSubcategory = suggestionText(
+		transaction.classification_suggestion?.subcategory
+	);
 	const categoryName = transaction.category?.name ?? suggestedCategory;
 	const subcategoryName = transaction.subcategory?.name ?? suggestedSubcategory;
-	const hasSavedClassification = !!transaction.category_id || !!transaction.subcategory_id;
+	const hasSavedClassification =
+		!!transaction.category_id || !!transaction.subcategory_id;
 	const hasSuggestion = !!suggestedCategory || !!suggestedSubcategory;
 
 	return {
 		...transaction,
 		category_display_name: categoryName ?? null,
 		subcategory_display_name: subcategoryName ?? null,
-		classification_display_source: classificationDisplaySource(hasSavedClassification, hasSuggestion)
+		classification_display_source: classificationDisplaySource(
+			hasSavedClassification,
+			hasSuggestion
+		)
 	};
 }
 
@@ -146,16 +189,25 @@ type BulkClassificationSelection = {
 	ownerProfileId: string | null | undefined;
 };
 
-function bulkCategoryFields(formData: FormData, rawCategory: string, applyCategory: boolean) {
-	if (!applyCategory) return { categoryId: undefined, subcategoryId: undefined };
+function bulkCategoryFields(
+	formData: FormData,
+	rawCategory: string,
+	applyCategory: boolean
+) {
+	if (!applyCategory)
+		return { categoryId: undefined, subcategoryId: undefined };
 	const categoryId = rawCategory.trim() || null;
 	return {
 		categoryId,
-		subcategoryId: categoryId ? String(formData.get('subcategory_id') ?? '').trim() || null : null
+		subcategoryId: categoryId
+			? String(formData.get('subcategory_id') ?? '').trim() || null
+			: null
 	};
 }
 
-function readBulkClassificationSelection(formData: FormData): BulkClassificationSelection | { error: string } {
+function readBulkClassificationSelection(
+	formData: FormData
+): BulkClassificationSelection | { error: string } {
 	const rawCategory = String(formData.get('category_id') ?? KEEP);
 	const rawOwner = String(formData.get('owner_profile_id') ?? KEEP);
 	const applyCategory = rawCategory !== KEEP;
@@ -164,7 +216,11 @@ function readBulkClassificationSelection(formData: FormData): BulkClassification
 		return { error: 'Escolha uma categoria ou atribuição para aplicar' };
 	}
 
-	const { categoryId, subcategoryId } = bulkCategoryFields(formData, rawCategory, applyCategory);
+	const { categoryId, subcategoryId } = bulkCategoryFields(
+		formData,
+		rawCategory,
+		applyCategory
+	);
 	return {
 		applyCategory,
 		applyOwner,
@@ -179,13 +235,22 @@ function nextBulkClassification(
 	selection: BulkClassificationSelection
 ): ExistingClassification {
 	return {
-		category_id: selection.applyCategory ? selection.categoryId ?? null : existing.category_id,
-		subcategory_id: selection.applyCategory ? selection.subcategoryId ?? null : existing.subcategory_id,
-		owner_profile_id: selection.applyOwner ? selection.ownerProfileId ?? null : existing.owner_profile_id
+		category_id: selection.applyCategory
+			? (selection.categoryId ?? null)
+			: existing.category_id,
+		subcategory_id: selection.applyCategory
+			? (selection.subcategoryId ?? null)
+			: existing.subcategory_id,
+		owner_profile_id: selection.applyOwner
+			? (selection.ownerProfileId ?? null)
+			: existing.owner_profile_id
 	};
 }
 
-function hasClassificationChange(current: ExistingClassification, next: ExistingClassification): boolean {
+function hasClassificationChange(
+	current: ExistingClassification,
+	next: ExistingClassification
+): boolean {
 	return (
 		current.category_id !== next.category_id ||
 		current.subcategory_id !== next.subcategory_id ||
@@ -193,27 +258,50 @@ function hasClassificationChange(current: ExistingClassification, next: Existing
 	);
 }
 
-function bulkClassificationPatch(selection: BulkClassificationSelection, now: string): Record<string, unknown> {
-	const patch: Record<string, unknown> = { review_status: 'confirmed', updated_at: now };
+function bulkClassificationPatch(
+	selection: BulkClassificationSelection,
+	now: string
+): Record<string, unknown> {
+	const patch: Record<string, unknown> = {
+		review_status: 'confirmed',
+		updated_at: now
+	};
 	if (selection.applyCategory) {
 		patch.category_id = selection.categoryId ?? null;
 		patch.subcategory_id = selection.subcategoryId ?? null;
 	}
-	if (selection.applyOwner) patch.owner_profile_id = selection.ownerProfileId ?? null;
+	if (selection.applyOwner)
+		patch.owner_profile_id = selection.ownerProfileId ?? null;
 	return patch;
 }
 
-function applyTransactionQueryFilters(query: any, selectedMonth: string, filters: ReturnType<typeof readFilters>) {
-	if (selectedMonth && selectedMonth !== ALL_MONTHS) query = query.eq('reference_month', selectedMonth);
-	if (filters.sourceType === UNKNOWN_SOURCE) query = query.is('source_type', null);
-	else if (filters.sourceType !== ALL_FILTERS) query = query.eq('source_type', filters.sourceType);
+// Supabase's inferred filter-builder type changes with each select shape; keep
+// this small adapter local until the generated Database type is available.
+function applyTransactionQueryFilters(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	query: any,
+	selectedMonth: string,
+	filters: ReturnType<typeof readFilters>
+) {
+	if (selectedMonth && selectedMonth !== ALL_MONTHS)
+		query = query.eq('reference_month', selectedMonth);
+	if (filters.sourceType === UNKNOWN_SOURCE)
+		query = query.is('source_type', null);
+	else if (filters.sourceType !== ALL_FILTERS)
+		query = query.eq('source_type', filters.sourceType);
 	if (filters.categoryId) query = query.eq('category_id', filters.categoryId);
-	if (filters.subcategoryId) query = query.eq('subcategory_id', filters.subcategoryId);
-	if (filters.status !== ALL_FILTERS) query = query.eq('review_status', filters.status);
+	if (filters.subcategoryId)
+		query = query.eq('subcategory_id', filters.subcategoryId);
+	if (filters.status !== ALL_FILTERS)
+		query = query.eq('review_status', filters.status);
 	return query;
 }
 
-function redirectToTransactionList(formData: FormData, month: string, page: string): never {
+function redirectToTransactionList(
+	formData: FormData,
+	month: string,
+	page: string
+): never {
 	const params = new URLSearchParams();
 	if (month) params.set('month', month);
 	if (page && page !== '0') params.set('page', page);
@@ -223,13 +311,26 @@ function redirectToTransactionList(formData: FormData, month: string, page: stri
 }
 
 function readClassificationRows(formData: FormData) {
-	const transactionIds = formData.getAll('transaction_id').map((value) => String(value).trim());
-	const categoryIds = formData.getAll('category_id').map((value) => String(value).trim() || null);
-	const subcategoryIds = formData.getAll('subcategory_id').map((value) => String(value).trim() || null);
-	const ownerProfileIds = formData.getAll('owner_profile_id').map((value) => String(value).trim() || null);
-	const complete = transactionIds.length > 0 && [categoryIds, subcategoryIds, ownerProfileIds]
-		.every((values) => values.length === transactionIds.length);
-	return complete ? { transactionIds, categoryIds, subcategoryIds, ownerProfileIds } : null;
+	const transactionIds = formData
+		.getAll('transaction_id')
+		.map((value) => String(value).trim());
+	const categoryIds = formData
+		.getAll('category_id')
+		.map((value) => String(value).trim() || null);
+	const subcategoryIds = formData
+		.getAll('subcategory_id')
+		.map((value) => String(value).trim() || null);
+	const ownerProfileIds = formData
+		.getAll('owner_profile_id')
+		.map((value) => String(value).trim() || null);
+	const complete =
+		transactionIds.length > 0 &&
+		[categoryIds, subcategoryIds, ownerProfileIds].every(
+			(values) => values.length === transactionIds.length
+		);
+	return complete
+		? { transactionIds, categoryIds, subcategoryIds, ownerProfileIds }
+		: null;
 }
 
 function readNewSubcategoryForm(formData: FormData) {
@@ -244,17 +345,29 @@ function readNewSubcategoryForm(formData: FormData) {
 function bulkRelationPatch(selection: BulkClassificationSelection) {
 	return {
 		category_id: selection.applyCategory ? selection.categoryId : undefined,
-		subcategory_id: selection.applyCategory ? selection.subcategoryId : undefined,
-		owner_profile_id: selection.applyOwner ? selection.ownerProfileId : undefined
+		subcategory_id: selection.applyCategory
+			? selection.subcategoryId
+			: undefined,
+		owner_profile_id: selection.applyOwner
+			? selection.ownerProfileId
+			: undefined
 	};
 }
 
-function bulkLearningOwner(selection: BulkClassificationSelection, existing: ExistingClassification) {
-	return selection.applyOwner ? (selection.ownerProfileId ?? null) : existing.owner_profile_id;
+function bulkLearningOwner(
+	selection: BulkClassificationSelection,
+	existing: ExistingClassification
+) {
+	return selection.applyOwner
+		? (selection.ownerProfileId ?? null)
+		: existing.owner_profile_id;
 }
 
 function paginationFromUrl(url: URL) {
-	const page = Math.max(0, Number.parseInt(url.searchParams.get('page') ?? '0', 10) || 0);
+	const page = Math.max(
+		0,
+		Number.parseInt(url.searchParams.get('page') ?? '0', 10) || 0
+	);
 	return { page, from: page * PAGE_SIZE, to: page * PAGE_SIZE + PAGE_SIZE };
 }
 
@@ -264,7 +377,14 @@ function selectedMonthFor(requestedMonth: string, monthOptions: string[]) {
 }
 
 function selectedTransactionIds(formData: FormData) {
-	return Array.from(new Set(formData.getAll('transaction_id').map((value) => String(value).trim()).filter(Boolean)));
+	return Array.from(
+		new Set(
+			formData
+				.getAll('transaction_id')
+				.map((value) => String(value).trim())
+				.filter(Boolean)
+		)
+	);
 }
 
 async function learnBulkAdjustment(
@@ -276,7 +396,10 @@ async function learnBulkAdjustment(
 ) {
 	if (!selection.applyCategory || !selection.categoryId) return;
 	await learnFromTransactionAdjustment(supabaseAdmin, {
-		householdId, userId, transactionId, categoryId: selection.categoryId,
+		householdId,
+		userId,
+		transactionId,
+		categoryId: selection.categoryId,
 		subcategoryId: selection.subcategoryId ?? null,
 		ownerProfileId: bulkLearningOwner(selection, existing)
 	});
@@ -289,17 +412,25 @@ async function resolveSubcategory(
 	parentId: string,
 	name: string
 ) {
-	const existing = categories.find((category) =>
-		category.parent_id === parentId && category.name.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR')
+	const existing = categories.find(
+		(category) =>
+			category.parent_id === parentId &&
+			category.name.toLocaleLowerCase('pt-BR') ===
+				name.toLocaleLowerCase('pt-BR')
 	);
-	if (existing) return { id: existing.id, message: 'Subcategoria já existia', error: null };
-	const { data, error } = await supabaseAdmin.from('categories').insert({
-		household_id: householdId,
-		name,
-		parent_id: parentId,
-		created_by_user_id: userId,
-		is_default: false
-	}).select('id').single();
+	if (existing)
+		return { id: existing.id, message: 'Subcategoria já existia', error: null };
+	const { data, error } = await supabaseAdmin
+		.from('categories')
+		.insert({
+			household_id: householdId,
+			name,
+			parent_id: parentId,
+			created_by_user_id: userId,
+			is_default: false
+		})
+		.select('id')
+		.single();
 	return {
 		id: data?.id ?? null,
 		message: 'Subcategoria criada',
@@ -307,7 +438,10 @@ async function resolveSubcategory(
 	};
 }
 
-export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSession } }) => {
+export const load: PageServerLoad = async ({
+	url,
+	locals: { supabase, safeGetSession }
+}) => {
 	const { user } = await safeGetSession();
 	if (!user) {
 		return emptyPage();
@@ -321,7 +455,10 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 	const { page, from, to } = paginationFromUrl(url);
 	const requestedMonth = url.searchParams.get('month') ?? '';
 	const filters = readFilters(url);
-	const readableTransactionIds = await getReadableTransactionIds(supabase, user.id);
+	const readableTransactionIds = await getReadableTransactionIds(
+		supabase,
+		user.id
+	);
 	if (readableTransactionIds.length === 0) {
 		return { ...emptyPage(), page, filters };
 	}
@@ -335,7 +472,11 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 		.order('date', { ascending: false });
 
 	const monthOptions = Array.from(
-		new Set((monthRows ?? []).map((row) => row.reference_month ?? monthFromDate(row.date)).filter(Boolean))
+		new Set(
+			(monthRows ?? [])
+				.map((row) => row.reference_month ?? monthFromDate(row.date))
+				.filter(Boolean)
+		)
 	).sort((a, b) => b.localeCompare(a));
 	const selectedMonth = selectedMonthFor(requestedMonth, monthOptions);
 
@@ -349,15 +490,17 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 	] = await Promise.all([
 		(() => {
 			let query = supabaseAdmin
-			.from('transactions')
-			.select(`
+				.from('transactions')
+				.select(
+					`
 				*,
 				category:categories!transactions_category_id_fkey ( id, name ),
 				subcategory:categories!transactions_subcategory_id_fkey ( id, name ),
 				owner_profile:financial_profiles ( id, name, type )
-			`)
-			.eq('household_id', householdId)
-			.in('id', readableTransactionIds)
+			`
+				)
+				.eq('household_id', householdId)
+				.in('id', readableTransactionIds);
 			// Tie-breakers keep the order deterministic across reloads: Postgres
 			// gives no stable order among rows with the same date, so without
 			// them same-day rows shuffle every time the list refetches (e.g.
@@ -375,13 +518,16 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 				.select('amount')
 				.eq('household_id', householdId)
 				.in('id', readableTransactionIds);
-			if (filters.status === ALL_FILTERS) query = query.neq('review_status', 'ignored');
+			if (filters.status === ALL_FILTERS)
+				query = query.neq('review_status', 'ignored');
 			query = applyTransactionQueryFilters(query, selectedMonth, filters);
 			return query;
 		})(),
 		supabaseAdmin
 			.from('categories')
-			.select('id, name, parent_id, created_by_user_id, is_default, created_at, household_id')
+			.select(
+				'id, name, parent_id, created_by_user_id, is_default, created_at, household_id'
+			)
 			.eq('household_id', householdId)
 			.order('name'),
 		supabaseAdmin
@@ -390,7 +536,11 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 			.eq('household_id', householdId)
 			.order('type', { ascending: false })
 			.order('name'),
-		supabaseAdmin.from('households').select('id, name').eq('id', householdId).single(),
+		supabaseAdmin
+			.from('households')
+			.select('id, name')
+			.eq('id', householdId)
+			.single(),
 		loadUserCategoryExclusions(supabaseAdmin, householdId, user.id)
 	]);
 
@@ -400,25 +550,40 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 	}
 
 	const all = transactions ?? [];
-	const enriched = (await attachPayerProfiles(all)).map(withClassificationDisplay);
+	const enriched = (await attachPayerProfiles(all)).map(
+		withClassificationDisplay
+	);
 	const selectedCategoryIds = new Set(
-		enriched.flatMap((tx) => [tx.category_id, tx.subcategory_id]).filter((id): id is string => !!id)
+		enriched
+			.flatMap((tx) => [tx.category_id, tx.subcategory_id])
+			.filter((id): id is string => !!id)
 	);
 	const hasMore = enriched.length > PAGE_SIZE;
 	const assignmentProfiles = (profiles ?? [])
 		.filter((p) => p.type === 'shared' || !!p.user_id)
-		.map((p) => (p.type === 'shared' ? { ...p, name: household?.name ?? p.name } : p));
+		.map((p) =>
+			p.type === 'shared' ? { ...p, name: household?.name ?? p.name } : p
+		);
 	const amounts = summaryRows ?? [];
 	const summary = {
 		count: amounts.length,
-		expenses: amounts.filter((row) => Number(row.amount) < 0).reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0),
-		credits: amounts.filter((row) => Number(row.amount) > 0).reduce((sum, row) => sum + Number(row.amount), 0),
+		expenses: amounts
+			.filter((row) => Number(row.amount) < 0)
+			.reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0),
+		credits: amounts
+			.filter((row) => Number(row.amount) > 0)
+			.reduce((sum, row) => sum + Number(row.amount), 0),
 		balance: amounts.reduce((sum, row) => sum + Number(row.amount), 0)
 	};
 
 	return {
 		transactions: hasMore ? enriched.slice(0, PAGE_SIZE) : enriched,
-		categories: filterCategoriesForUser(categories ?? [], user.id, excludedCategoryIds, selectedCategoryIds),
+		categories: filterCategoriesForUser(
+			categories ?? [],
+			user.id,
+			excludedCategoryIds,
+			selectedCategoryIds
+		),
 		profiles: assignmentProfiles,
 		monthOptions,
 		selectedMonth,
@@ -431,37 +596,54 @@ export const load: PageServerLoad = async ({ url, locals: { supabase, safeGetSes
 };
 
 export const actions: Actions = {
-	update_single_classification: async ({ request, locals: { supabase, safeGetSession } }) => {
+	update_single_classification: async ({
+		request,
+		locals: { supabase, safeGetSession }
+	}) => {
 		const { user } = await safeGetSession();
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const { transactionId, categoryId, subcategoryId, ownerProfileId, month, page } =
-			readSingleClassificationForm(formData);
+		const {
+			transactionId,
+			categoryId,
+			subcategoryId,
+			ownerProfileId,
+			month,
+			page
+		} = readSingleClassificationForm(formData);
 
 		if (!transactionId) {
 			return fail(400, { success: false, message: 'Transação inválida' });
 		}
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
-		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+		if (!householdId)
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
 
-		const [editableSet, { data: existing, error: loadError }] = await Promise.all([
-			getEditableTransactionIds(supabase, user.id, [transactionId]),
-			supabaseAdmin
-				.from('transactions')
-				.select('id, category_id, subcategory_id, owner_profile_id')
-				.eq('household_id', householdId)
-				.eq('id', transactionId)
-				.single()
-		]);
+		const [editableSet, { data: existing, error: loadError }] =
+			await Promise.all([
+				getEditableTransactionIds(supabase, user.id, [transactionId]),
+				supabaseAdmin
+					.from('transactions')
+					.select('id, category_id, subcategory_id, owner_profile_id')
+					.eq('household_id', householdId)
+					.eq('id', transactionId)
+					.single()
+			]);
 
 		if (loadError || !existing) {
 			return fail(404, { success: false, message: 'Transação não encontrada' });
 		}
 
 		if (!editableSet.has(transactionId)) {
-			return fail(403, { success: false, message: 'Sem permissão para editar essa transação' });
+			return fail(403, {
+				success: false,
+				message: 'Sem permissão para editar essa transação'
+			});
 		}
 
 		const patch = {
@@ -472,7 +654,12 @@ export const actions: Actions = {
 			updated_at: new Date().toISOString()
 		};
 
-		const relationError = await validateTransactionRelations(supabase, householdId, patch, user.id);
+		const relationError = await validateTransactionRelations(
+			supabase,
+			householdId,
+			patch,
+			user.id
+		);
 		if (relationError) {
 			return fail(400, { success: false, message: relationError });
 		}
@@ -510,14 +697,24 @@ export const actions: Actions = {
 
 		const formData = await request.formData();
 		const transactionId = String(formData.get('transaction_id') ?? '').trim();
-		if (!transactionId) return fail(400, { success: false, message: 'Transação inválida' });
+		if (!transactionId)
+			return fail(400, { success: false, message: 'Transação inválida' });
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
-		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+		if (!householdId)
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
 
-		const editableSet = await getEditableTransactionIds(supabase, user.id, [transactionId]);
+		const editableSet = await getEditableTransactionIds(supabase, user.id, [
+			transactionId
+		]);
 		if (!editableSet.has(transactionId)) {
-			return fail(403, { success: false, message: 'Sem permissão para editar essa transação' });
+			return fail(403, {
+				success: false,
+				message: 'Sem permissão para editar essa transação'
+			});
 		}
 
 		const { data: confirmed, error } = await supabaseAdmin
@@ -560,14 +757,24 @@ export const actions: Actions = {
 
 		const formData = await request.formData();
 		const transactionId = String(formData.get('transaction_id') ?? '').trim();
-		if (!transactionId) return fail(400, { success: false, message: 'Transação inválida' });
+		if (!transactionId)
+			return fail(400, { success: false, message: 'Transação inválida' });
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
-		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+		if (!householdId)
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
 
-		const editableSet = await getEditableTransactionIds(supabase, user.id, [transactionId]);
+		const editableSet = await getEditableTransactionIds(supabase, user.id, [
+			transactionId
+		]);
 		if (!editableSet.has(transactionId)) {
-			return fail(403, { success: false, message: 'Sem permissão para editar essa transação' });
+			return fail(403, {
+				success: false,
+				message: 'Sem permissão para editar essa transação'
+			});
 		}
 
 		const { error } = await supabaseAdmin
@@ -590,14 +797,24 @@ export const actions: Actions = {
 
 		const formData = await request.formData();
 		const transactionId = String(formData.get('transaction_id') ?? '').trim();
-		if (!transactionId) return fail(400, { success: false, message: 'Transação inválida' });
+		if (!transactionId)
+			return fail(400, { success: false, message: 'Transação inválida' });
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
-		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+		if (!householdId)
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
 
-		const editableSet = await getEditableTransactionIds(supabase, user.id, [transactionId]);
+		const editableSet = await getEditableTransactionIds(supabase, user.id, [
+			transactionId
+		]);
 		if (!editableSet.has(transactionId)) {
-			return fail(403, { success: false, message: 'Sem permissão para editar essa transação' });
+			return fail(403, {
+				success: false,
+				message: 'Sem permissão para editar essa transação'
+			});
 		}
 
 		const { error } = await supabaseAdmin
@@ -613,30 +830,60 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
-	create_subcategory: async ({ request, locals: { supabase, safeGetSession } }) => {
+	create_subcategory: async ({
+		request,
+		locals: { supabase, safeGetSession }
+	}) => {
 		const { user } = await safeGetSession();
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const { transactionId, parentId, name, ownerProfileId } = readNewSubcategoryForm(formData);
+		const { transactionId, parentId, name, ownerProfileId } =
+			readNewSubcategoryForm(formData);
 		if (!transactionId || !parentId || !name) {
-			return fail(400, { success: false, message: 'Informe categoria e nome da subcategoria' });
+			return fail(400, {
+				success: false,
+				message: 'Informe categoria e nome da subcategoria'
+			});
 		}
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
-		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+		if (!householdId)
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
 
-		const editableSet = await getEditableTransactionIds(supabase, user.id, [transactionId]);
+		const editableSet = await getEditableTransactionIds(supabase, user.id, [
+			transactionId
+		]);
 		if (!editableSet.has(transactionId)) {
-			return fail(403, { success: false, message: 'Sem permissão para editar essa transação' });
+			return fail(403, {
+				success: false,
+				message: 'Sem permissão para editar essa transação'
+			});
 		}
 
-		const visibleCategories = await loadCategoriesForUser(supabaseAdmin, householdId, user.id);
-		const parent = visibleCategories.find((category) => category.id === parentId && !category.parent_id);
-		if (!parent) return fail(400, { success: false, message: 'Categoria pai inválida' });
+		const visibleCategories = await loadCategoriesForUser(
+			supabaseAdmin,
+			householdId,
+			user.id
+		);
+		const parent = visibleCategories.find(
+			(category) => category.id === parentId && !category.parent_id
+		);
+		if (!parent)
+			return fail(400, { success: false, message: 'Categoria pai inválida' });
 
-		const resolved = await resolveSubcategory(visibleCategories, householdId, user.id, parentId, name);
-		if (resolved.error || !resolved.id) return fail(500, { success: false, message: resolved.error });
+		const resolved = await resolveSubcategory(
+			visibleCategories,
+			householdId,
+			user.id,
+			parentId,
+			name
+		);
+		if (resolved.error || !resolved.id)
+			return fail(500, { success: false, message: resolved.error });
 		const subcategoryId = resolved.id;
 
 		const patch = {
@@ -647,7 +894,12 @@ export const actions: Actions = {
 			updated_at: new Date().toISOString()
 		};
 
-		const relationError = await validateTransactionRelations(supabase, householdId, patch, user.id);
+		const relationError = await validateTransactionRelations(
+			supabase,
+			householdId,
+			patch,
+			user.id
+		);
 		if (relationError) {
 			return fail(400, { success: false, message: relationError });
 		}
@@ -658,7 +910,8 @@ export const actions: Actions = {
 			.eq('id', transactionId)
 			.eq('household_id', householdId);
 
-		if (updateError) return fail(500, { success: false, message: updateError.message });
+		if (updateError)
+			return fail(500, { success: false, message: updateError.message });
 
 		await learnFromTransactionAdjustment(supabaseAdmin, {
 			householdId,
@@ -678,7 +931,10 @@ export const actions: Actions = {
 		};
 	},
 
-	update_classification: async ({ request, locals: { supabase, safeGetSession } }) => {
+	update_classification: async ({
+		request,
+		locals: { supabase, safeGetSession }
+	}) => {
 		const { user } = await safeGetSession();
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
@@ -687,10 +943,15 @@ export const actions: Actions = {
 		if (!rows) {
 			return fail(400, { success: false, message: 'Dados incompletos' });
 		}
-		const { transactionIds, categoryIds, subcategoryIds, ownerProfileIds } = rows;
+		const { transactionIds, categoryIds, subcategoryIds, ownerProfileIds } =
+			rows;
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
-		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+		if (!householdId)
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
 
 		const [editableSet, { data: existingRows }] = await Promise.all([
 			getEditableTransactionIds(supabase, user.id, transactionIds),
@@ -701,14 +962,19 @@ export const actions: Actions = {
 				.in('id', transactionIds)
 		]);
 
-		const existingById = new Map((existingRows ?? []).map((row) => [row.id, row]));
+		const existingById = new Map(
+			(existingRows ?? []).map((row) => [row.id, row])
+		);
 		const now = new Date().toISOString();
 		let updated = 0;
 
 		for (let i = 0; i < transactionIds.length; i += 1) {
 			const transactionId = transactionIds[i];
 			if (!editableSet.has(transactionId)) {
-				return fail(403, { success: false, message: 'Sem permissão para uma ou mais transações' });
+				return fail(403, {
+					success: false,
+					message: 'Sem permissão para uma ou mais transações'
+				});
 			}
 
 			const categoryId = categoryIds[i];
@@ -716,12 +982,20 @@ export const actions: Actions = {
 			const ownerProfileId = ownerProfileIds[i];
 			const existing = existingById.get(transactionId);
 			if (!existing) {
-				return fail(404, { success: false, message: 'Transação não encontrada' });
+				return fail(404, {
+					success: false,
+					message: 'Transação não encontrada'
+				});
 			}
 
-			if (!hasClassificationChange(existing, {
-				category_id: categoryId, subcategory_id: subcategoryId, owner_profile_id: ownerProfileId
-			})) continue;
+			if (
+				!hasClassificationChange(existing, {
+					category_id: categoryId,
+					subcategory_id: subcategoryId,
+					owner_profile_id: ownerProfileId
+				})
+			)
+				continue;
 
 			const patch = {
 				category_id: categoryId,
@@ -731,7 +1005,12 @@ export const actions: Actions = {
 				updated_at: now
 			};
 
-			const relationError = await validateTransactionRelations(supabase, householdId, patch, user.id);
+			const relationError = await validateTransactionRelations(
+				supabase,
+				householdId,
+				patch,
+				user.id
+			);
 			if (relationError) {
 				return fail(400, { success: false, message: relationError });
 			}
@@ -758,23 +1037,34 @@ export const actions: Actions = {
 		return { success: true, message: `${updated} transações atualizadas` };
 	},
 
-	bulk_apply_classification: async ({ request, locals: { supabase, safeGetSession } }) => {
+	bulk_apply_classification: async ({
+		request,
+		locals: { supabase, safeGetSession }
+	}) => {
 		const { user } = await safeGetSession();
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
 		const transactionIds = selectedTransactionIds(formData);
 		if (transactionIds.length === 0) {
-			return fail(400, { success: false, message: 'Selecione ao menos uma transação' });
+			return fail(400, {
+				success: false,
+				message: 'Selecione ao menos uma transação'
+			});
 		}
 
 		// Each control uses the '__keep__' sentinel to mean "leave untouched", so
 		// the user can apply only a category, only an assignment, or both.
 		const selection = readBulkClassificationSelection(formData);
-		if ('error' in selection) return fail(400, { success: false, message: selection.error });
+		if ('error' in selection)
+			return fail(400, { success: false, message: selection.error });
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
-		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+		if (!householdId)
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
 
 		// The relation values are identical for every selected row, so validate once.
 		const relationError = await validateTransactionRelations(
@@ -783,7 +1073,8 @@ export const actions: Actions = {
 			bulkRelationPatch(selection),
 			user.id
 		);
-		if (relationError) return fail(400, { success: false, message: relationError });
+		if (relationError)
+			return fail(400, { success: false, message: relationError });
 
 		const [editableSet, { data: existingRows }] = await Promise.all([
 			getEditableTransactionIds(supabase, user.id, transactionIds),
@@ -795,16 +1086,25 @@ export const actions: Actions = {
 		]);
 
 		if (editableSet.size !== transactionIds.length) {
-			return fail(403, { success: false, message: 'Sem permissão para uma ou mais transações' });
+			return fail(403, {
+				success: false,
+				message: 'Sem permissão para uma ou mais transações'
+			});
 		}
 
-		const existingById = new Map((existingRows ?? []).map((row) => [row.id, row]));
+		const existingById = new Map(
+			(existingRows ?? []).map((row) => [row.id, row])
+		);
 		const now = new Date().toISOString();
 		let updated = 0;
 
 		for (const transactionId of transactionIds) {
 			const existing = existingById.get(transactionId);
-			if (!existing) return fail(404, { success: false, message: 'Transação não encontrada' });
+			if (!existing)
+				return fail(404, {
+					success: false,
+					message: 'Transação não encontrada'
+				});
 
 			const next = nextBulkClassification(existing, selection);
 			if (!hasClassificationChange(existing, next)) continue;
@@ -818,7 +1118,13 @@ export const actions: Actions = {
 				.eq('household_id', householdId);
 			if (error) return fail(500, { success: false, message: error.message });
 
-			await learnBulkAdjustment(selection, existing, householdId, user.id, transactionId);
+			await learnBulkAdjustment(
+				selection,
+				existing,
+				householdId,
+				user.id,
+				transactionId
+			);
 
 			updated += 1;
 		}
@@ -826,22 +1132,48 @@ export const actions: Actions = {
 		return { success: true, message: `${updated} transações atualizadas` };
 	},
 
-	delete_selected: async ({ request, url, locals: { supabase, safeGetSession } }) => {
+	delete_selected: async ({
+		request,
+		url,
+		locals: { supabase, safeGetSession }
+	}) => {
 		const { user } = await safeGetSession();
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const transactionIds = Array.from(new Set(formData.getAll('transaction_id').map((v) => String(v).trim()).filter(Boolean)));
+		const transactionIds = Array.from(
+			new Set(
+				formData
+					.getAll('transaction_id')
+					.map((v) => String(v).trim())
+					.filter(Boolean)
+			)
+		);
 		const month = String(formData.get('month') ?? '').trim();
 		const page = String(formData.get('page') ?? '').trim();
-		if (transactionIds.length === 0) return fail(400, { success: false, message: 'Selecione ao menos uma transação' });
+		if (transactionIds.length === 0)
+			return fail(400, {
+				success: false,
+				message: 'Selecione ao menos uma transação'
+			});
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
-		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+		if (!householdId)
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
 
-		const editableSet = await getEditableTransactionIds(supabase, user.id, transactionIds);
+		const editableSet = await getEditableTransactionIds(
+			supabase,
+			user.id,
+			transactionIds
+		);
 		if (editableSet.size !== transactionIds.length) {
-			return fail(403, { success: false, message: 'Sem permissão para uma ou mais transações' });
+			return fail(403, {
+				success: false,
+				message: 'Sem permissão para uma ou mais transações'
+			});
 		}
 
 		const { error } = await supabaseAdmin
@@ -870,21 +1202,37 @@ export const actions: Actions = {
 		}
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
-		if (!householdId) return fail(400, { success: false, message: 'Usuário não pertence a um grupo' });
+		if (!householdId)
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
 
 		const { data: rows, error: loadError } = await supabaseAdmin
 			.from('transactions')
 			.select('id')
 			.eq('household_id', householdId)
 			.eq('reference_month', referenceMonth);
-		if (loadError) return fail(500, { success: false, message: loadError.message });
+		if (loadError)
+			return fail(500, { success: false, message: loadError.message });
 
 		const transactionIds = (rows ?? []).map((row) => row.id);
-		if (transactionIds.length === 0) return fail(404, { success: false, message: 'Nenhuma transação nesse mês' });
+		if (transactionIds.length === 0)
+			return fail(404, {
+				success: false,
+				message: 'Nenhuma transação nesse mês'
+			});
 
-		const editableSet = await getEditableTransactionIds(supabase, user.id, transactionIds);
+		const editableSet = await getEditableTransactionIds(
+			supabase,
+			user.id,
+			transactionIds
+		);
 		if (editableSet.size !== transactionIds.length) {
-			return fail(403, { success: false, message: 'Sem permissão para apagar todas as transações desse mês' });
+			return fail(403, {
+				success: false,
+				message: 'Sem permissão para apagar todas as transações desse mês'
+			});
 		}
 
 		const { error } = await supabaseAdmin

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { applyRules, type ClassificationRule } from './rules';
 
 function rule(
-	overrides: Partial<ClassificationRule> & Pick<ClassificationRule, 'pattern' | 'pattern_type' | 'category_id'>
+	overrides: Partial<ClassificationRule> &
+		Pick<ClassificationRule, 'pattern' | 'pattern_type' | 'category_id'>
 ): ClassificationRule {
 	return {
 		id: crypto.randomUUID(),
@@ -24,8 +25,16 @@ describe('applyRules', () => {
 	it('prioritizes exact merchant over contains rules', () => {
 		const match = applyRules(
 			[
-				rule({ pattern: 'UBER', pattern_type: 'merchant_contains', category_id: 'generic' }),
-				rule({ pattern: 'UBER TRIP', pattern_type: 'exact_merchant', category_id: 'exact' })
+				rule({
+					pattern: 'UBER',
+					pattern_type: 'merchant_contains',
+					category_id: 'generic'
+				}),
+				rule({
+					pattern: 'UBER TRIP',
+					pattern_type: 'exact_merchant',
+					category_id: 'exact'
+				})
 			],
 			'UBER TRIP',
 			'UBER TRIP HELP',
@@ -38,8 +47,16 @@ describe('applyRules', () => {
 	it('prioritizes regex over contains rules', () => {
 		const match = applyRules(
 			[
-				rule({ pattern: 'MERCADO', pattern_type: 'description_contains', category_id: 'contains' }),
-				rule({ pattern: '^MERCADO .+ SA$', pattern_type: 'regex', category_id: 'regex' })
+				rule({
+					pattern: 'MERCADO',
+					pattern_type: 'description_contains',
+					category_id: 'contains'
+				}),
+				rule({
+					pattern: '^MERCADO .+ SA$',
+					pattern_type: 'regex',
+					category_id: 'regex'
+				})
 			],
 			null,
 			'MERCADO CENTRAL SA',
@@ -52,8 +69,16 @@ describe('applyRules', () => {
 	it('prioritizes exact merchant over regex rules', () => {
 		const match = applyRules(
 			[
-				rule({ pattern: '^UBER.*$', pattern_type: 'regex', category_id: 'regex' }),
-				rule({ pattern: 'UBER TRIP', pattern_type: 'exact_merchant', category_id: 'exact' })
+				rule({
+					pattern: '^UBER.*$',
+					pattern_type: 'regex',
+					category_id: 'regex'
+				}),
+				rule({
+					pattern: 'UBER TRIP',
+					pattern_type: 'exact_merchant',
+					category_id: 'exact'
+				})
 			],
 			'UBER TRIP',
 			'UBER TRIP HELP',
@@ -66,8 +91,16 @@ describe('applyRules', () => {
 	it('uses the longest contains pattern across merchant and description rules', () => {
 		const match = applyRules(
 			[
-				rule({ pattern: 'IFOOD', pattern_type: 'merchant_contains', category_id: 'short' }),
-				rule({ pattern: 'IFOOD RESTAURANTE', pattern_type: 'description_contains', category_id: 'long' })
+				rule({
+					pattern: 'IFOOD',
+					pattern_type: 'merchant_contains',
+					category_id: 'short'
+				}),
+				rule({
+					pattern: 'IFOOD RESTAURANTE',
+					pattern_type: 'description_contains',
+					category_id: 'long'
+				})
 			],
 			'IFOOD',
 			'IFOOD RESTAURANTE ABC',

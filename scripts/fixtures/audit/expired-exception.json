@@ -1,0 +1,30 @@
+{
+	"audit": {
+		"auditReportVersion": 2,
+		"vulnerabilities": {
+			"fixture-high": {
+				"name": "fixture-high",
+				"severity": "high",
+				"via": [
+					{
+						"source": 9999999,
+						"url": "https://github.com/advisories/GHSA-test-high-0000",
+						"title": "Fixture high advisory"
+					}
+				]
+			}
+		}
+	},
+	"exceptions": {
+		"version": 1,
+		"exceptions": [
+			{
+				"advisory": "GHSA-test-high-0000",
+				"justification": "Expired fixture exception",
+				"impact": "Fixture impact",
+				"mitigation": "Fixture mitigation",
+				"expires": "2026-07-01"
+			}
+		]
+	}
+}

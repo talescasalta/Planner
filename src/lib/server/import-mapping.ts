@@ -1,7 +1,13 @@
 import Papa from 'papaparse';
 import { z } from 'zod';
 import { callLlm } from '$lib/server/llm';
-import { detectMapping, parseCsvBuffer, type CsvColumnMapping, type CsvSourceType, type ParsedRow } from './csv-parser';
+import {
+	detectMapping,
+	parseCsvBuffer,
+	type CsvColumnMapping,
+	type CsvSourceType,
+	type ParsedRow
+} from './csv-parser';
 
 const MIN_LLM_MAPPING_CONFIDENCE = 0.6;
 
@@ -35,7 +41,9 @@ export async function resolveImportMapping(
 		amountColumn: 'amount',
 		currency: 'BRL'
 	};
-	const deterministicRows = parseCsvBuffer(buffer, deterministic, { sourceType: selectedSourceType });
+	const deterministicRows = parseCsvBuffer(buffer, deterministic, {
+		sourceType: selectedSourceType
+	});
 	if (deterministicRows.length > 0) {
 		return {
 			mapping: deterministic,
@@ -60,8 +68,12 @@ export async function resolveImportMapping(
 
 	// The mapping LLM only distinguishes credit card vs bank account; when the
 	// user explicitly picked a voucher (vale) source, their choice wins.
-	const isVoucher = selectedSourceType === 'vale_alimentacao' || selectedSourceType === 'vale_refeicao';
-	const sourceType = isVoucher ? selectedSourceType : (llm.sourceType ?? selectedSourceType);
+	const isVoucher =
+		selectedSourceType === 'vale_alimentacao' ||
+		selectedSourceType === 'vale_refeicao';
+	const sourceType = isVoucher
+		? selectedSourceType
+		: (llm.sourceType ?? selectedSourceType);
 	const rows = parseCsvBuffer(buffer, llm, { sourceType });
 	return {
 		mapping: llm,
@@ -76,7 +88,14 @@ export async function resolveImportMapping(
 async function inferMappingWithLlm(
 	buffer: Buffer,
 	selectedSourceType: CsvSourceType
-): Promise<(CsvColumnMapping & { sourceType?: CsvSourceType; confidence: number; notes?: string }) | null> {
+): Promise<
+	| (CsvColumnMapping & {
+			sourceType?: CsvSourceType;
+			confidence: number;
+			notes?: string;
+	  })
+	| null
+> {
 	const csvString = buffer.toString('utf-8');
 	const preview = Papa.parse<Record<string, string>>(csvString, {
 		header: true,
@@ -156,7 +175,13 @@ function mappingUsesKnownHeaders(
 	mapping: CsvColumnMapping & { identifierColumn?: string },
 	headers: string[]
 ) {
-	const required = [mapping.dateColumn, mapping.descriptionColumn, mapping.amountColumn];
-	return required.every((header) => headers.includes(header)) &&
-		(!mapping.identifierColumn || headers.includes(mapping.identifierColumn));
+	const required = [
+		mapping.dateColumn,
+		mapping.descriptionColumn,
+		mapping.amountColumn
+	];
+	return (
+		required.every((header) => headers.includes(header)) &&
+		(!mapping.identifierColumn || headers.includes(mapping.identifierColumn))
+	);
 }

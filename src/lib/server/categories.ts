@@ -35,13 +35,20 @@ export async function loadCategoriesForUser(
 	const [{ data: categories }, excludedIds] = await Promise.all([
 		supabase
 			.from('categories')
-			.select('id, household_id, name, parent_id, created_by_user_id, is_default, created_at')
+			.select(
+				'id, household_id, name, parent_id, created_by_user_id, is_default, created_at'
+			)
 			.eq('household_id', householdId)
 			.order('name'),
 		loadUserCategoryExclusions(supabase, householdId, userId)
 	]);
 
-	return filterCategoriesForUser(categories ?? [], userId, excludedIds, includeCategoryIds);
+	return filterCategoriesForUser(
+		categories ?? [],
+		userId,
+		excludedIds,
+		includeCategoryIds
+	);
 }
 
 export async function loadCategorySettingsForUser(
@@ -52,15 +59,23 @@ export async function loadCategorySettingsForUser(
 	const [{ data: categories }, excludedIds] = await Promise.all([
 		supabase
 			.from('categories')
-			.select('id, household_id, name, parent_id, created_by_user_id, is_default, created_at')
+			.select(
+				'id, household_id, name, parent_id, created_by_user_id, is_default, created_at'
+			)
 			.eq('household_id', householdId)
 			.order('name'),
 		loadUserCategoryExclusions(supabase, householdId, userId)
 	]);
 
 	const allSuggestable = filterCategoriesForUser(categories ?? [], userId);
-	const hiddenCategories = allSuggestable.filter((category) => excludedIds.has(category.id));
-	const visibleCategories = filterCategoriesForUser(categories ?? [], userId, excludedIds);
+	const hiddenCategories = allSuggestable.filter((category) =>
+		excludedIds.has(category.id)
+	);
+	const visibleCategories = filterCategoriesForUser(
+		categories ?? [],
+		userId,
+		excludedIds
+	);
 
 	return { categories: visibleCategories, hiddenCategories };
 }

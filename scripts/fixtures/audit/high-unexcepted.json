@@ -1,0 +1,16 @@
+{
+	"auditReportVersion": 2,
+	"vulnerabilities": {
+		"fixture-high": {
+			"name": "fixture-high",
+			"severity": "high",
+			"via": [
+				{
+					"source": 9999999,
+					"url": "https://github.com/advisories/GHSA-test-high-0000",
+					"title": "Fixture high advisory"
+				}
+			]
+		}
+	}
+}

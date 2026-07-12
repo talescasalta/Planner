@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { SvelteMap } from 'svelte/reactivity';
+
 	type Series = { id: string; name: string };
 	type Point = { month: string; total: number; values: Record<string, number> };
 
@@ -11,12 +13,19 @@
 	// Validated categorical palette (dataviz reference, light mode). Neutral
 	// gray is reserved for "Outras"/"Sem categoria" so it never reads as a
 	// real category; color follows the entity, assigned by series order.
-	const SLOT_COLORS = ['#2a78d6', '#1baf7a', '#eda100', '#008300', '#4a3aa7', '#e34948'];
+	const SLOT_COLORS = [
+		'#2a78d6',
+		'#1baf7a',
+		'#eda100',
+		'#008300',
+		'#4a3aa7',
+		'#e34948'
+	];
 	const NEUTRAL_COLOR = '#898781';
 	const NEUTRAL_IDS = new Set(['__others__', '__uncategorized__']);
 
 	let colorById = $derived.by(() => {
-		const map = new Map<string, string>();
+		const map = new SvelteMap<string, string>();
 		let slot = 0;
 		for (const s of series) {
 			if (NEUTRAL_IDS.has(s.id)) map.set(s.id, NEUTRAL_COLOR);
@@ -33,7 +42,10 @@
 	}
 
 	function fmtFull(value: number) {
-		return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+		return value.toLocaleString('pt-BR', {
+			style: 'currency',
+			currency: 'BRL'
+		});
 	}
 
 	function shortMonth(month: string) {
@@ -52,7 +64,9 @@
 </script>
 
 {#if points.length === 0}
-	<div class="flex h-48 items-center justify-center rounded-md border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500">
+	<div
+		class="flex h-48 items-center justify-center rounded-md border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500"
+	>
 		Sem dados suficientes.
 	</div>
 {:else}
@@ -74,15 +88,24 @@
 						></div>
 					{/each}
 				</div>
-				<p class="mt-1 truncate text-center text-[11px] capitalize text-gray-600">{shortMonth(point.month)}</p>
+				<p
+					class="mt-1 truncate text-center text-[11px] capitalize text-gray-600"
+				>
+					{shortMonth(point.month)}
+				</p>
 			</div>
 		{/each}
 	</div>
 
-	<div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-600">
+	<div
+		class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-600"
+	>
 		{#each series as s (s.id)}
 			<span class="inline-flex items-center gap-1.5">
-				<span class="h-2 w-3 rounded-sm" style={`background-color: ${colorById.get(s.id)}`}></span>
+				<span
+					class="h-2 w-3 rounded-sm"
+					style={`background-color: ${colorById.get(s.id)}`}
+				></span>
 				{s.name}
 			</span>
 		{/each}

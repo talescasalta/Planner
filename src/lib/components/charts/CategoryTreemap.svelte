@@ -1,5 +1,11 @@
 <script lang="ts">
-	import { hierarchy, treemap, treemapSquarify } from 'd3-hierarchy';
+	import {
+		hierarchy,
+		treemap,
+		treemapSquarify,
+		type HierarchyNode
+	} from 'd3-hierarchy';
+	import { SvelteMap } from 'svelte/reactivity';
 
 	type Leaf = { id: string; name: string; total: number };
 	type Group = { id: string; name: string; total: number; children: Leaf[] };
@@ -41,7 +47,12 @@
 	const PADDING_TOP = 22;
 	const PADDING_INNER = 2;
 
-	type TreeDatum = { id?: string; name: string; total?: number; children?: TreeDatum[] };
+	type TreeDatum = {
+		id?: string;
+		name: string;
+		total?: number;
+		children?: TreeDatum[];
+	};
 
 	let layout = $derived.by(() => {
 		const w = containerWidth || 800;
@@ -54,7 +65,11 @@
 				id: node.id,
 				name: node.name,
 				children: node.children.length
-					? node.children.map((c) => ({ id: c.id, name: c.name, total: c.total }))
+					? node.children.map((c) => ({
+							id: c.id,
+							name: c.name,
+							total: c.total
+						}))
 					: [{ id: `${node.id}-self`, name: node.name, total: node.total }]
 			}))
 		})
@@ -72,7 +87,7 @@
 	});
 
 	let colorByCategory = $derived.by(() => {
-		const map = new Map<string, string>();
+		const map = new SvelteMap<string, string>();
 		nodes.forEach((node, idx) => {
 			map.set(node.id, PALETTE[idx % PALETTE.length]);
 		});
@@ -94,13 +109,16 @@
 		return value.toLocaleString('pt-BR', { style: 'currency', currency });
 	}
 
-	function categoryNodeFor(node: any): any {
+	type TreeNode = HierarchyNode<TreeDatum>;
+
+	function categoryNodeFor(node: TreeNode): TreeNode {
 		let current = node;
-		while (current?.parent && current.parent.depth > 0) current = current.parent;
+		while (current?.parent && current.parent.depth > 0)
+			current = current.parent;
 		return current;
 	}
 
-	function handleEnter(event: MouseEvent, leaf: any) {
+	function handleEnter(event: MouseEvent, leaf: TreeNode) {
 		const svg = (event.currentTarget as SVGElement).ownerSVGElement;
 		if (!svg) return;
 		const rect = svg.getBoundingClientRect();
@@ -119,11 +137,11 @@
 		hovered = null;
 	}
 
-	function nodeDataValue(node: any, key: string): string {
-		return node?.data?.[key] ?? '';
+	function nodeDataValue(node: TreeNode, key: 'id' | 'name'): string {
+		return node.data[key] ?? '';
 	}
 
-	function selectionFor(leaf: any): TreemapSelection {
+	function selectionFor(leaf: TreeNode): TreemapSelection {
 		const category = categoryNodeFor(leaf);
 		return {
 			categoryId: nodeDataValue(category, 'id'),
@@ -133,17 +151,25 @@
 		};
 	}
 
-	function isSameSelection(left: TreemapSelection, right: TreemapSelection): boolean {
-		return left.categoryId === right.categoryId && left.subcategoryId === right.subcategoryId;
+	function isSameSelection(
+		left: TreemapSelection,
+		right: TreemapSelection
+	): boolean {
+		return (
+			left.categoryId === right.categoryId &&
+			left.subcategoryId === right.subcategoryId
+		);
 	}
 
-	function handleClick(leaf: any) {
+	function handleClick(leaf: TreeNode) {
 		if (!onSelect) return;
 		const selection = selectionFor(leaf);
-		onSelect(selected && isSameSelection(selected, selection) ? null : selection);
+		onSelect(
+			selected && isSameSelection(selected, selection) ? null : selection
+		);
 	}
 
-	function isSelected(leaf: any): boolean {
+	function isSelected(leaf: TreeNode): boolean {
 		if (!selected) return false;
 		const cat = categoryNodeFor(leaf);
 		return (
@@ -154,18 +180,26 @@
 </script>
 
 {#if nodes.length === 0 || totalValue === 0}
-	<div class="flex items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500" style={`height:${height}px`}>
+	<div
+		class="flex items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500"
+		style={`height:${height}px`}
+	>
 		Sem despesas para os filtros atuais.
 	</div>
 {:else}
-	<div class="relative w-full" style={`height:${height}px`} bind:clientWidth={containerWidth}>
+	<div
+		class="relative w-full"
+		style={`height:${height}px`}
+		bind:clientWidth={containerWidth}
+	>
 		{#if containerWidth > 0}
-			<svg width={containerWidth} height={height} class="block">
+			<svg width={containerWidth} {height} class="block">
 				{#each layout as node (`${node.data.id ?? node.data.name}-${node.depth}`)}
 					{#if node.depth === 0}
 						<!-- root: skip -->
 					{:else if node.depth === 1}
-						{@const color = colorByCategory.get(node.data.id ?? '') ?? '#94a3b8'}
+						{@const color =
+							colorByCategory.get(node.data.id ?? '') ?? '#94a3b8'}
 						{@const w = Math.max(0, (node.x1 ?? 0) - (node.x0 ?? 0))}
 						{@const h = Math.max(0, (node.y1 ?? 0) - (node.y0 ?? 0))}
 						<g>
@@ -198,7 +232,8 @@
 						</g>
 					{:else}
 						{@const cat = categoryNodeFor(node)}
-						{@const color = colorByCategory.get(cat?.data?.id ?? '') ?? '#6366f1'}
+						{@const color =
+							colorByCategory.get(cat?.data?.id ?? '') ?? '#6366f1'}
 						{@const w = Math.max(0, (node.x1 ?? 0) - (node.x0 ?? 0))}
 						{@const h = Math.max(0, (node.y1 ?? 0) - (node.y0 ?? 0))}
 						{@const sel = isSelected(node)}
@@ -263,10 +298,14 @@
 				class="pointer-events-none absolute z-10 max-w-xs rounded-md bg-gray-900/95 px-3 py-2 text-xs text-white shadow-lg"
 				style={`left:${Math.min(hovered.x + 12, containerWidth - 200)}px; top:${Math.max(hovered.y - 12, 0)}px`}
 			>
-				<p class="text-[10px] uppercase tracking-wide text-gray-300">{hovered.categoryName}</p>
+				<p class="text-[10px] uppercase tracking-wide text-gray-300">
+					{hovered.categoryName}
+				</p>
 				<p class="mt-0.5 font-medium">{hovered.leafName}</p>
 				<p class="mt-1 text-sm font-semibold">{fmt(hovered.value)}</p>
-				<p class="text-[11px] text-gray-300">{hovered.share.toFixed(1)}% do total</p>
+				<p class="text-[11px] text-gray-300">
+					{hovered.share.toFixed(1)}% do total
+				</p>
 			</div>
 		{/if}
 	</div>

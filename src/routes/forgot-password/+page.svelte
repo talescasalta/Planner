@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
@@ -16,7 +17,9 @@
 
 		<form method="POST" use:enhance class="space-y-4">
 			<div>
-				<label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+				<label for="email" class="block text-sm font-medium text-gray-700"
+					>Email</label
+				>
 				<input
 					id="email"
 					name="email"
@@ -36,13 +39,19 @@
 		</form>
 
 		{#if form?.message}
-			<p class={`text-sm text-center ${form.success ? 'text-green-700' : 'text-red-600'}`}>
+			<p
+				class={`text-sm text-center ${form.success ? 'text-green-700' : 'text-red-600'}`}
+			>
 				{form.message}
 			</p>
 		{/if}
 
 		<div class="text-center">
-			<a href="/login" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium">Voltar para login</a>
+			<a
+				href={resolve('/login')}
+				class="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+				>Voltar para login</a
+			>
 		</div>
 	</div>
 </div>

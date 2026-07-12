@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
@@ -20,7 +21,9 @@
 			{/if}
 
 			<div>
-				<label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+				<label for="email" class="block text-sm font-medium text-gray-700"
+					>Email</label
+				>
 				<input
 					id="email"
 					name="email"
@@ -31,7 +34,9 @@
 			</div>
 
 			<div>
-				<label for="password" class="block text-sm font-medium text-gray-700">Senha</label>
+				<label for="password" class="block text-sm font-medium text-gray-700"
+					>Senha</label
+				>
 				<input
 					id="password"
 					name="password"
@@ -90,7 +95,10 @@
 
 		{#if !isSignUp}
 			<div class="text-center">
-				<a href="/forgot-password" class="text-sm text-gray-600 hover:text-indigo-700">
+				<a
+					href={resolve('/forgot-password')}
+					class="text-sm text-gray-600 hover:text-indigo-700"
+				>
 					Esqueci minha senha
 				</a>
 			</div>

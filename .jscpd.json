@@ -1,0 +1,25 @@
+{
+	"path": ["src"],
+	"ignore": [
+		"**/*.test.ts",
+		"**/*.test.svelte",
+		"**/*.spec.ts",
+		"**/*.spec.svelte",
+		"**/test/**",
+		"**/tests/**",
+		"**/*.d.ts",
+		"**/data/**",
+		"**/.svelte-kit/**",
+		"**/build/**",
+		"**/coverage/**",
+		"**/reports/**",
+		"**/node_modules/**"
+	],
+	"format": ["typescript", "javascript", "svelte"],
+	"minLines": 5,
+	"minTokens": 50,
+	"threshold": 4,
+	"reporters": ["console", "json"],
+	"output": "./reports/jscpd",
+	"gitignore": true
+}

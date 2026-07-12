@@ -9,7 +9,10 @@ const MAX_IDS_PER_REQUEST = 200;
 const WINDOW_MS = 60_000;
 const MAX_REQUESTS_PER_WINDOW = 10;
 
-export const POST: RequestHandler = async ({ request, locals: { supabase, safeGetSession } }) => {
+export const POST: RequestHandler = async ({
+	request,
+	locals: { supabase, safeGetSession }
+}) => {
 	const { user } = await safeGetSession();
 	if (!user) {
 		error(401, 'Unauthorized');
@@ -38,6 +41,11 @@ export const POST: RequestHandler = async ({ request, locals: { supabase, safeGe
 		error(400, 'User has no group');
 	}
 
-	const results = await classifyTransactions(supabase, householdId, ids, user.id);
+	const results = await classifyTransactions(
+		supabase,
+		householdId,
+		ids,
+		user.id
+	);
 	return json({ processed: results.length, results });
 };

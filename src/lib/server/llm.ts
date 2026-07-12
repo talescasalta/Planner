@@ -9,7 +9,8 @@ const API_URL = OPENROUTER_API_KEY
 	: 'https://api.openai.com/v1/chat/completions';
 
 const DEFAULT_MODEL =
-	LLM_MODEL?.trim() || (OPENROUTER_API_KEY ? 'openai/gpt-4o-mini' : 'gpt-4o-mini');
+	LLM_MODEL?.trim() ||
+	(OPENROUTER_API_KEY ? 'openai/gpt-4o-mini' : 'gpt-4o-mini');
 
 export type LlmContentPart =
 	| { type: 'text'; text: string }
@@ -17,7 +18,10 @@ export type LlmContentPart =
 
 export interface LlmPayload {
 	model?: string;
-	messages: Array<{ role: 'system' | 'user'; content: string | LlmContentPart[] }>;
+	messages: Array<{
+		role: 'system' | 'user';
+		content: string | LlmContentPart[];
+	}>;
 	temperature?: number;
 	max_tokens?: number;
 	json_mode?: boolean;
@@ -41,7 +45,12 @@ export async function callLlm(payload: LlmPayload): Promise<LlmResponse> {
 		headers: {
 			'Content-Type': 'application/json',
 			Authorization: `Bearer ${API_KEY}`,
-			...(OPENROUTER_API_KEY ? { 'HTTP-Referer': 'https://localhost', 'X-Title': 'Expense Classifier' } : {})
+			...(OPENROUTER_API_KEY
+				? {
+						'HTTP-Referer': 'https://localhost',
+						'X-Title': 'Expense Classifier'
+					}
+				: {})
 		},
 		body: JSON.stringify({
 			model: payload.model ?? DEFAULT_MODEL,

@@ -37,15 +37,22 @@ export function loadGabarito(): GabaritoEntry[] {
 	return entries;
 }
 
-export function buildGabaritoPromptSection(transactions: Array<{ description: string }>): string {
+export function buildGabaritoPromptSection(
+	transactions: Array<{ description: string }>
+): string {
 	const gabarito = loadGabarito();
 
-	const txDescriptions = new Set(transactions.map((t) => t.description.toUpperCase().trim()));
+	const txDescriptions = new Set(
+		transactions.map((t) => t.description.toUpperCase().trim())
+	);
 
 	const relevant: GabaritoEntry[] = [];
 	for (const entry of gabarito) {
 		for (const desc of txDescriptions) {
-			if (desc.includes(entry.titulo_upper) || entry.titulo_upper.includes(desc)) {
+			if (
+				desc.includes(entry.titulo_upper) ||
+				entry.titulo_upper.includes(desc)
+			) {
 				relevant.push(entry);
 				break;
 			}
@@ -75,7 +82,8 @@ export function buildGabaritoPromptSection(transactions: Array<{ description: st
 	});
 
 	const lines = uniqueRelevant.map(
-		(e) => `- "${e.titulo}" → categoria: "${e.categoria}", subcategoria: "${e.subcategoria}"`
+		(e) =>
+			`- "${e.titulo}" → categoria: "${e.categoria}", subcategoria: "${e.subcategoria}"`
 	);
 
 	return `## Gabarito de classificação (referência de classificações passadas)
@@ -105,13 +113,23 @@ export function loadGabaritoTaxonomy(): Map<string, Set<string>> {
 }
 
 export function filterCategoriesByGabarito<
-	T extends { id: string; name: string; parent_id: string | null; created_by_user_id?: string | null }
+	T extends {
+		id: string;
+		name: string;
+		parent_id: string | null;
+		created_by_user_id?: string | null;
+	}
 >(categories: T[]): T[] {
 	return filterCategoriesForUser(categories, null);
 }
 
 export function filterCategoriesForUser<
-	T extends { id: string; name: string; parent_id: string | null; created_by_user_id?: string | null }
+	T extends {
+		id: string;
+		name: string;
+		parent_id: string | null;
+		created_by_user_id?: string | null;
+	}
 >(
 	categories: T[],
 	userId: string | null,
@@ -119,7 +137,9 @@ export function filterCategoriesForUser<
 	includeCategoryIds: Iterable<string> = []
 ): T[] {
 	const taxonomy = loadGabaritoTaxonomy();
-	const parentById = new Map(categories.filter((c) => !c.parent_id).map((c) => [c.id, c]));
+	const parentById = new Map(
+		categories.filter((c) => !c.parent_id).map((c) => [c.id, c])
+	);
 	const excluded = new Set(excludedCategoryIds);
 	const included = new Set(includeCategoryIds);
 	for (const id of Array.from(included)) {
@@ -131,13 +151,16 @@ export function filterCategoriesForUser<
 	const parents = categories.filter((category) => {
 		if (category.parent_id) return false;
 		if (excluded.has(category.id) && !included.has(category.id)) return false;
-		const isAllowed = taxonomy.has(category.name) || (!!userId && category.created_by_user_id === userId);
+		const isAllowed =
+			taxonomy.has(category.name) ||
+			(!!userId && category.created_by_user_id === userId);
 		if (isAllowed) allowedParentIds.add(category.id);
 		return isAllowed;
 	});
 
 	const children = categories.filter((category) => {
-		if (!category.parent_id || !allowedParentIds.has(category.parent_id)) return false;
+		if (!category.parent_id || !allowedParentIds.has(category.parent_id))
+			return false;
 		if (excluded.has(category.id) && !included.has(category.id)) return false;
 		if (!!userId && category.created_by_user_id === userId) return true;
 
@@ -150,11 +173,20 @@ export function filterCategoriesForUser<
 }
 
 export function buildUserTaxonomyPromptSection(
-	categories: Array<{ id: string; name: string; parent_id: string | null; created_by_user_id?: string | null }>,
+	categories: Array<{
+		id: string;
+		name: string;
+		parent_id: string | null;
+		created_by_user_id?: string | null;
+	}>,
 	userId: string
 ): string {
-	const personalParents = categories.filter((c) => !c.parent_id && c.created_by_user_id === userId);
-	const personalChildren = categories.filter((c) => c.parent_id && c.created_by_user_id === userId);
+	const personalParents = categories.filter(
+		(c) => !c.parent_id && c.created_by_user_id === userId
+	);
+	const personalChildren = categories.filter(
+		(c) => c.parent_id && c.created_by_user_id === userId
+	);
 	if (personalParents.length === 0 && personalChildren.length === 0) return '';
 
 	const childrenByParent = new Map<string, string[]>();
@@ -164,15 +196,25 @@ export function buildUserTaxonomyPromptSection(
 		childrenByParent.set(child.parent_id!, arr);
 	}
 
-	const parentById = new Map(categories.filter((c) => !c.parent_id).map((c) => [c.id, c.name]));
+	const parentById = new Map(
+		categories.filter((c) => !c.parent_id).map((c) => [c.id, c.name])
+	);
 	const lines = [
 		...personalParents.map((parent) => {
 			const subs = childrenByParent.get(parent.id) ?? [];
-			return subs.length > 0 ? `- ${parent.name}: ${subs.join(', ')}` : `- ${parent.name}`;
+			return subs.length > 0
+				? `- ${parent.name}: ${subs.join(', ')}`
+				: `- ${parent.name}`;
 		}),
 		...personalChildren
-			.filter((child) => !personalParents.some((parent) => parent.id === child.parent_id))
-			.map((child) => `- ${parentById.get(child.parent_id!) ?? 'Categoria'}: ${child.name}`)
+			.filter(
+				(child) =>
+					!personalParents.some((parent) => parent.id === child.parent_id)
+			)
+			.map(
+				(child) =>
+					`- ${parentById.get(child.parent_id!) ?? 'Categoria'}: ${child.name}`
+			)
 	];
 
 	return `## Categorias pessoais do usuário

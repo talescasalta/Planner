@@ -1,0 +1,8 @@
+.svelte-kit
+build
+coverage
+node_modules
+reports
+.stryker-tmp
+package-lock.json
+supabase/migrations

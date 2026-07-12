@@ -1,19 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import { parseInstallment, installmentGroupKey } from './csv-parser';
-import { addMonths, projectFutureInstallments, type InstallmentSourceTransaction } from './installments';
+import {
+	addMonths,
+	projectFutureInstallments,
+	type InstallmentSourceTransaction
+} from './installments';
 
 describe('parseInstallment', () => {
 	it('reads the "Parcela k/n" keyword form', () => {
-		expect(parseInstallment('LOJA X - Parcela 1/6')).toEqual({ number: 1, total: 6 });
-		expect(parseInstallment('Farmácia Parc 04/08')).toEqual({ number: 4, total: 8 });
+		expect(parseInstallment('LOJA X - Parcela 1/6')).toEqual({
+			number: 1,
+			total: 6
+		});
+		expect(parseInstallment('Farmácia Parc 04/08')).toEqual({
+			number: 4,
+			total: 8
+		});
 	});
 
 	it('reads a bare trailing k/n marker', () => {
-		expect(parseInstallment('MAGAZINE LUIZA 3/10')).toEqual({ number: 3, total: 10 });
+		expect(parseInstallment('MAGAZINE LUIZA 3/10')).toEqual({
+			number: 3,
+			total: 10
+		});
 	});
 
 	it('reads the "k de n" form', () => {
-		expect(parseInstallment('Movelaria 2 de 5')).toEqual({ number: 2, total: 5 });
+		expect(parseInstallment('Movelaria 2 de 5')).toEqual({
+			number: 2,
+			total: 5
+		});
 	});
 
 	it('ignores non-installment descriptions', () => {
@@ -49,7 +65,9 @@ describe('addMonths', () => {
 });
 
 describe('projectFutureInstallments', () => {
-	function tx(overrides: Partial<InstallmentSourceTransaction>): InstallmentSourceTransaction {
+	function tx(
+		overrides: Partial<InstallmentSourceTransaction>
+	): InstallmentSourceTransaction {
 		return {
 			installment_number: null,
 			installment_total: null,
@@ -79,7 +97,11 @@ describe('projectFutureInstallments', () => {
 		expect(result.count).toBe(2);
 		expect(result.total).toBeCloseTo(-200);
 		expect(result.months.map((m) => m.month)).toEqual(['2026-07', '2026-08']);
-		expect(result.months[0].items[0]).toMatchObject({ number: 2, total: 3, amount: -100 });
+		expect(result.months[0].items[0]).toMatchObject({
+			number: 2,
+			total: 3,
+			amount: -100
+		});
 	});
 
 	it('anchors on the latest known installment so already-imported months are not re-projected', () => {

@@ -9,7 +9,11 @@ import {
 } from './access';
 import { deleteRuleForHousehold, updateRuleActiveForHousehold } from './rules';
 
-type QueryResult = { data?: unknown; error?: { message: string } | null; count?: number | null };
+type QueryResult = {
+	data?: unknown;
+	error?: { message: string } | null;
+	count?: number | null;
+};
 
 class QueryMock {
 	calls: Array<{ method: string; args: unknown[] }> = [];
@@ -62,7 +66,9 @@ describe('household transaction access', () => {
 	it('recognizes an administrator and read/edit permissions', async () => {
 		await expect(
 			isHouseholdAdmin(
-				supabaseForQueries([new QueryMock({ data: { user_id: 'user-a' }, error: null })]),
+				supabaseForQueries([
+					new QueryMock({ data: { user_id: 'user-a' }, error: null })
+				]),
 				'household-a',
 				'user-a'
 			)
@@ -70,7 +76,9 @@ describe('household transaction access', () => {
 
 		await expect(
 			canReadTransaction(
-				supabaseForQueries([new QueryMock({ data: { id: 'access-a' }, error: null })]),
+				supabaseForQueries([
+					new QueryMock({ data: { id: 'access-a' }, error: null })
+				]),
 				'tx-a',
 				'user-a'
 			)
@@ -78,7 +86,9 @@ describe('household transaction access', () => {
 
 		await expect(
 			canEditTransaction(
-				supabaseForQueries([new QueryMock({ data: { id: 'access-a' }, error: null })]),
+				supabaseForQueries([
+					new QueryMock({ data: { id: 'access-a' }, error: null })
+				]),
 				'tx-a',
 				'user-a'
 			)
@@ -92,13 +102,23 @@ describe('household transaction access', () => {
 		});
 
 		await expect(
-			getReadableTransactionIds(supabaseForQueries([query]), 'user-a', { canEdit: true })
+			getReadableTransactionIds(supabaseForQueries([query]), 'user-a', {
+				canEdit: true
+			})
 		).resolves.toEqual(['tx-a', 'tx-b']);
-		expect(query.calls).toContainEqual({ method: 'eq', args: ['can_edit', true] });
+		expect(query.calls).toContainEqual({
+			method: 'eq',
+			args: ['can_edit', true]
+		});
 
 		await expect(
 			getReadableTransactionIds(
-				supabaseForQueries([new QueryMock({ data: null, error: { message: 'database unavailable' } })]),
+				supabaseForQueries([
+					new QueryMock({
+						data: null,
+						error: { message: 'database unavailable' }
+					})
+				]),
 				'user-a'
 			)
 		).resolves.toEqual([]);
@@ -108,35 +128,71 @@ describe('household transaction access', () => {
 describe('household scoped mutations', () => {
 	it('scopes rule toggle by id and household', async () => {
 		const query = new QueryMock();
-		await updateRuleActiveForHousehold(supabaseForQueries([query]), 'household-a', 'rule-a', false);
+		await updateRuleActiveForHousehold(
+			supabaseForQueries([query]),
+			'household-a',
+			'rule-a',
+			false
+		);
 
-		expect(query.calls).toContainEqual({ method: 'eq', args: ['id', 'rule-a'] });
-		expect(query.calls).toContainEqual({ method: 'eq', args: ['household_id', 'household-a'] });
+		expect(query.calls).toContainEqual({
+			method: 'eq',
+			args: ['id', 'rule-a']
+		});
+		expect(query.calls).toContainEqual({
+			method: 'eq',
+			args: ['household_id', 'household-a']
+		});
 	});
 
 	it('scopes rule delete by id and household', async () => {
 		const query = new QueryMock();
-		await deleteRuleForHousehold(supabaseForQueries([query]), 'household-a', 'rule-a');
+		await deleteRuleForHousehold(
+			supabaseForQueries([query]),
+			'household-a',
+			'rule-a'
+		);
 
-		expect(query.calls).toContainEqual({ method: 'eq', args: ['id', 'rule-a'] });
-		expect(query.calls).toContainEqual({ method: 'eq', args: ['household_id', 'household-a'] });
+		expect(query.calls).toContainEqual({
+			method: 'eq',
+			args: ['id', 'rule-a']
+		});
+		expect(query.calls).toContainEqual({
+			method: 'eq',
+			args: ['household_id', 'household-a']
+		});
 	});
 
 	it('scopes transaction update by id and household', async () => {
 		const query = new QueryMock();
-		await updateTransactionForHousehold(supabaseForQueries([query]), 'tx-a', 'household-a', {
-			review_status: 'confirmed'
-		});
+		await updateTransactionForHousehold(
+			supabaseForQueries([query]),
+			'tx-a',
+			'household-a',
+			{
+				review_status: 'confirmed'
+			}
+		);
 
 		expect(query.calls).toContainEqual({ method: 'eq', args: ['id', 'tx-a'] });
-		expect(query.calls).toContainEqual({ method: 'eq', args: ['household_id', 'household-a'] });
+		expect(query.calls).toContainEqual({
+			method: 'eq',
+			args: ['household_id', 'household-a']
+		});
 	});
 });
 
 describe('validateTransactionRelations', () => {
-	function categoryResult(parentId: string | null, createdByUserId: string | null = 'user-a') {
+	function categoryResult(
+		parentId: string | null,
+		createdByUserId: string | null = 'user-a'
+	) {
 		return new QueryMock({
-			data: { id: 'category-a', parent_id: parentId, created_by_user_id: createdByUserId },
+			data: {
+				id: 'category-a',
+				parent_id: parentId,
+				created_by_user_id: createdByUserId
+			},
 			error: null
 		});
 	}
@@ -154,7 +210,10 @@ describe('validateTransactionRelations', () => {
 			'user-a'
 		);
 
-		expect(category.calls).toContainEqual({ method: 'eq', args: ['household_id', 'household-a'] });
+		expect(category.calls).toContainEqual({
+			method: 'eq',
+			args: ['household_id', 'household-a']
+		});
 		expect(error).toBe('Categoria inválida para este grupo');
 	});
 
@@ -190,7 +249,10 @@ describe('validateTransactionRelations', () => {
 
 		await expect(
 			validateTransactionRelations(
-				supabaseForQueries([categoryResult(null), categoryResult('category-b')]),
+				supabaseForQueries([
+					categoryResult(null),
+					categoryResult('category-b')
+				]),
 				'household-a',
 				{ category_id: 'category-a', subcategory_id: 'subcategory-a' },
 				'user-a'
@@ -199,7 +261,10 @@ describe('validateTransactionRelations', () => {
 
 		await expect(
 			validateTransactionRelations(
-				supabaseForQueries([categoryResult(null), categoryResult('category-a', 'user-b')]),
+				supabaseForQueries([
+					categoryResult(null),
+					categoryResult('category-a', 'user-b')
+				]),
 				'household-a',
 				{ category_id: 'category-a', subcategory_id: 'subcategory-a' },
 				'user-a'
@@ -248,7 +313,10 @@ describe('validateTransactionRelations', () => {
 		).resolves.toBeNull();
 
 		for (const query of [category, subcategory, profile, payer]) {
-			expect(query.calls).toContainEqual({ method: 'eq', args: ['household_id', 'household-a'] });
+			expect(query.calls).toContainEqual({
+				method: 'eq',
+				args: ['household_id', 'household-a']
+			});
 		}
 	});
 });

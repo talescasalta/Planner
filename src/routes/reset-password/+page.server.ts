@@ -14,7 +14,10 @@ export const actions: Actions = {
 	default: async ({ request, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		if (!user) {
-			return { success: false, message: 'Link de recuperação inválido ou expirado.' };
+			return {
+				success: false,
+				message: 'Link de recuperação inválido ou expirado.'
+			};
 		}
 
 		const formData = await request.formData();
@@ -22,7 +25,10 @@ export const actions: Actions = {
 		const confirmPassword = String(formData.get('confirm_password') ?? '');
 
 		if (password.length < 8) {
-			return { success: false, message: 'A senha precisa ter pelo menos 8 caracteres.' };
+			return {
+				success: false,
+				message: 'A senha precisa ter pelo menos 8 caracteres.'
+			};
 		}
 
 		if (password !== confirmPassword) {
@@ -34,6 +40,9 @@ export const actions: Actions = {
 			return { success: false, message: error.message };
 		}
 
-		return { success: true, message: 'Senha atualizada com sucesso. Você já pode entrar normalmente.' };
+		return {
+			success: true,
+			message: 'Senha atualizada com sucesso. Você já pode entrar normalmente.'
+		};
 	}
 };
