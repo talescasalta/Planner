@@ -144,6 +144,9 @@ npm run dev
 npm run check
 npm test
 npm run build
+npm run quality            # type-check, lint, format, cobertura, duplicação e checks de migrations
+npm run quality:deadcode   # relatório informativo de código morto (knip)
+npm run test:rls           # testes pgTAP de RLS (requer `npx supabase db start` antes)
 npx supabase db push
 ```
 

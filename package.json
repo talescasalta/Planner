@@ -27,7 +27,9 @@
 		"test:mutation": "stryker run && node scripts/check-mutation-modules.mjs",
 		"test:mutation:modules": "node scripts/check-mutation-modules.mjs",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"test:rls": "supabase test db",
+		"quality:deadcode": "knip --no-exit-code"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
@@ -44,6 +46,7 @@
 		"eslint-plugin-svelte": "^3.20.0",
 		"globals": "^17.3.0",
 		"jscpd": "^5.0.12",
+		"knip": "^6.26.0",
 		"prettier": "^3.9.5",
 		"prettier-plugin-svelte": "^4.1.1",
 		"supabase": "^2.109.1",
