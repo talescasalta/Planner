@@ -14,7 +14,9 @@ const extractionSchema = z.object({
 			z.object({
 				date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 				description: z.string().min(1),
-				amount: z.number()
+				amount: z.number(),
+				direction: z.enum(['in', 'out']).optional(),
+				direction_cue: z.enum(['sinal', 'cor', 'semantica', 'icone']).optional()
 			})
 		)
 		.default([]),
@@ -73,39 +75,56 @@ Rules:
 - Extract every transaction visible, in the order shown.
 - date: ISO format YYYY-MM-DD. If the year is missing, infer it from the reference month ${referenceMonth} (statements may span the previous month).
 - description: the merchant/establishment or transaction description, exactly as shown, including installment markers like "2/5" when present.
-- amount: number in reais. Expenses/purchases/debits MUST be negative; credits, refunds, recargas and deposits MUST be positive, regardless of how the statement displays signs.
+- direction: "out" when money leaves the account (purchases, debits, Pix/TED/boleto sent, "Pagamento efetuado"); "in" when money enters (deposits, refunds/estornos, Pix/TED received, "recebido", proventos, rendimentos, recargas, salário).
+- Brazilian bank apps (Nubank, Inter, etc.) usually show NO minus sign on outgoing amounts. Decide direction using these cues, from most to least reliable: (1) an explicit "+" prefix or green-colored amount means "in"; (2) description semantics (e.g. "recebido", "proventos", "rendimentos", "depósito", "estorno" = in; "pagamento efetuado", "débito", "compra" = out); (3) the row icon (sent vs received Pix arrows point in opposite directions). A plain amount without "+" is usually "out", but check semantics before assuming.
+- direction_cue: which cue decided the direction: "sinal" (explicit +/- or DR/CR marker), "cor" (color), "semantica" (wording) or "icone" (icon only).
+- amount: number in reais. The sign MUST match direction: negative when "out", positive when "in", regardless of how the statement displays signs.
 - Skip rows that are only bill payments of the statement itself ("Pagamento recebido", "Pagamento de fatura"), totals, saldo lines, headers or ads.
-- confidence: 0 to 1, below 0.6 if the content is not a statement or is unreadable.
+- Skip entries that are struck through or marked as cancelled/scheduled ("Agendamento cancelado", "agendado") — money did not move.
+- confidence: 0 to 1, below 0.6 if the content is not a statement or is unreadable. Cap it at 0.7 when the direction of any transaction relied only on "icone".
 - notes: short optional note in Portuguese about anything ambiguous.
 
 Return JSON in this exact shape:
 {
-  "transactions": [{ "date": "YYYY-MM-DD", "description": "...", "amount": -12.34 }],
+  "transactions": [{ "date": "YYYY-MM-DD", "description": "...", "amount": -12.34, "direction": "out", "direction_cue": "semantica" }],
   "confidence": 0.0,
   "notes": "optional"
 }`;
 }
 
 function toParsedRows(
-	transactions: Array<{ date: string; description: string; amount: number }>
+	transactions: Array<{
+		date: string;
+		description: string;
+		amount: number;
+		direction?: 'in' | 'out';
+	}>
 ): ParsedRow[] {
 	const rows: ParsedRow[] = [];
 	for (const tx of transactions) {
 		const description = tx.description.trim();
 		if (!description || !Number.isFinite(tx.amount) || tx.amount === 0)
 			continue;
+		// The declared direction is more reliable than the sign the model put on
+		// the amount: statements often omit the minus on outgoing entries.
+		const amount =
+			tx.direction === 'out'
+				? -Math.abs(tx.amount)
+				: tx.direction === 'in'
+					? Math.abs(tx.amount)
+					: tx.amount;
 		const clean = cleanDescription(description);
 		const installment = parseInstallment(description);
 		rows.push({
 			date: tx.date,
 			description,
-			amount: tx.amount,
+			amount,
 			currency: 'BRL',
 			clean_description: clean,
 			installment_number: installment?.number,
 			installment_total: installment?.total,
 			installment_group_key: installment
-				? installmentGroupKey(clean, tx.amount, installment.total)
+				? installmentGroupKey(clean, amount, installment.total)
 				: undefined
 		});
 	}

@@ -105,6 +105,63 @@ describe('AI extraction', () => {
 		});
 	});
 
+	it('forces the amount sign to match the declared direction', async () => {
+		mockedCallLlm.mockResolvedValue({
+			choices: [
+				{
+					message: {
+						content: JSON.stringify({
+							transactions: [
+								{
+									date: '2026-06-30',
+									description: 'Grupo Anjo Azul',
+									amount: 60,
+									direction: 'out',
+									direction_cue: 'icone'
+								},
+								{
+									date: '2026-06-22',
+									description: 'Proventos recebidos BDIF11',
+									amount: -44.2,
+									direction: 'in',
+									direction_cue: 'semantica'
+								},
+								{
+									date: '2026-06-20',
+									description: 'Sem direção',
+									amount: -5
+								}
+							],
+							confidence: 0.7
+						})
+					}
+				}
+			]
+		} as never);
+
+		const result = await extractRowsFromText(
+			'extrato',
+			'bank_account',
+			'2026-06'
+		);
+
+		expect(result.rows.map((r) => r.amount)).toEqual([-60, 44.2, -5]);
+		expect(result.confidence).toBe(0.7);
+	});
+
+	it('instructs the model to derive direction from Brazilian statement cues', async () => {
+		mockedCallLlm.mockResolvedValue({
+			choices: [{ message: { content: '{}' } }]
+		} as never);
+
+		await extractRowsFromText('extrato', 'bank_account', '2026-06');
+
+		const system = mockedCallLlm.mock.calls[0][0].messages[0].content;
+		expect(system).toContain('direction');
+		expect(system).toContain('Agendamento cancelado');
+		expect(system).toContain('"+" prefix');
+	});
+
 	it('rejects invalid model payloads and handles provider failures safely', async () => {
 		mockedCallLlm.mockResolvedValue({
 			choices: [
