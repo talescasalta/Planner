@@ -62,7 +62,7 @@
 		"@supabase/ssr": "^0.12.1",
 		"@supabase/supabase-js": "^2.105.1",
 		"@types/papaparse": "^5.5.2",
-		"layerchart": "^2.0.1",
+		"layerchart": "^2.0.2",
 		"lucide-svelte": "^1.0.1",
 		"papaparse": "^5.5.4",
 		"zod": "^4.4.2"
