@@ -11,7 +11,9 @@ import { resolveImportMapping } from '$lib/server/import-mapping';
 import {
 	detectImageMimeType,
 	extractRowsFromImage,
-	extractRowsFromText
+	extractRowsFromText,
+	extractTextFromPdf,
+	isPdf
 } from '$lib/server/import-extract';
 
 function readSourceType(formData: FormData): CsvSourceType {
@@ -30,6 +32,16 @@ const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const EMPTY_ROWS_MESSAGE =
 	'Não foi possível identificar transações no conteúdo enviado. Verifique se o arquivo, print ou texto colado mostra data, descrição e valor.';
 
+// Scanned statements have a PDF wrapper but no text layer, so extraction comes
+// back empty or with a few stray characters from the page furniture.
+const MIN_PDF_TEXT_LENGTH = 100;
+
+const SCANNED_PDF_MESSAGE =
+	'O PDF enviado não contém texto selecionável (provavelmente é digitalizado). Envie um print da tela ou cole o conteúdo do extrato.';
+
+const UNREADABLE_PDF_MESSAGE =
+	'Não foi possível ler o PDF enviado. Verifique se o arquivo não está protegido por senha ou corrompido.';
+
 interface ResolvedImportInput {
 	rows: ParsedRow[];
 	sourceType: CsvSourceType;
@@ -47,8 +59,122 @@ function emptyImportRowsMessage(resolved: ResolvedImportInput) {
 	return resolved.notes || EMPTY_ROWS_MESSAGE;
 }
 
-// Accepts a CSV file, a statement screenshot or pasted text and normalizes
-// everything into parsed transaction rows.
+function pdfImportFailure(
+	sourceType: CsvSourceType,
+	sourceName: string,
+	notes: string
+): ResolvedImportInput {
+	return {
+		rows: [],
+		sourceType,
+		mappingSource: 'llm',
+		confidence: 0,
+		notes,
+		sourceName
+	};
+}
+
+async function resolvePdfImport(
+	buffer: Buffer,
+	sourceType: CsvSourceType,
+	referenceMonth: string,
+	sourceName: string
+): Promise<ResolvedImportInput> {
+	const extracted = await extractTextFromPdf(buffer);
+	if (!extracted) {
+		return pdfImportFailure(sourceType, sourceName, UNREADABLE_PDF_MESSAGE);
+	}
+	if (extracted.text.length < MIN_PDF_TEXT_LENGTH) {
+		return pdfImportFailure(sourceType, sourceName, SCANNED_PDF_MESSAGE);
+	}
+	const extraction = await extractRowsFromText(
+		extracted.text,
+		sourceType,
+		referenceMonth
+	);
+	return {
+		rows: extraction.rows,
+		sourceType,
+		mappingSource: 'llm',
+		confidence: extraction.confidence,
+		notes: extraction.notes,
+		sourceName
+	};
+}
+
+async function resolveImageImport(
+	buffer: Buffer,
+	detectedImageMimeType: ReturnType<typeof detectImageMimeType>,
+	sourceType: CsvSourceType,
+	referenceMonth: string,
+	fileName: string
+): Promise<ResolvedImportInput> {
+	if (!detectedImageMimeType) {
+		return {
+			rows: [],
+			sourceType,
+			mappingSource: 'vision',
+			confidence: 0,
+			notes:
+				'A imagem enviada não está em um formato suportado. Envie PNG, JPEG ou WebP.',
+			sourceName: fileName || 'imagem'
+		};
+	}
+	const extraction = await extractRowsFromImage(
+		buffer,
+		detectedImageMimeType,
+		sourceType,
+		referenceMonth
+	);
+	return {
+		rows: extraction.rows,
+		sourceType,
+		mappingSource: 'vision',
+		confidence: extraction.confidence,
+		notes: extraction.notes,
+		sourceName: fileName || 'print-colado.png'
+	};
+}
+
+// Statements arrive as PDF (Itaú and most banks), as a screenshot, or as a CSV
+// export; each goes to the extractor that can read it.
+async function resolveFileImport(
+	file: File,
+	sourceType: CsvSourceType,
+	referenceMonth: string
+): Promise<ResolvedImportInput> {
+	const buffer = Buffer.from(await file.arrayBuffer());
+	if (isPdf(buffer)) {
+		return resolvePdfImport(
+			buffer,
+			sourceType,
+			referenceMonth,
+			file.name || 'extrato.pdf'
+		);
+	}
+	const detectedImageMimeType = detectImageMimeType(buffer);
+	if (IMAGE_MIME_TYPES.has(file.type) || detectedImageMimeType) {
+		return resolveImageImport(
+			buffer,
+			detectedImageMimeType,
+			sourceType,
+			referenceMonth,
+			file.name
+		);
+	}
+	const resolved = await resolveImportMapping(buffer, sourceType);
+	return {
+		rows: resolved.rows,
+		sourceType: resolved.sourceType,
+		mappingSource: resolved.mappingSource,
+		confidence: resolved.confidence,
+		notes: resolved.notes,
+		sourceName: file.name
+	};
+}
+
+// Accepts a CSV file, a PDF statement, a statement screenshot or pasted text
+// and normalizes everything into parsed transaction rows.
 async function resolveImportInput(
 	formData: FormData,
 	referenceMonth: string
@@ -58,44 +184,7 @@ async function resolveImportInput(
 	const pastedText = pastedImportText(formData);
 
 	if (file && file.size > 0) {
-		const buffer = Buffer.from(await file.arrayBuffer());
-		const detectedImageMimeType = detectImageMimeType(buffer);
-		if (IMAGE_MIME_TYPES.has(file.type) || detectedImageMimeType) {
-			if (!detectedImageMimeType) {
-				return {
-					rows: [],
-					sourceType,
-					mappingSource: 'vision',
-					confidence: 0,
-					notes:
-						'A imagem enviada não está em um formato suportado. Envie PNG, JPEG ou WebP.',
-					sourceName: file.name || 'imagem'
-				};
-			}
-			const extraction = await extractRowsFromImage(
-				buffer,
-				detectedImageMimeType,
-				sourceType,
-				referenceMonth
-			);
-			return {
-				rows: extraction.rows,
-				sourceType,
-				mappingSource: 'vision',
-				confidence: extraction.confidence,
-				notes: extraction.notes,
-				sourceName: file.name || 'print-colado.png'
-			};
-		}
-		const resolved = await resolveImportMapping(buffer, sourceType);
-		return {
-			rows: resolved.rows,
-			sourceType: resolved.sourceType,
-			mappingSource: resolved.mappingSource,
-			confidence: resolved.confidence,
-			notes: resolved.notes,
-			sourceName: file.name
-		};
+		return resolveFileImport(file, sourceType, referenceMonth);
 	}
 
 	if (pastedText) {

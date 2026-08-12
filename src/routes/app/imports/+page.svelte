@@ -68,8 +68,12 @@
 	});
 
 	function isAcceptedFile(file: File): boolean {
+		const name = file.name.toLowerCase();
 		return (
-			file.name.toLowerCase().endsWith('.csv') || file.type.startsWith('image/')
+			name.endsWith('.csv') ||
+			name.endsWith('.pdf') ||
+			file.type === 'application/pdf' ||
+			file.type.startsWith('image/')
 		);
 	}
 
@@ -245,7 +249,7 @@
 
 		<div>
 			<span class="block text-sm font-medium text-gray-700 mb-1"
-				>Arquivo da fatura (CSV ou print)</span
+				>Arquivo da fatura (CSV, PDF ou print)</span
 			>
 			<label
 				for="file"
@@ -295,8 +299,8 @@
 						>Clique para selecionar, arraste ou cole (Ctrl+V) aqui</span
 					>
 					<span class="text-xs text-gray-500"
-						>Formatos aceitos: .csv, .png, .jpg, .webp — prints de fatura
-						funcionam</span
+						>Formatos aceitos: .csv, .pdf, .png, .jpg, .webp — extratos em PDF e
+						prints de fatura funcionam</span
 					>
 				{/if}
 			</label>
@@ -304,7 +308,7 @@
 				id="file"
 				name="file"
 				type="file"
-				accept=".csv,image/png,image/jpeg,image/webp,image/gif"
+				accept=".csv,.pdf,application/pdf,image/png,image/jpeg,image/webp,image/gif"
 				required={!pastedText.trim()}
 				class="sr-only"
 				onchange={onFileChange}
@@ -439,7 +443,7 @@
 					bind:this={confirmFileInput}
 					name="file"
 					type="file"
-					accept=".csv,image/png,image/jpeg,image/webp,image/gif"
+					accept=".csv,.pdf,application/pdf,image/png,image/jpeg,image/webp,image/gif"
 					class="sr-only"
 					tabindex="-1"
 					aria-hidden="true"
