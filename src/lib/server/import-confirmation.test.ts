@@ -6,6 +6,11 @@ import { isHouseholdAdmin } from '$lib/server/access';
 import { resolveImportMapping } from '$lib/server/import-mapping';
 import { buildImportDedupKey, detectMapping } from '$lib/server/csv-parser';
 import { classifyTransactions } from '$lib/server/classifier';
+import {
+	extractRowsFromText,
+	extractTextFromPdf,
+	isPdf
+} from '$lib/server/import-extract';
 
 vi.mock('@sveltejs/kit', () => ({
 	fail: (status: number, data: Record<string, unknown>) => ({
@@ -31,7 +36,9 @@ vi.mock('$lib/server/csv-parser', () => ({
 vi.mock('$lib/server/import-extract', () => ({
 	detectImageMimeType: vi.fn(),
 	extractRowsFromImage: vi.fn(),
-	extractRowsFromText: vi.fn()
+	extractRowsFromText: vi.fn(),
+	extractTextFromPdf: vi.fn(),
+	isPdf: vi.fn()
 }));
 
 type QueryResult = {
@@ -126,6 +133,95 @@ beforeEach(() => {
 		notes: undefined
 	} as never);
 	vi.mocked(classifyTransactions).mockResolvedValue([]);
+	vi.mocked(isPdf).mockReset();
+	vi.mocked(extractTextFromPdf).mockReset();
+	vi.mocked(extractRowsFromText).mockReset();
+	vi.mocked(isPdf).mockReturnValue(false);
+});
+
+function requestWithPdf() {
+	const formData = new FormData();
+	formData.set('reference_month', '2026-08');
+	formData.set('source_type', 'bank_account');
+	formData.set(
+		'file',
+		new File([Buffer.from('%PDF-1.4 conteudo')], 'itau_extrato.pdf', {
+			type: 'application/pdf'
+		})
+	);
+	return { formData: async () => formData } as never;
+}
+
+const previewLocals = {
+	supabase: { from: () => new QueryMock({ data: [], error: null }) },
+	safeGetSession: async () => ({ user: { id: 'user-a' } })
+};
+
+describe('PDF statement import', () => {
+	it('extracts the text layer and forwards it to the AI extraction', async () => {
+		vi.mocked(isPdf).mockReturnValue(true);
+		vi.mocked(extractTextFromPdf).mockResolvedValue({
+			text: '12/08/2026 PIX TRANSF ROSANGE12/08 -53,50'.padEnd(200, ' .'),
+			pages: 3
+		});
+		vi.mocked(extractRowsFromText).mockResolvedValue({
+			rows: [
+				{
+					date: '2026-08-12',
+					description: 'PIX TRANSF ROSANGE12/08',
+					clean_description: 'PIX TRANSF ROSANGE',
+					amount: -53.5,
+					currency: 'BRL'
+				}
+			],
+			confidence: 0.9
+		} as never);
+
+		const result = (await actions.preview({
+			request: requestWithPdf(),
+			locals: previewLocals
+		} as never)) as never as {
+			success: boolean;
+			total: number;
+			filename: string;
+			mapping_source: string;
+		};
+
+		expect(vi.mocked(extractRowsFromText).mock.calls[0][1]).toBe(
+			'bank_account'
+		);
+		expect(vi.mocked(extractRowsFromText).mock.calls[0][2]).toBe('2026-08');
+		expect(result.success).toBe(true);
+		expect(result.total).toBe(1);
+		expect(result.filename).toBe('itau_extrato.pdf');
+		expect(result.mapping_source).toBe('llm');
+	});
+
+	it('explains that a scanned PDF has no text layer instead of calling the AI', async () => {
+		vi.mocked(isPdf).mockReturnValue(true);
+		vi.mocked(extractTextFromPdf).mockResolvedValue({ text: '', pages: 2 });
+
+		const result = (await actions.preview({
+			request: requestWithPdf(),
+			locals: previewLocals
+		} as never)) as never as { message: string };
+
+		expect(result.message).toContain('não contém texto selecionável');
+		expect(extractRowsFromText).not.toHaveBeenCalled();
+	});
+
+	it('reports an unreadable PDF when text extraction fails', async () => {
+		vi.mocked(isPdf).mockReturnValue(true);
+		vi.mocked(extractTextFromPdf).mockResolvedValue(null);
+
+		const result = (await actions.preview({
+			request: requestWithPdf(),
+			locals: previewLocals
+		} as never)) as never as { message: string };
+
+		expect(result.message).toContain('Não foi possível ler o PDF');
+		expect(extractRowsFromText).not.toHaveBeenCalled();
+	});
 });
 
 describe('import confirmation', () => {

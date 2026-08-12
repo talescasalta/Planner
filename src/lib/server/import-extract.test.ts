@@ -3,7 +3,9 @@ import { callLlm } from '$lib/server/llm';
 import {
 	detectImageMimeType,
 	extractRowsFromImage,
-	extractRowsFromText
+	extractRowsFromText,
+	extractTextFromPdf,
+	isPdf
 } from './import-extract';
 
 vi.mock('$lib/server/llm', () => ({ callLlm: vi.fn() }));
@@ -31,6 +33,59 @@ describe('detectImageMimeType', () => {
 
 	it('rejects files that do not contain a supported image signature', () => {
 		expect(detectImageMimeType(Buffer.from('not an image'))).toBeNull();
+	});
+});
+
+// Minimal single-page PDF with one text object, enough for pdf.js to produce a
+// text layer without checking a binary fixture into the repo.
+function buildPdf(text: string): Buffer {
+	const stream = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+	const objects = [
+		'<< /Type /Catalog /Pages 2 0 R >>',
+		'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+		'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+		`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+		'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+	];
+	let pdf = '%PDF-1.4\n';
+	const offsets: number[] = [];
+	objects.forEach((object, index) => {
+		offsets.push(pdf.length);
+		pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+	});
+	const xref = pdf.length;
+	pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+	for (const offset of offsets)
+		pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+	pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+	return Buffer.from(pdf, 'latin1');
+}
+
+describe('isPdf', () => {
+	it('detects the PDF signature and rejects other content', () => {
+		expect(isPdf(buildPdf('extrato'))).toBe(true);
+		expect(isPdf(Buffer.from('data,descricao,valor'))).toBe(false);
+		expect(
+			isPdf(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+		).toBe(false);
+	});
+});
+
+describe('extractTextFromPdf', () => {
+	it('returns the text layer and page count of a readable PDF', async () => {
+		const result = await extractTextFromPdf(buildPdf('PIX TRANSF TESTE'));
+		expect(result?.pages).toBe(1);
+		expect(result?.text).toContain('PIX TRANSF TESTE');
+	});
+
+	it('returns null when the file cannot be parsed as a PDF', async () => {
+		const errorSpy = vi
+			.spyOn(console, 'error')
+			.mockImplementation(() => undefined);
+		await expect(
+			extractTextFromPdf(Buffer.from('%PDF-1.4 truncado'))
+		).resolves.toBeNull();
+		errorSpy.mockRestore();
 	});
 });
 

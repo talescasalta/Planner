@@ -56,6 +56,36 @@ export function detectImageMimeType(
 	return null;
 }
 
+const PDF_SIGNATURE = [0x25, 0x50, 0x44, 0x46, 0x2d]; // "%PDF-"
+
+// Statement PDFs are the only format Itaú exports for checking accounts, so we
+// detect them by signature (the browser MIME type is unreliable) and turn them
+// into text for the regular LLM extraction path.
+export function isPdf(buffer: Buffer): boolean {
+	return PDF_SIGNATURE.every((byte, index) => buffer[index] === byte);
+}
+
+export interface PdfTextResult {
+	text: string;
+	pages: number;
+}
+
+export async function extractTextFromPdf(
+	buffer: Buffer
+): Promise<PdfTextResult | null> {
+	try {
+		const { extractText, getDocumentProxy } = await import('unpdf');
+		const document = await getDocumentProxy(new Uint8Array(buffer));
+		const { totalPages, text } = await extractText(document, {
+			mergePages: true
+		});
+		return { text: text.trim(), pages: totalPages };
+	} catch (error) {
+		console.error('[imports] pdf text extraction failed', String(error));
+		return null;
+	}
+}
+
 const SOURCE_TYPE_HINTS: Record<CsvSourceType, string> = {
 	credit_card: 'fatura de cartão de crédito',
 	bank_account: 'extrato de conta corrente',
