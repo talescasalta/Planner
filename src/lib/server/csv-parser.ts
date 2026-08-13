@@ -267,6 +267,33 @@ export function buildDuplicateKey(row: ParsedRow): string {
 	return buildImportDedupKey(row);
 }
 
+// Bank and benefit-card statements list transactions by the day they happened,
+// so each row belongs to the month of its own date. A statement covering 60
+// days therefore spans two reference months, which is what the user expects.
+//
+// A credit card invoice works the other way round: every purchase on it belongs
+// to the invoice, no matter when it was made, so those rows keep the month the
+// user picks at import time.
+const STATEMENT_SOURCE_TYPES = new Set<CsvSourceType>([
+	'bank_account',
+	'vale_alimentacao',
+	'vale_refeicao'
+]);
+
+const ISO_MONTH = /^\d{4}-\d{2}$/;
+
+export function resolveReferenceMonth(
+	sourceType: CsvSourceType,
+	date: string,
+	invoiceMonth: string
+): string {
+	if (!STATEMENT_SOURCE_TYPES.has(sourceType)) return invoiceMonth;
+	const monthFromDate = date.slice(0, 7);
+	// A row whose date failed to parse would otherwise land in a nonsense
+	// month; fall back to the month the user chose.
+	return ISO_MONTH.test(monthFromDate) ? monthFromDate : invoiceMonth;
+}
+
 export function buildImportDedupKey(
 	row: Pick<ParsedRow, 'date' | 'clean_description' | 'amount' | 'currency'>
 ): string {

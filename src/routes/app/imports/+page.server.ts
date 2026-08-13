@@ -4,6 +4,7 @@ import type { Database } from '$lib/types/database';
 import {
 	buildImportDedupKey,
 	detectMapping,
+	resolveReferenceMonth,
 	type CsvSourceType,
 	type ParsedRow
 } from '$lib/server/csv-parser';
@@ -284,7 +285,11 @@ function buildTransactionInserts(
 		amount: row.amount,
 		currency: row.currency,
 		source_type: sourceType,
-		reference_month: referenceMonth,
+		reference_month: resolveReferenceMonth(
+			sourceType,
+			row.date,
+			referenceMonth
+		),
 		import_dedup_key: buildImportDedupKey(row),
 		installment_number: row.installment_number ?? null,
 		installment_total: row.installment_total ?? null,

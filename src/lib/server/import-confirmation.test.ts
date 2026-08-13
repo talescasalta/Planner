@@ -29,7 +29,10 @@ vi.mock('$lib/server/access', () => ({ isHouseholdAdmin: vi.fn() }));
 vi.mock('$lib/server/import-mapping', () => ({
 	resolveImportMapping: vi.fn()
 }));
-vi.mock('$lib/server/csv-parser', () => ({
+// resolveReferenceMonth stays real: the point of these tests is which month a
+// row is filed under, so stubbing it would assert nothing.
+vi.mock('$lib/server/csv-parser', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/server/csv-parser')>()),
 	buildImportDedupKey: vi.fn(),
 	detectMapping: vi.fn()
 }));
@@ -221,6 +224,91 @@ describe('PDF statement import', () => {
 
 		expect(result.message).toContain('Não foi possível ler o PDF');
 		expect(extractRowsFromText).not.toHaveBeenCalled();
+	});
+});
+
+describe('reference month by source', () => {
+	function confirmWithRows(
+		sourceType: string,
+		rows: Array<{ date: string }>,
+		referenceMonth: string
+	) {
+		vi.mocked(resolveImportMapping).mockResolvedValue({
+			rows: rows.map((row) => ({
+				date: row.date,
+				description: 'Compra',
+				clean_description: 'COMPRA',
+				amount: -10,
+				currency: 'BRL'
+			})),
+			sourceType,
+			mappingSource: 'deterministic',
+			confidence: 1
+		} as never);
+		const inserted = new QueryMock({ data: [], error: null });
+		const adminQueries = [
+			new QueryMock({ data: { id: 'import-a' }, error: null }),
+			inserted,
+			new QueryMock({ data: null, error: null })
+		];
+		mockedAdminFrom.mockImplementation(() => {
+			const query = adminQueries.shift();
+			if (!query) throw new Error('Unexpected admin query');
+			return query as never;
+		});
+		const formData = new FormData();
+		formData.set('reference_month', referenceMonth);
+		formData.set('source_type', sourceType);
+		formData.set(
+			'file',
+			new File([Buffer.from('data,desc,valor')], 'extrato.csv', {
+				type: 'text/csv'
+			})
+		);
+		return {
+			inserted,
+			run: () =>
+				actions.confirm({
+					request: { formData: async () => formData },
+					locals: {
+						supabase: { from: () => new QueryMock({ data: [], error: null }) },
+						safeGetSession: async () => ({ user: { id: 'user-a' } })
+					}
+				} as never)
+		};
+	}
+
+	function insertedMonths(query: QueryMock) {
+		const upsert = query.calls.find((call) => call.method === 'upsert');
+		return (upsert?.args[0] as Array<{ reference_month: string }>).map(
+			(row) => row.reference_month
+		);
+	}
+
+	// A 60-day statement covers two months. Filing all of it under the month
+	// chosen at upload is what made July spending show up as August.
+	it('splits a statement across the months its rows actually fall in', async () => {
+		const { inserted, run } = confirmWithRows(
+			'bank_account',
+			[{ date: '2026-06-20' }, { date: '2026-07-15' }, { date: '2026-08-03' }],
+			'2026-08'
+		);
+
+		await run();
+
+		expect(insertedMonths(inserted)).toEqual(['2026-06', '2026-07', '2026-08']);
+	});
+
+	it('keeps every credit card row on the chosen invoice month', async () => {
+		const { inserted, run } = confirmWithRows(
+			'credit_card',
+			[{ date: '2026-06-26' }, { date: '2026-07-26' }],
+			'2026-08'
+		);
+
+		await run();
+
+		expect(insertedMonths(inserted)).toEqual(['2026-08', '2026-08']);
 	});
 });
 
