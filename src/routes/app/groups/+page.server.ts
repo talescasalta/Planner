@@ -5,8 +5,9 @@ import {
 	seedDefaultFinancialProfiles
 } from '$lib/server/household';
 import {
+	READABLE_ACCESS_EMBED,
 	canEditTransaction,
-	getReadableTransactionIds,
+	filterByReadableAccess,
 	isHouseholdAdmin
 } from '$lib/server/access';
 import { findAuthUserByEmail } from '$lib/server/auth-admin';
@@ -333,7 +334,6 @@ function mapGroupTransactions(
 
 async function loadGroupActivity(
 	groupId: string,
-	readableTransactionIds: string[],
 	sharedProfileIds: string[],
 	members: GroupMemberRow[],
 	displayNames: Map<string, string | null>,
@@ -341,13 +341,14 @@ async function loadGroupActivity(
 	currentUserName: string,
 	url: URL
 ): Promise<GroupActivity> {
-	if (readableTransactionIds.length === 0 || sharedProfileIds.length === 0)
-		return emptyGroupActivity();
-	const { data: monthRows } = await supabaseAdmin
-		.from('transactions')
-		.select('reference_month, date')
-		.eq('household_id', groupId)
-		.in('id', readableTransactionIds)
+	if (sharedProfileIds.length === 0) return emptyGroupActivity();
+	const { data: monthRows } = await filterByReadableAccess(
+		supabaseAdmin
+			.from('transactions')
+			.select(`reference_month, date, ${READABLE_ACCESS_EMBED}`)
+			.eq('household_id', groupId),
+		currentUserId
+	)
 		.in('owner_profile_id', sharedProfileIds)
 		.neq('review_status', 'ignored')
 		.order('reference_month', { ascending: false, nullsFirst: false })
@@ -365,24 +366,29 @@ async function loadGroupActivity(
 		monthOptions[0] ??
 		'';
 
-	let amountQuery = supabaseAdmin
-		.from('transactions')
-		.select('amount, paid_by_user_id, split_method')
-		.eq('household_id', groupId)
-		.in('id', readableTransactionIds)
+	let amountQuery = filterByReadableAccess(
+		supabaseAdmin
+			.from('transactions')
+			.select(`amount, paid_by_user_id, split_method, ${READABLE_ACCESS_EMBED}`)
+			.eq('household_id', groupId),
+		currentUserId
+	)
 		.in('owner_profile_id', sharedProfileIds)
 		.neq('review_status', 'ignored');
-	let transactionQuery = supabaseAdmin
-		.from('transactions')
-		.select(
-			`
+	let transactionQuery = filterByReadableAccess(
+		supabaseAdmin
+			.from('transactions')
+			.select(
+				`
 		id, date, description, amount, currency, paid_by_user_id, split_method,
+		${READABLE_ACCESS_EMBED},
 		category:categories!transactions_category_id_fkey ( name ),
 		subcategory:categories!transactions_subcategory_id_fkey ( name )
 	`
-		)
-		.eq('household_id', groupId)
-		.in('id', readableTransactionIds)
+			)
+			.eq('household_id', groupId),
+		currentUserId
+	)
 		.in('owner_profile_id', sharedProfileIds)
 		.neq('review_status', 'ignored')
 		.order('date', { ascending: false });
@@ -419,7 +425,6 @@ async function loadGroupActivity(
 
 async function loadGroupDetails(
 	group: GroupIdentity,
-	readableTransactionIds: string[],
 	currentUserId: string,
 	currentUserName: string,
 	url: URL
@@ -450,7 +455,6 @@ async function loadGroupDetails(
 	);
 	const activity = await loadGroupActivity(
 		group.id,
-		readableTransactionIds,
 		(sharedProfiles ?? []).map((profile) => profile.id),
 		members,
 		displayNames,
@@ -560,20 +564,10 @@ export const load: PageServerLoad = async ({
 		};
 	});
 
-	const readableTransactionIds = await getReadableTransactionIds(
-		supabase,
-		user.id
-	);
 	const currentUserName = profile?.display_name ?? user.email ?? 'Você';
 	const groupsWithMembers = await Promise.all(
 		groups.map((group) =>
-			loadGroupDetails(
-				group,
-				readableTransactionIds,
-				user.id,
-				currentUserName,
-				url
-			)
+			loadGroupDetails(group, user.id, currentUserName, url)
 		)
 	);
 

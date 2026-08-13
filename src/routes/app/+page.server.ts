@@ -3,7 +3,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
 import { z } from 'zod';
 import { fail } from '@sveltejs/kit';
-import { getReadableTransactionIds } from '$lib/server/access';
+import {
+	READABLE_ACCESS_EMBED,
+	filterByReadableAccess
+} from '$lib/server/access';
 import { getUserHouseholdId } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { loadCategoriesForUser } from '$lib/server/categories';
@@ -606,15 +609,12 @@ async function fetchVisibleRows(
 	userId: string,
 	householdId: string
 ): Promise<TransactionRow[]> {
-	const readableTransactionIds = await getReadableTransactionIds(
-		supabase,
-		userId
-	);
-	if (readableTransactionIds.length === 0) return [];
-	const { data } = await supabaseAdmin
-		.from('transactions')
-		.select(
-			`
+	const { data } = await filterByReadableAccess(
+		supabaseAdmin
+			.from('transactions')
+			.select(
+				`
+			${READABLE_ACCESS_EMBED},
 			id,
 			amount,
 			currency,
@@ -634,10 +634,10 @@ async function fetchVisibleRows(
 			subcategory:categories!transactions_subcategory_id_fkey ( id, name, parent_id ),
 			owner_profile:financial_profiles ( id, name )
 		`
-		)
-		.eq('household_id', householdId)
-		.in('id', readableTransactionIds)
-		.order('date', { ascending: false });
+			)
+			.eq('household_id', householdId),
+		userId
+	).order('date', { ascending: false });
 	return (data ?? []) as unknown as TransactionRow[];
 }
 

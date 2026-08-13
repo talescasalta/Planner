@@ -31,6 +31,37 @@ export async function canReadTransaction(
 	return !error && !!data;
 }
 
+// Embed that must be present in the `select` of any query narrowed by
+// `filterByReadableAccess`. `!inner` turns the join into the filter itself, so
+// the access check happens in Postgres instead of travelling in the URL.
+export const READABLE_ACCESS_EMBED = 'transaction_access!inner(user_id)';
+
+// Restricts a transactions query to the rows `userId` may read.
+//
+// This replaces passing every readable transaction id through `.in('id', ...)`:
+// that URL grew with the household's history and eventually exceeded what
+// PostgREST accepts, which took the transaction pages down with a 400 once the
+// account crossed roughly 600 transactions. The join keeps the request a fixed
+// size no matter how much history exists.
+//
+// `transaction_access` is UNIQUE (transaction_id, user_id), so the join matches
+// at most one row per transaction and cannot duplicate results.
+export function filterByReadableAccess<T>(
+	query: T,
+	userId: string,
+	options: { canEdit?: boolean } = {}
+): T {
+	// The Supabase filter builder re-types itself on every call; the embedded
+	// column filters below are not expressible in the generated Database types.
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let next = query as any;
+	next = next
+		.eq('transaction_access.user_id', userId)
+		.eq('transaction_access.can_read', true);
+	if (options.canEdit) next = next.eq('transaction_access.can_edit', true);
+	return next as T;
+}
+
 export async function getReadableTransactionIds(
 	supabase: SupabaseClient<Database>,
 	userId: string,

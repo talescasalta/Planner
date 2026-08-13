@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { actions } from '../../routes/app/+page.server';
 import { supabaseAdmin } from '$lib/server/supabase';
-import { getReadableTransactionIds } from '$lib/server/access';
 import { getUserHouseholdId } from '$lib/server/household';
 import { loadCategoriesForUser } from '$lib/server/categories';
 import { callLlm } from '$lib/server/llm';
@@ -10,21 +9,26 @@ vi.mock('@sveltejs/kit', () => ({
 	fail: (status: number, data: Record<string, unknown>) => ({ status, ...data })
 }));
 vi.mock('$lib/server/supabase', () => ({ supabaseAdmin: { from: vi.fn() } }));
-vi.mock('$lib/server/access', () => ({ getReadableTransactionIds: vi.fn() }));
 vi.mock('$lib/server/household', () => ({ getUserHouseholdId: vi.fn() }));
 vi.mock('$lib/server/categories', () => ({ loadCategoriesForUser: vi.fn() }));
 vi.mock('$lib/server/llm', () => ({ callLlm: vi.fn() }));
 
 type QueryResult = { data?: unknown; error?: { message: string } | null };
 class QueryMock {
+	selects: string[] = [];
+	eqs: Array<[string, unknown]> = [];
 	constructor(private readonly result: QueryResult) {}
-	select() {
+	select(columns?: string) {
+		this.selects.push(columns ?? '');
 		return this;
 	}
-	eq() {
+	eq(column: string, value: unknown) {
+		this.eqs.push([column, value]);
 		return this;
 	}
-	in() {
+	ins: Array<[string, unknown]> = [];
+	in(column: string, values: unknown) {
+		this.ins.push([column, values]);
 		return this;
 	}
 	order() {
@@ -55,13 +59,14 @@ function event(request: unknown, authenticated = true) {
 
 beforeEach(() => {
 	vi.mocked(supabaseAdmin.from).mockReset();
-	vi.mocked(getReadableTransactionIds).mockReset();
 	vi.mocked(getUserHouseholdId).mockReset();
 	vi.mocked(loadCategoriesForUser).mockReset();
 	vi.mocked(callLlm).mockReset();
 	vi.mocked(getUserHouseholdId).mockResolvedValue('household-a');
-	vi.mocked(getReadableTransactionIds).mockResolvedValue([]);
 	vi.mocked(loadCategoriesForUser).mockResolvedValue([]);
+	vi.mocked(supabaseAdmin.from).mockReturnValue(
+		new QueryMock({ data: [], error: null }) as never
+	);
 });
 
 describe('dashboard insights action', () => {
@@ -71,7 +76,7 @@ describe('dashboard insights action', () => {
 		);
 
 		expect(result).toMatchObject({ status: 401 });
-		expect(getReadableTransactionIds).not.toHaveBeenCalled();
+		expect(supabaseAdmin.from).not.toHaveBeenCalled();
 		expect(callLlm).not.toHaveBeenCalled();
 	});
 
@@ -92,8 +97,24 @@ describe('dashboard insights action', () => {
 		expect(callLlm).not.toHaveBeenCalled();
 	});
 
+	// Regression guard: the readable rows used to be narrowed by passing every
+	// permitted transaction id into `.in('id', ...)`. That URL grew with the
+	// household's history and eventually exceeded what PostgREST accepts,
+	// taking the page down with a 400. The access check must ride along as a
+	// join filter so the request stays a fixed size.
+	it('narrows visible rows by joining transaction_access, not by an id list', async () => {
+		const query = new QueryMock({ data: [], error: null });
+		vi.mocked(supabaseAdmin.from).mockReturnValue(query as never);
+
+		await actions.insights(event(requestForMonth('2026-07')));
+
+		expect(query.selects.join(' ')).toContain('transaction_access!inner');
+		expect(query.eqs).toContainEqual(['transaction_access.user_id', 'user-a']);
+		expect(query.eqs).toContainEqual(['transaction_access.can_read', true]);
+		expect(query.ins).toEqual([]);
+	});
+
 	it('surfaces provider failures without inventing insights', async () => {
-		vi.mocked(getReadableTransactionIds).mockResolvedValue(['tx-a']);
 		vi.mocked(supabaseAdmin.from).mockReturnValue(
 			new QueryMock({
 				data: [
