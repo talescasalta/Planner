@@ -176,6 +176,57 @@ async function getEditableTransactionIds(
 	return new Set((data ?? []).map((row) => row.transaction_id));
 }
 
+type SingleRowEvent = {
+	request: Request;
+	locals: Pick<App.Locals, 'supabase' | 'safeGetSession'>;
+};
+
+// The single-row actions differ only in which columns they write. Everything
+// around that -- authentication, resolving the household, checking edit
+// permission, and scoping the write by household so a guessed id from another
+// household cannot be touched -- is identical, so it lives here once.
+async function updateOwnTransaction(
+	{ request, locals: { supabase, safeGetSession } }: SingleRowEvent,
+	buildPatch: (formData: FormData) => Record<string, unknown>
+) {
+	const { user } = await safeGetSession();
+	if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+	const formData = await request.formData();
+	const transactionId = String(formData.get('transaction_id') ?? '').trim();
+	if (!transactionId)
+		return fail(400, { success: false, message: 'Transação inválida' });
+
+	const householdId = await getUserHouseholdId(supabase, user.id);
+	if (!householdId)
+		return fail(400, {
+			success: false,
+			message: 'Usuário não pertence a um grupo'
+		});
+
+	const editableSet = await getEditableTransactionIds(supabase, user.id, [
+		transactionId
+	]);
+	if (!editableSet.has(transactionId)) {
+		return fail(403, {
+			success: false,
+			message: 'Sem permissão para editar essa transação'
+		});
+	}
+
+	const { error } = await supabaseAdmin
+		.from('transactions')
+		.update({
+			...buildPatch(formData),
+			updated_at: new Date().toISOString()
+		})
+		.eq('id', transactionId)
+		.eq('household_id', householdId);
+
+	if (error) return fail(500, { success: false, message: error.message });
+	return { success: true };
+}
+
 type ExistingClassification = {
 	category_id: string | null;
 	subcategory_id: string | null;
@@ -518,6 +569,10 @@ export const load: PageServerLoad = async ({
 					.eq('household_id', householdId),
 				user.id
 			);
+			// Transfers stay in the list but never in the totals, so this
+			// exclusion is unconditional -- unlike the ignored one, which the
+			// status filter can deliberately override.
+			query = query.eq('is_transfer', false);
 			if (filters.status === ALL_FILTERS)
 				query = query.neq('review_status', 'ignored');
 			query = applyTransactionQueryFilters(query, selectedMonth, filters);
@@ -751,84 +806,22 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
-	ignore_single: async ({ request, locals: { supabase, safeGetSession } }) => {
-		const { user } = await safeGetSession();
-		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+	ignore_single: (event) =>
+		updateOwnTransaction(event, () => ({
+			review_status: 'ignored',
+			classification_method: 'manual'
+		})),
 
-		const formData = await request.formData();
-		const transactionId = String(formData.get('transaction_id') ?? '').trim();
-		if (!transactionId)
-			return fail(400, { success: false, message: 'Transação inválida' });
+	// Marks a row as money moved between accounts the household already owns,
+	// or takes the mark back. The row stays listed and classifiable; it just
+	// stops counting toward expenses, credits and balance.
+	toggle_transfer: (event) =>
+		updateOwnTransaction(event, (formData) => ({
+			is_transfer: String(formData.get('is_transfer') ?? '') === 'true'
+		})),
 
-		const householdId = await getUserHouseholdId(supabase, user.id);
-		if (!householdId)
-			return fail(400, {
-				success: false,
-				message: 'Usuário não pertence a um grupo'
-			});
-
-		const editableSet = await getEditableTransactionIds(supabase, user.id, [
-			transactionId
-		]);
-		if (!editableSet.has(transactionId)) {
-			return fail(403, {
-				success: false,
-				message: 'Sem permissão para editar essa transação'
-			});
-		}
-
-		const { error } = await supabaseAdmin
-			.from('transactions')
-			.update({
-				review_status: 'ignored',
-				classification_method: 'manual',
-				updated_at: new Date().toISOString()
-			})
-			.eq('id', transactionId)
-			.eq('household_id', householdId);
-
-		if (error) return fail(500, { success: false, message: error.message });
-		return { success: true };
-	},
-
-	restore_single: async ({ request, locals: { supabase, safeGetSession } }) => {
-		const { user } = await safeGetSession();
-		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
-
-		const formData = await request.formData();
-		const transactionId = String(formData.get('transaction_id') ?? '').trim();
-		if (!transactionId)
-			return fail(400, { success: false, message: 'Transação inválida' });
-
-		const householdId = await getUserHouseholdId(supabase, user.id);
-		if (!householdId)
-			return fail(400, {
-				success: false,
-				message: 'Usuário não pertence a um grupo'
-			});
-
-		const editableSet = await getEditableTransactionIds(supabase, user.id, [
-			transactionId
-		]);
-		if (!editableSet.has(transactionId)) {
-			return fail(403, {
-				success: false,
-				message: 'Sem permissão para editar essa transação'
-			});
-		}
-
-		const { error } = await supabaseAdmin
-			.from('transactions')
-			.update({
-				review_status: 'needs_review',
-				updated_at: new Date().toISOString()
-			})
-			.eq('id', transactionId)
-			.eq('household_id', householdId);
-
-		if (error) return fail(500, { success: false, message: error.message });
-		return { success: true };
-	},
+	restore_single: (event) =>
+		updateOwnTransaction(event, () => ({ review_status: 'needs_review' })),
 
 	create_subcategory: async ({
 		request,

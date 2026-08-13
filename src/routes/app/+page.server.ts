@@ -25,6 +25,7 @@ type TransactionRow = {
 	clean_description: string | null;
 	reference_month: string | null;
 	review_status: string;
+	is_transfer: boolean;
 	category_id: string | null;
 	subcategory_id: string | null;
 	owner_profile_id: string | null;
@@ -623,6 +624,7 @@ async function fetchVisibleRows(
 			clean_description,
 			reference_month,
 			review_status,
+			is_transfer,
 			category_id,
 			subcategory_id,
 			owner_profile_id,
@@ -641,10 +643,15 @@ async function fetchVisibleRows(
 	return (data ?? []) as unknown as TransactionRow[];
 }
 
+// Single funnel for everything the dashboard reports: every total, chart and
+// trend downstream is built from this list, so excluding transfers here covers
+// them all rather than repeating the check per aggregation.
+function countsTowardTotals(transaction: TransactionRow) {
+	return transaction.review_status !== 'ignored' && !transaction.is_transfer;
+}
+
 function selectDashboardRows(transactions: TransactionRow[], url: URL) {
-	const visibleAllMonths = transactions.filter(
-		(transaction) => transaction.review_status !== 'ignored'
-	);
+	const visibleAllMonths = transactions.filter(countsTowardTotals);
 	const monthOptions = Array.from(
 		new Set(
 			visibleAllMonths.map(rowMonth).filter((month) => month !== NO_MONTH)
@@ -895,7 +902,7 @@ export const actions: Actions = {
 			});
 
 		const transactions = await fetchVisibleRows(supabase, user.id, householdId);
-		const visible = transactions.filter((t) => t.review_status !== 'ignored');
+		const visible = transactions.filter(countsTowardTotals);
 		const monthRows = visible.filter((t) => rowMonth(t) === month);
 		if (monthRows.length === 0) {
 			return fail(400, {

@@ -104,6 +104,8 @@ export interface Transaction {
 	classification_method: ClassificationMethod;
 	classification_confidence: number | null;
 	review_status: ReviewStatus;
+	/** Money moved between accounts the household owns; kept out of totals. */
+	is_transfer: boolean;
 	classification_suggestion: ClassificationSuggestion | null;
 	created_by_user_id: string;
 	created_at: string;
