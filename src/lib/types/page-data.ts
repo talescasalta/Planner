@@ -16,6 +16,8 @@ export interface TransactionsPageData {
 		categoryId: string;
 		subcategoryId: string;
 		status: string;
+		/** 'in' (só receitas), 'out' (só despesas) ou 'all'. */
+		direction: string;
 	};
 	page: number;
 	pageSize: number;
