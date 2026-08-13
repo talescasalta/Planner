@@ -5,8 +5,44 @@ import {
 	parseAmount,
 	parseCsvBuffer,
 	parseInstallment,
+	resolveReferenceMonth,
 	stripInstallmentMarker
 } from './csv-parser';
+
+describe('resolveReferenceMonth', () => {
+	it('files statement rows under the month of their own date', () => {
+		// A 60-day bank statement spans two months, and each row belongs to the
+		// month it happened in, not to the month the upload was labelled with.
+		expect(resolveReferenceMonth('bank_account', '2026-07-31', '2026-08')).toBe(
+			'2026-07'
+		);
+		expect(resolveReferenceMonth('bank_account', '2026-08-03', '2026-08')).toBe(
+			'2026-08'
+		);
+		expect(
+			resolveReferenceMonth('vale_alimentacao', '2026-06-15', '2026-08')
+		).toBe('2026-06');
+		expect(
+			resolveReferenceMonth('vale_refeicao', '2026-06-15', '2026-08')
+		).toBe('2026-06');
+	});
+
+	it('keeps the chosen invoice month for credit card rows', () => {
+		// A purchase belongs to the invoice that billed it, whenever it was made.
+		expect(resolveReferenceMonth('credit_card', '2026-06-26', '2026-08')).toBe(
+			'2026-08'
+		);
+	});
+
+	it('falls back to the chosen month when the date is unusable', () => {
+		expect(resolveReferenceMonth('bank_account', '', '2026-08')).toBe(
+			'2026-08'
+		);
+		expect(resolveReferenceMonth('bank_account', 'sem data', '2026-08')).toBe(
+			'2026-08'
+		);
+	});
+});
 
 describe('stripInstallmentMarker', () => {
 	it('strips trailing k/n markers so patterns match sibling installments', () => {
