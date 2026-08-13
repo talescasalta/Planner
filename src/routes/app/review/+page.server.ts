@@ -2,8 +2,9 @@ import type { PageServerLoad, Actions } from './$types';
 import { getUserHouseholdId, attachPayerProfiles } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
 import {
+	READABLE_ACCESS_EMBED,
 	canEditTransaction,
-	getReadableTransactionIds,
+	filterByReadableAccess,
 	updateTransactionForHousehold,
 	validateTransactionRelations
 } from '$lib/server/access';
@@ -32,25 +33,21 @@ export const load: PageServerLoad = async ({
 
 	const householdId = await getUserHouseholdId(supabase, user.id);
 	if (!householdId) return { transactions: [], categories: [], profiles: [] };
-	const readableTransactionIds = await getReadableTransactionIds(
-		supabase,
-		user.id
-	);
-	if (readableTransactionIds.length === 0)
-		return { transactions: [], categories: [], profiles: [] };
-
-	const { data: transactions } = await supabaseAdmin
-		.from('transactions')
-		.select(
-			`
+	const { data: transactions } = await filterByReadableAccess(
+		supabaseAdmin
+			.from('transactions')
+			.select(
+				`
 			*,
+			${READABLE_ACCESS_EMBED},
 			category:categories!transactions_category_id_fkey ( id, name ),
 			subcategory:categories!transactions_subcategory_id_fkey ( id, name ),
 			owner_profile:financial_profiles ( id, name )
 		`
-		)
-		.eq('household_id', householdId)
-		.in('id', readableTransactionIds)
+			)
+			.eq('household_id', householdId),
+		user.id
+	)
 		.eq('review_status', 'needs_review')
 		.order('date', { ascending: false })
 		.limit(200);

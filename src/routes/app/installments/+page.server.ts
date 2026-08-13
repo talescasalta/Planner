@@ -1,6 +1,9 @@
 import type { PageServerLoad } from './$types';
 import { getUserHouseholdId } from '$lib/server/household';
-import { getReadableTransactionIds } from '$lib/server/access';
+import {
+	READABLE_ACCESS_EMBED,
+	filterByReadableAccess
+} from '$lib/server/access';
 import { supabaseAdmin } from '$lib/server/supabase';
 import {
 	projectFutureInstallments,
@@ -31,21 +34,17 @@ export const load: PageServerLoad = async ({
 	if (!householdId) return EMPTY;
 
 	// Only project installments the user is actually allowed to read.
-	const readableTransactionIds = await getReadableTransactionIds(
-		supabase,
-		user.id
-	);
-	if (readableTransactionIds.length === 0) return EMPTY;
-
-	const { data, error } = await supabaseAdmin
-		.from('transactions')
-		.select(
-			`installment_number, installment_total, installment_group_key, amount, reference_month, date, clean_description, description,
+	const { data, error } = await filterByReadableAccess(
+		supabaseAdmin
+			.from('transactions')
+			.select(
+				`installment_number, installment_total, installment_group_key, amount, reference_month, date, clean_description, description,
+			${READABLE_ACCESS_EMBED},
 			category:categories!transactions_category_id_fkey ( name )`
-		)
-		.eq('household_id', householdId)
-		.in('id', readableTransactionIds)
-		.not('installment_group_key', 'is', null);
+			)
+			.eq('household_id', householdId),
+		user.id
+	).not('installment_group_key', 'is', null);
 
 	if (error) {
 		console.error('Error loading installments:', error);

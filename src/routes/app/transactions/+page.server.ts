@@ -4,7 +4,8 @@ import type { Database } from '$lib/types/database';
 import { getUserHouseholdId, attachPayerProfiles } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
 import {
-	getReadableTransactionIds,
+	READABLE_ACCESS_EMBED,
+	filterByReadableAccess,
 	validateTransactionRelations
 } from '$lib/server/access';
 import { learnFromTransactionAdjustment } from '$lib/server/learning';
@@ -455,19 +456,13 @@ export const load: PageServerLoad = async ({
 	const { page, from, to } = paginationFromUrl(url);
 	const requestedMonth = url.searchParams.get('month') ?? '';
 	const filters = readFilters(url);
-	const readableTransactionIds = await getReadableTransactionIds(
-		supabase,
+	const { data: monthRows } = await filterByReadableAccess(
+		supabaseAdmin
+			.from('transactions')
+			.select(`reference_month, date, ${READABLE_ACCESS_EMBED}`)
+			.eq('household_id', householdId),
 		user.id
-	);
-	if (readableTransactionIds.length === 0) {
-		return { ...emptyPage(), page, filters };
-	}
-
-	const { data: monthRows } = await supabaseAdmin
-		.from('transactions')
-		.select('reference_month, date')
-		.eq('household_id', householdId)
-		.in('id', readableTransactionIds)
+	)
 		.order('reference_month', { ascending: false, nullsFirst: false })
 		.order('date', { ascending: false });
 
@@ -489,18 +484,21 @@ export const load: PageServerLoad = async ({
 		excludedCategoryIds
 	] = await Promise.all([
 		(() => {
-			let query = supabaseAdmin
-				.from('transactions')
-				.select(
-					`
+			let query = filterByReadableAccess(
+				supabaseAdmin
+					.from('transactions')
+					.select(
+						`
 				*,
+				${READABLE_ACCESS_EMBED},
 				category:categories!transactions_category_id_fkey ( id, name ),
 				subcategory:categories!transactions_subcategory_id_fkey ( id, name ),
 				owner_profile:financial_profiles ( id, name, type )
 			`
-				)
-				.eq('household_id', householdId)
-				.in('id', readableTransactionIds);
+					)
+					.eq('household_id', householdId),
+				user.id
+			);
 			// Tie-breakers keep the order deterministic across reloads: Postgres
 			// gives no stable order among rows with the same date, so without
 			// them same-day rows shuffle every time the list refetches (e.g.
@@ -513,11 +511,13 @@ export const load: PageServerLoad = async ({
 			return query;
 		})(),
 		(() => {
-			let query = supabaseAdmin
-				.from('transactions')
-				.select('amount')
-				.eq('household_id', householdId)
-				.in('id', readableTransactionIds);
+			let query = filterByReadableAccess(
+				supabaseAdmin
+					.from('transactions')
+					.select(`amount, ${READABLE_ACCESS_EMBED}`)
+					.eq('household_id', householdId),
+				user.id
+			);
 			if (filters.status === ALL_FILTERS)
 				query = query.neq('review_status', 'ignored');
 			query = applyTransactionQueryFilters(query, selectedMonth, filters);
