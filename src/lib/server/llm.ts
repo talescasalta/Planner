@@ -12,6 +12,31 @@ const DEFAULT_MODEL =
 	LLM_MODEL?.trim() ||
 	(OPENROUTER_API_KEY ? 'openai/gpt-4o-mini' : 'gpt-4o-mini');
 
+export interface LlmConfigSummary {
+	provider: 'openrouter' | 'openai' | null;
+	model: string | null;
+	/**
+	 * False when LLM_MODEL is unset and DEFAULT_MODEL is standing in. Worth
+	 * surfacing: the fallback is a much weaker model than the one normally
+	 * configured, and nothing else makes that visible from outside.
+	 */
+	modelExplicitlyConfigured: boolean;
+}
+
+// Reports which model the server would actually call. Names only -- the API
+// key must never leave the server.
+export function llmConfigSummary(): LlmConfigSummary {
+	return {
+		provider: OPENROUTER_API_KEY
+			? 'openrouter'
+			: OPENAI_API_KEY
+				? 'openai'
+				: null,
+		model: API_KEY ? DEFAULT_MODEL : null,
+		modelExplicitlyConfigured: Boolean(LLM_MODEL?.trim())
+	};
+}
+
 export type LlmContentPart =
 	| { type: 'text'; text: string }
 	| { type: 'image_url'; image_url: { url: string } };
