@@ -352,7 +352,12 @@
 		</section>
 	{:else}
 		<section class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-			<div class="rounded-lg bg-white p-4 shadow">
+			<a
+				href={resolve(
+					`/app/transactions?month=${encodeURIComponent(selectedMonth)}&direction=out`
+				)}
+				class="rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
+			>
 				<div class="flex items-center justify-between">
 					<p class="text-sm font-medium text-gray-500">Despesas</p>
 					<CircleDollarSign class="h-5 w-5 text-rose-600" />
@@ -372,9 +377,14 @@
 						? 'Sem mês anterior'
 						: `${Math.abs(expenseDeltaPercent)}% vs mês anterior`}
 				</p>
-			</div>
+			</a>
 
-			<div class="rounded-lg bg-white p-4 shadow">
+			<a
+				href={resolve(
+					`/app/transactions?month=${encodeURIComponent(selectedMonth)}&direction=in`
+				)}
+				class="rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
+			>
 				<div class="flex items-center justify-between">
 					<p class="text-sm font-medium text-gray-500">Receitas</p>
 					<ArrowUpRight class="h-5 w-5 text-emerald-600" />
@@ -388,7 +398,7 @@
 						>{formatCurrency(summary.balance)}</span
 					>
 				</p>
-			</div>
+			</a>
 
 			<a
 				href={resolve('/app/review')}

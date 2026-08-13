@@ -30,6 +30,9 @@ const VALID_SOURCE_TYPES = new Set([
 	UNKNOWN_SOURCE
 ]);
 const VALID_REVIEW_STATUSES = new Set(['needs_review', 'confirmed', 'ignored']);
+// Lets the dashboard's Receitas and Despesas cards link straight to the rows
+// behind the figure, which is otherwise only reachable by scanning the list.
+const VALID_DIRECTIONS = new Set(['in', 'out']);
 
 type ClassificationSuggestionLike = {
 	category?: unknown;
@@ -61,7 +64,8 @@ function emptyPage() {
 			sourceType: ALL_FILTERS,
 			categoryId: '',
 			subcategoryId: '',
-			status: ALL_FILTERS
+			status: ALL_FILTERS,
+			direction: ALL_FILTERS
 		},
 		page: 0,
 		pageSize: PAGE_SIZE,
@@ -85,30 +89,40 @@ function cleanFilter(value: string | null | undefined): string {
 function readFilters(url: URL) {
 	const sourceType = cleanFilter(url.searchParams.get('source_type'));
 	const status = cleanFilter(url.searchParams.get('status'));
+	const direction = cleanFilter(url.searchParams.get('direction'));
 	return {
 		sourceType: VALID_SOURCE_TYPES.has(sourceType) ? sourceType : ALL_FILTERS,
 		categoryId: cleanFilter(url.searchParams.get('category_id')),
 		subcategoryId: cleanFilter(url.searchParams.get('subcategory_id')),
-		status: VALID_REVIEW_STATUSES.has(status) ? status : ALL_FILTERS
+		status: VALID_REVIEW_STATUSES.has(status) ? status : ALL_FILTERS,
+		direction: VALID_DIRECTIONS.has(direction) ? direction : ALL_FILTERS
 	};
 }
 
+// Carries the active filters across a redirect so an edit does not drop the
+// user back into an unfiltered list. `all` is the absent value for the filters
+// that have one; the category fields simply drop when empty.
+const FORWARDED_FILTERS: Array<{
+	field: string;
+	param: string;
+	absent: string;
+}> = [
+	{ field: 'source_type_filter', param: 'source_type', absent: ALL_FILTERS },
+	{ field: 'category_id_filter', param: 'category_id', absent: '' },
+	{
+		field: 'subcategory_id_filter',
+		param: 'subcategory_id',
+		absent: ''
+	},
+	{ field: 'status_filter', param: 'status', absent: ALL_FILTERS },
+	{ field: 'direction_filter', param: 'direction', absent: ALL_FILTERS }
+];
+
 function appendFilters(params: URLSearchParams, formData: FormData) {
-	const sourceType = cleanFilter(
-		formData.get('source_type_filter')?.toString()
-	);
-	const categoryId = cleanFilter(
-		formData.get('category_id_filter')?.toString()
-	);
-	const subcategoryId = cleanFilter(
-		formData.get('subcategory_id_filter')?.toString()
-	);
-	const status = cleanFilter(formData.get('status_filter')?.toString());
-	if (sourceType && sourceType !== ALL_FILTERS)
-		params.set('source_type', sourceType);
-	if (categoryId) params.set('category_id', categoryId);
-	if (subcategoryId) params.set('subcategory_id', subcategoryId);
-	if (status && status !== ALL_FILTERS) params.set('status', status);
+	for (const { field, param, absent } of FORWARDED_FILTERS) {
+		const value = cleanFilter(formData.get(field)?.toString());
+		if (value && value !== absent) params.set(param, value);
+	}
 }
 
 function readSingleClassificationForm(formData: FormData) {
@@ -346,6 +360,10 @@ function applyTransactionQueryFilters(
 		query = query.eq('subcategory_id', filters.subcategoryId);
 	if (filters.status !== ALL_FILTERS)
 		query = query.eq('review_status', filters.status);
+	// Zero-amount rows are dropped at import, so "in" and "out" together still
+	// cover everything the unfiltered view shows.
+	if (filters.direction === 'in') query = query.gt('amount', 0);
+	else if (filters.direction === 'out') query = query.lt('amount', 0);
 	return query;
 }
 

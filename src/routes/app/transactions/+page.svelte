@@ -28,7 +28,8 @@
 			sourceType: 'all',
 			categoryId: '',
 			subcategoryId: '',
-			status: 'all'
+			status: 'all',
+			direction: 'all'
 		}
 	);
 	let summary = $derived(data.summary);
@@ -79,6 +80,7 @@
 			filters.categoryId,
 			filters.subcategoryId,
 			filters.status,
+			filters.direction,
 			data.page
 		].join('|')
 	);
@@ -215,6 +217,7 @@
 			categoryId?: string;
 			subcategoryId?: string;
 			status?: string;
+			direction?: string;
 			page?: number;
 		} = {}
 	) {
@@ -224,6 +227,7 @@
 		const categoryId = overrides.categoryId ?? filters.categoryId;
 		const subcategoryId = overrides.subcategoryId ?? filters.subcategoryId;
 		const status = overrides.status ?? filters.status;
+		const direction = overrides.direction ?? filters.direction;
 		const page = overrides.page ?? data.page;
 
 		setQueryParam(params, 'month', month);
@@ -231,6 +235,7 @@
 		setQueryParam(params, 'category_id', categoryId);
 		setQueryParam(params, 'subcategory_id', subcategoryId);
 		setQueryParam(params, 'status', status, 'all');
+		setQueryParam(params, 'direction', direction, 'all');
 		if (page > 0) params.set('page', String(page));
 
 		const query = params.toString();
@@ -242,7 +247,8 @@
 			(filters.sourceType && filters.sourceType !== 'all') ||
 			!!filters.categoryId ||
 			!!filters.subcategoryId ||
-			(filters.status && filters.status !== 'all')
+			(filters.status && filters.status !== 'all') ||
+			(filters.direction && filters.direction !== 'all')
 		);
 	}
 
@@ -665,6 +671,29 @@
 				</select>
 			</div>
 
+			<div>
+				<label
+					for="direction-filter"
+					class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+					>Entrada/Saída</label
+				>
+				<select
+					id="direction-filter"
+					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+					value={filters.direction}
+					onchange={(event) => {
+						window.location.href = transactionsHref({
+							direction: event.currentTarget.value,
+							page: 0
+						});
+					}}
+				>
+					<option value="all">Todas</option>
+					<option value="in">Só receitas</option>
+					<option value="out">Só despesas</option>
+				</select>
+			</div>
+
 			<div class="flex items-end">
 				<a
 					href={resolve(
@@ -673,6 +702,7 @@
 							categoryId: '',
 							subcategoryId: '',
 							status: 'all',
+							direction: 'all',
 							page: 0
 						}) as `/app/transactions?${string}`
 					)}
@@ -718,6 +748,11 @@
 					value={filters.subcategoryId}
 				/>
 				<input type="hidden" name="status_filter" value={filters.status} />
+				<input
+					type="hidden"
+					name="direction_filter"
+					value={filters.direction}
+				/>
 				<button
 					type="submit"
 					class="px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100"
@@ -765,6 +800,7 @@
 				value={filters.subcategoryId}
 			/>
 			<input type="hidden" name="status_filter" value={filters.status} />
+			<input type="hidden" name="direction_filter" value={filters.direction} />
 		</form>
 
 		<div
