@@ -114,6 +114,48 @@ describe('dashboard insights action', () => {
 		expect(query.ins).toEqual([]);
 	});
 
+	// Money moved between the household's own accounts is not spending, so it
+	// must not reach any total -- here that means a month holding nothing but a
+	// transfer has nothing to analyse.
+	it('leaves transfers out of the figures it reports on', async () => {
+		vi.mocked(supabaseAdmin.from).mockReturnValue(
+			new QueryMock({
+				data: [
+					{
+						id: 'tx-transfer',
+						amount: -20000,
+						currency: 'BRL',
+						date: '2026-07-17',
+						description: 'PIX TRANSF Tales C',
+						clean_description: 'PIX TRANSF TALES C',
+						reference_month: '2026-07',
+						review_status: 'confirmed',
+						is_transfer: true,
+						category_id: null,
+						subcategory_id: null,
+						owner_profile_id: null,
+						paid_by_user_id: null,
+						installment_number: null,
+						installment_total: null,
+						installment_group_key: null,
+						category: null,
+						subcategory: null,
+						owner_profile: null
+					}
+				],
+				error: null
+			}) as never
+		);
+
+		const result = await actions.insights(event(requestForMonth('2026-07')));
+
+		expect(result).toMatchObject({
+			status: 400,
+			message: 'Sem transações neste mês para analisar.'
+		});
+		expect(callLlm).not.toHaveBeenCalled();
+	});
+
 	it('surfaces provider failures without inventing insights', async () => {
 		vi.mocked(supabaseAdmin.from).mockReturnValue(
 			new QueryMock({

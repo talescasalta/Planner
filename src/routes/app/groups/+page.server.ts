@@ -351,6 +351,7 @@ async function loadGroupActivity(
 	)
 		.in('owner_profile_id', sharedProfileIds)
 		.neq('review_status', 'ignored')
+		.eq('is_transfer', false)
 		.order('reference_month', { ascending: false, nullsFirst: false })
 		.order('date', { ascending: false });
 	const monthOptions = Array.from(
@@ -374,7 +375,8 @@ async function loadGroupActivity(
 		currentUserId
 	)
 		.in('owner_profile_id', sharedProfileIds)
-		.neq('review_status', 'ignored');
+		.neq('review_status', 'ignored')
+		.eq('is_transfer', false);
 	let transactionQuery = filterByReadableAccess(
 		supabaseAdmin
 			.from('transactions')
@@ -391,6 +393,7 @@ async function loadGroupActivity(
 	)
 		.in('owner_profile_id', sharedProfileIds)
 		.neq('review_status', 'ignored')
+		.eq('is_transfer', false)
 		.order('date', { ascending: false });
 	if (selectedMonth) {
 		amountQuery = amountQuery.eq('reference_month', selectedMonth);

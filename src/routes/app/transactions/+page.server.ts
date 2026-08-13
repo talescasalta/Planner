@@ -518,6 +518,10 @@ export const load: PageServerLoad = async ({
 					.eq('household_id', householdId),
 				user.id
 			);
+			// Transfers stay in the list but never in the totals, so this
+			// exclusion is unconditional -- unlike the ignored one, which the
+			// status filter can deliberately override.
+			query = query.eq('is_transfer', false);
 			if (filters.status === ALL_FILTERS)
 				query = query.neq('review_status', 'ignored');
 			query = applyTransactionQueryFilters(query, selectedMonth, filters);
@@ -782,6 +786,49 @@ export const actions: Actions = {
 			.update({
 				review_status: 'ignored',
 				classification_method: 'manual',
+				updated_at: new Date().toISOString()
+			})
+			.eq('id', transactionId)
+			.eq('household_id', householdId);
+
+		if (error) return fail(500, { success: false, message: error.message });
+		return { success: true };
+	},
+
+	// Marks a row as money moved between accounts the household already owns,
+	// or takes the mark back. The row stays listed and classifiable; it just
+	// stops counting toward expenses, credits and balance.
+	toggle_transfer: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const formData = await request.formData();
+		const transactionId = String(formData.get('transaction_id') ?? '').trim();
+		if (!transactionId)
+			return fail(400, { success: false, message: 'Transação inválida' });
+		const isTransfer = String(formData.get('is_transfer') ?? '') === 'true';
+
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId)
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
+
+		const editableSet = await getEditableTransactionIds(supabase, user.id, [
+			transactionId
+		]);
+		if (!editableSet.has(transactionId)) {
+			return fail(403, {
+				success: false,
+				message: 'Sem permissão para editar essa transação'
+			});
+		}
+
+		const { error } = await supabaseAdmin
+			.from('transactions')
+			.update({
+				is_transfer: isTransfer,
 				updated_at: new Date().toISOString()
 			})
 			.eq('id', transactionId)

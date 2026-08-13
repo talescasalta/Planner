@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import {
 		ArrowDown,
+		ArrowLeftRight,
 		ArrowUp,
 		ArrowUpDown,
 		Ban,
@@ -949,6 +950,32 @@
 									href={resolve(`/app/transactions/${tx.id}`)}
 									class="hover:text-indigo-600">{tx.description}</a
 								>
+								<form
+									method="POST"
+									action="?/toggle_transfer"
+									use:enhance
+									data-sveltekit-noscroll
+									class="mt-1"
+								>
+									<input type="hidden" name="transaction_id" value={tx.id} />
+									<input
+										type="hidden"
+										name="is_transfer"
+										value={tx.is_transfer ? 'false' : 'true'}
+									/>
+									<button
+										type="submit"
+										class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium {tx.is_transfer
+											? 'bg-sky-100 text-sky-800 hover:bg-sky-200'
+											: 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}"
+										title={tx.is_transfer
+											? 'Deixar de tratar como transferência entre contas próprias'
+											: 'Marcar como transferência entre contas próprias (fica fora dos totais)'}
+									>
+										<ArrowLeftRight class="h-3 w-3" />
+										{tx.is_transfer ? 'Transferência' : 'Marcar transferência'}
+									</button>
+								</form>
 							</td>
 							<td
 								class="px-4 py-3 whitespace-nowrap text-sm text-gray-700 align-top"
