@@ -798,7 +798,10 @@ export const actions: Actions = {
 	// Marks a row as money moved between accounts the household already owns,
 	// or takes the mark back. The row stays listed and classifiable; it just
 	// stops counting toward expenses, credits and balance.
-	toggle_transfer: async ({ request, locals: { supabase, safeGetSession } }) => {
+	toggle_transfer: async ({
+		request,
+		locals: { supabase, safeGetSession }
+	}) => {
 		const { user } = await safeGetSession();
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
