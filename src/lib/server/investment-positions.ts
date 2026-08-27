@@ -28,6 +28,9 @@ export interface QuoteRow {
 	asset_id: string;
 	quote_date: string;
 	price: number;
+	// Where the price came from. Valuation ignores it, but the return curve
+	// only trusts dates the cron actually priced.
+	source?: string;
 }
 
 export type EventEffect =
