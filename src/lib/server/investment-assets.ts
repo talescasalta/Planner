@@ -22,7 +22,9 @@ export interface AssetSpec {
 	classGuessed: boolean;
 }
 
-const TICKER_PATTERN = /^([A-Z]{4}\d{1,2}[A-Z]?)\b/;
+// B3 roots are usually 4 letters (BOVA11) but ETF roots may carry digits
+// (NB0211, B5P211, IB5M11) — hence [A-Z0-9]{3} after the leading letter.
+export const TICKER_PATTERN = /^([A-Z][A-Z0-9]{3}\d{1,2}[A-Z]?)\b/;
 const FIXED_INCOME_PREFIX =
 	/^(CDB|LCA|LCI|LC|RDB|CRA|CRI|DEB(?:ÊNTURE)?)\s*-\s*/i;
 

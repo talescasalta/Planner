@@ -11,6 +11,7 @@ import {
 import {
 	normalizeProduct,
 	resolveAssetSpec,
+	TICKER_PATTERN,
 	type AssetClass,
 	type AssetSpec,
 	type ResolveContext
@@ -136,9 +137,7 @@ function parsePosicaoSheet(
 			);
 			continue;
 		}
-		const tickerGuess = normalizeProduct(rawProduct).match(
-			/^([A-Z]{4}\d{1,2}[A-Z]?)\b/
-		);
+		const tickerGuess = normalizeProduct(rawProduct).match(TICKER_PATTERN);
 		const context: ResolveContext = {
 			sheetClass: sheetClass(sheet.name, tickerGuess?.[1] ?? null),
 			tipo: asString(cell(row, tipo)),
