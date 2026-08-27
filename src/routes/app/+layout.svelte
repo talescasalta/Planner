@@ -35,6 +35,10 @@
 					class="text-sm text-gray-600 hover:text-gray-900">Importar fatura</a
 				>
 				<a
+					href={resolve('/app/investments')}
+					class="text-sm text-gray-600 hover:text-gray-900">Investimentos</a
+				>
+				<a
 					href={resolve('/app/review')}
 					class="text-sm text-gray-600 hover:text-gray-900">Revisão</a
 				>

@@ -3,6 +3,10 @@
 		{
 			"path": "/api/health/supabase",
 			"schedule": "0 12 * * *"
+		},
+		{
+			"path": "/api/cron/investment-quotes",
+			"schedule": "0 21 * * 1-5"
 		}
 	]
 }

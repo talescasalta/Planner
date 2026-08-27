@@ -65,6 +65,26 @@ INSERT INTO public.user_category_exclusions (id, household_id, user_id, category
 	('aaaaaaaa-0000-0000-0000-000000000009', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000002'),
 	('bbbbbbbb-0000-0000-0000-000000000009', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '22222222-2222-2222-2222-222222222222', 'bbbbbbbb-0000-0000-0000-000000000002');
 
+INSERT INTO public.investment_assets (id, household_id, owner_user_id, asset_class, name, product_key, tax_bucket) VALUES
+	('aaaaaaaa-0000-0000-0000-00000000000a', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '11111111-1111-1111-1111-111111111111', 'etf', 'ETF A', 'ETFA11', 'etf_rv'),
+	('bbbbbbbb-0000-0000-0000-00000000000a', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '22222222-2222-2222-2222-222222222222', 'etf', 'ETF B', 'ETFB11', 'etf_rv');
+
+INSERT INTO public.investment_snapshots (id, household_id, asset_id, snapshot_date, quantity, net_value) VALUES
+	('aaaaaaaa-0000-0000-0000-00000000000b', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-0000-0000-0000-00000000000a', '2026-08-01', 10, 1000),
+	('bbbbbbbb-0000-0000-0000-00000000000b', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bbbbbbbb-0000-0000-0000-00000000000a', '2026-08-01', 20, 2000);
+
+INSERT INTO public.investment_events (id, household_id, asset_id, event_date, event_type, direction, raw_product, source, dedup_key) VALUES
+	('aaaaaaaa-0000-0000-0000-00000000000c', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-0000-0000-0000-00000000000a', '2026-08-02', 'Rendimento', 'credit', 'ETFA11 - ETF A', 'b3_movimentacao', 'seed-a'),
+	('bbbbbbbb-0000-0000-0000-00000000000c', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bbbbbbbb-0000-0000-0000-00000000000a', '2026-08-02', 'Rendimento', 'credit', 'ETFB11 - ETF B', 'b3_movimentacao', 'seed-b');
+
+INSERT INTO public.investment_quotes (id, household_id, asset_id, quote_date, price, source) VALUES
+	('aaaaaaaa-0000-0000-0000-00000000000d', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-0000-0000-0000-00000000000a', '2026-08-03', 100, 'brapi'),
+	('bbbbbbbb-0000-0000-0000-00000000000d', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bbbbbbbb-0000-0000-0000-00000000000a', '2026-08-03', 200, 'brapi');
+
+INSERT INTO public.investment_darf_status (id, household_id, owner_user_id, reference_month, paid) VALUES
+	('aaaaaaaa-0000-0000-0000-00000000000e', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '11111111-1111-1111-1111-111111111111', '2026-08-01', false),
+	('bbbbbbbb-0000-0000-0000-00000000000e', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '22222222-2222-2222-2222-222222222222', '2026-08-01', false);
+
 -- Tabela interna deny-all: linhas existem, mas nenhuma role da API pode vê-las.
 INSERT INTO public.classification_rate_limits (user_id) VALUES
 	('11111111-1111-1111-1111-111111111111'),
@@ -78,10 +98,10 @@ INSERT INTO public.classification_rate_limits (user_id) VALUES
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
 
-SELECT plan(49);
+SELECT plan(59);
 
 -- ============================================================
--- 1. anon não lê nada (todas as 13 tabelas públicas)
+-- 1. anon não lê nada (todas as 18 tabelas públicas)
 -- ============================================================
 SELECT set_config('request.jwt.claims', '', true);
 SET LOCAL ROLE anon;
@@ -99,6 +119,11 @@ SELECT is_empty('SELECT id FROM public.classification_jobs', 'anon não lê clas
 SELECT is_empty('SELECT id FROM public.audit_events', 'anon não lê audit_events');
 SELECT is_empty('SELECT id FROM public.user_category_exclusions', 'anon não lê user_category_exclusions');
 SELECT is_empty('SELECT id FROM public.classification_rate_limits', 'anon não lê classification_rate_limits');
+SELECT is_empty('SELECT id FROM public.investment_assets', 'anon não lê investment_assets');
+SELECT is_empty('SELECT id FROM public.investment_snapshots', 'anon não lê investment_snapshots');
+SELECT is_empty('SELECT id FROM public.investment_events', 'anon não lê investment_events');
+SELECT is_empty('SELECT id FROM public.investment_quotes', 'anon não lê investment_quotes');
+SELECT is_empty('SELECT id FROM public.investment_darf_status', 'anon não lê investment_darf_status');
 
 SELECT throws_ok(
 	$$INSERT INTO public.transactions (household_id, date, description, amount, created_by_user_id)
@@ -130,6 +155,11 @@ SELECT results_eq('SELECT id FROM public.classification_jobs', ARRAY['aaaaaaaa-0
 SELECT results_eq('SELECT id FROM public.audit_events', ARRAY['aaaaaaaa-0000-0000-0000-000000000008'::uuid], 'A vê só audit_events do household A');
 SELECT results_eq('SELECT id FROM public.user_category_exclusions', ARRAY['aaaaaaaa-0000-0000-0000-000000000009'::uuid], 'A vê só as próprias exclusões');
 SELECT is_empty('SELECT id FROM public.classification_rate_limits', 'classification_rate_limits nega até membros (deny-all)');
+SELECT results_eq('SELECT id FROM public.investment_assets', ARRAY['aaaaaaaa-0000-0000-0000-00000000000a'::uuid], 'A vê só ativos do household A');
+SELECT results_eq('SELECT id FROM public.investment_snapshots', ARRAY['aaaaaaaa-0000-0000-0000-00000000000b'::uuid], 'A vê só snapshots do household A');
+SELECT results_eq('SELECT id FROM public.investment_events', ARRAY['aaaaaaaa-0000-0000-0000-00000000000c'::uuid], 'A vê só eventos do household A');
+SELECT results_eq('SELECT id FROM public.investment_quotes', ARRAY['aaaaaaaa-0000-0000-0000-00000000000d'::uuid], 'A vê só cotações do household A');
+SELECT results_eq('SELECT id FROM public.investment_darf_status', ARRAY['aaaaaaaa-0000-0000-0000-00000000000e'::uuid], 'A vê só DARFs do household A');
 
 -- Escrita cruzada: A tentando alcançar o household B
 SELECT throws_ok(
