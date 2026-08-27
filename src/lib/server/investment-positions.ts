@@ -229,6 +229,54 @@ export function reconcile(
 	return diffs;
 }
 
+// Papers that accumulate instead of paying periodically (LCA, LCI, CDB,
+// prefixados) release their whole interest in one credit when they mature.
+// That credit is real money, but it is the yield of the paper's entire life —
+// counting it as the month's passive income makes one month look like twenty.
+// The tell is a redemption of the same asset on the same date.
+const REDEMPTION_TYPES = new Set([
+	'vencimento',
+	'resgate',
+	'resgate antecipado'
+]);
+
+function redemptionKeys(events: EventRow[]): Set<string> {
+	const keys = new Set<string>();
+	for (const event of events) {
+		if (REDEMPTION_TYPES.has(normalizeType(event.event_type))) {
+			keys.add(`${event.asset_id}|${event.event_date}`);
+		}
+	}
+	return keys;
+}
+
+export interface IncomeMonth {
+	month: string; // YYYY-MM
+	recurring: number; // dividends, rent, coupons — the real monthly income
+	maturity: number; // interest released at redemption, shown apart
+}
+
+// Monthly passive income, split so that lump-sum maturity payouts never
+// distort the recurring series.
+export function monthlyPassiveIncome(events: EventRow[]): IncomeMonth[] {
+	const redemptions = redemptionKeys(events);
+	const byMonth = new Map<string, IncomeMonth>();
+	for (const event of events) {
+		if (classifyEvent(event) !== 'income' || event.direction !== 'credit')
+			continue;
+		const month = event.event_date.slice(0, 7);
+		const entry = byMonth.get(month) ?? { month, recurring: 0, maturity: 0 };
+		const value = event.total_value ?? 0;
+		if (redemptions.has(`${event.asset_id}|${event.event_date}`)) {
+			entry.maturity += value;
+		} else {
+			entry.recurring += value;
+		}
+		byMonth.set(month, entry);
+	}
+	return [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month));
+}
+
 export interface EvolutionPoint {
 	date: string;
 	totalValue: number;

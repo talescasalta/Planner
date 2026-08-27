@@ -4,7 +4,7 @@ import {
 	deriveQuantity,
 	evolutionSeries,
 	latestPrice,
-	classifyEvent,
+	monthlyPassiveIncome,
 	type EventRow,
 	type QuoteRow,
 	type SnapshotRow
@@ -113,21 +113,9 @@ export const load: PageServerLoad = async ({
 		.filter((position) => position.quantity > 0)
 		.sort((a, b) => b.value - a.value);
 
-	// Passive income by month (Rendimento/Juros/Dividendo/JCP...), last 12.
-	const incomeByMonth = new Map<string, number>();
-	for (const event of events) {
-		if (classifyEvent(event) !== 'income' || event.direction !== 'credit')
-			continue;
-		const monthKey = event.event_date.slice(0, 7);
-		incomeByMonth.set(
-			monthKey,
-			(incomeByMonth.get(monthKey) ?? 0) + (event.total_value ?? 0)
-		);
-	}
-	const income = [...incomeByMonth.entries()]
-		.map(([month, total]) => ({ month, total }))
-		.sort((a, b) => a.month.localeCompare(b.month))
-		.slice(-12);
+	// Passive income by month, with maturity payouts kept apart from the
+	// recurring series (see monthlyPassiveIncome).
+	const income = monthlyPassiveIncome(events).slice(-12);
 
 	const lastSnapshotDate = snapshots.reduce<string | null>(
 		(latest, snapshot) =>

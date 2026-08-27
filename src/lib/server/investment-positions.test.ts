@@ -4,6 +4,7 @@ import {
 	deriveQuantity,
 	evolutionSeries,
 	latestPrice,
+	monthlyPassiveIncome,
 	reconcile,
 	type EventRow,
 	type SnapshotRow
@@ -235,6 +236,114 @@ describe('reconcile', () => {
 		expect(
 			reconcile([{ asset_id: 'a1', quantity: 100 }], '2026-08-01', prior, [])
 		).toEqual([]);
+	});
+});
+
+describe('monthlyPassiveIncome', () => {
+	it('keeps interest paid at maturity out of the recurring series', () => {
+		// The real case: an LCA matured on 2026-05-27, releasing two years of
+		// accrued interest in one credit alongside the principal redemption.
+		const income = monthlyPassiveIncome([
+			event({
+				event_date: '2026-05-27',
+				event_type: 'VENCIMENTO',
+				direction: 'debit',
+				quantity: 13328427,
+				total_value: 133284.27
+			}),
+			event({
+				event_date: '2026-05-27',
+				event_type: 'PAGAMENTO DE JUROS',
+				total_value: 36014.21
+			}),
+			event({
+				asset_id: 'tesouro',
+				event_date: '2026-05-15',
+				event_type: 'Juros',
+				total_value: 4304.53
+			}),
+			event({
+				asset_id: 'fii',
+				event_date: '2026-05-08',
+				event_type: 'Rendimento',
+				total_value: 1398.65
+			})
+		]);
+		expect(income).toHaveLength(1);
+		expect(income[0].recurring).toBeCloseTo(5703.18);
+		expect(income[0].maturity).toBeCloseTo(36014.21);
+	});
+
+	it('only excludes interest of the asset that was actually redeemed', () => {
+		const income = monthlyPassiveIncome([
+			event({
+				asset_id: 'lca',
+				event_date: '2026-05-27',
+				event_type: 'Vencimento',
+				direction: 'debit',
+				quantity: 100,
+				total_value: 1000
+			}),
+			event({
+				asset_id: 'lca',
+				event_date: '2026-05-27',
+				event_type: 'Juros',
+				total_value: 300
+			}),
+			// Same day, another asset, no redemption: stays recurring.
+			event({
+				asset_id: 'fii',
+				event_date: '2026-05-27',
+				event_type: 'Rendimento',
+				total_value: 80
+			})
+		]);
+		expect(income[0]).toMatchObject({ recurring: 80, maturity: 300 });
+	});
+
+	it('keeps a coupon recurring when the redemption is on another date', () => {
+		const income = monthlyPassiveIncome([
+			event({
+				event_date: '2026-05-15',
+				event_type: 'Juros',
+				total_value: 500
+			}),
+			event({
+				event_date: '2026-05-27',
+				event_type: 'Vencimento',
+				direction: 'debit',
+				quantity: 10,
+				total_value: 1000
+			})
+		]);
+		expect(income[0]).toMatchObject({ recurring: 500, maturity: 0 });
+	});
+
+	it('groups by month in chronological order and ignores non-income events', () => {
+		const income = monthlyPassiveIncome([
+			event({
+				event_date: '2026-06-10',
+				event_type: 'Rendimento',
+				total_value: 100
+			}),
+			event({
+				event_date: '2026-05-10',
+				event_type: 'Rendimento',
+				total_value: 50
+			}),
+			event({
+				event_date: '2026-05-11',
+				event_type: 'Cobrança de Taxa Semestral',
+				total_value: 30
+			}),
+			event({
+				event_date: '2026-05-12',
+				event_type: 'Amortização',
+				total_value: 400
+			})
+		]);
+		expect(income.map((m) => m.month)).toEqual(['2026-05', '2026-06']);
+		expect(income[0].recurring).toBe(50);
 	});
 });
 
