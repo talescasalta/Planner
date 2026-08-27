@@ -30,6 +30,16 @@
 			"name": "planning_learning",
 			"minimum": 45,
 			"files": ["src/lib/server/installments.ts", "src/lib/server/learning.ts"]
+		},
+		{
+			"name": "investments",
+			"minimum": 50,
+			"files": [
+				"src/lib/server/investment-import.ts",
+				"src/lib/server/investment-assets.ts",
+				"src/lib/server/investment-positions.ts",
+				"src/lib/server/investment-tax.ts"
+			]
 		}
 	]
 }
