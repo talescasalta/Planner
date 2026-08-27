@@ -450,14 +450,22 @@ describe('resolveAssetSpec heuristics', () => {
 		// "NB0211 - NU TESOURO IPCA B3 PRAZO 2 A..." in movimentação, as bare
 		// "NB0211" in negociação and under another long name after a B3 rename.
 		// All three must collapse into the same product_key.
-		const long = resolveAssetSpec('NB0211 - NU TESOURO IPCA B3 PRAZO 2 A CL DE ÍND - RESP LIM');
+		const long = resolveAssetSpec(
+			'NB0211 - NU TESOURO IPCA B3 PRAZO 2 A CL DE ÍND - RESP LIM'
+		);
 		const bare = resolveAssetSpec('NB0211');
-		const renamed = resolveAssetSpec('NB0211 - NU TESOURO IPCA 2 ANOS CLASSE DE INDICE - RL');
+		const renamed = resolveAssetSpec(
+			'NB0211 - NU TESOURO IPCA 2 ANOS CLASSE DE INDICE - RL'
+		);
 		expect(long.productKey).toBe('NB0211');
 		expect(bare.productKey).toBe('NB0211');
 		expect(renamed.productKey).toBe('NB0211');
-		expect(resolveAssetSpec('B5P211 - IT NOW IMA-B5 P2').productKey).toBe('B5P211');
-		expect(resolveAssetSpec('IB5M11 - IT NOW IMA-B5+ FUNDO DE ÍNDICE').productKey).toBe('IB5M11');
+		expect(resolveAssetSpec('B5P211 - IT NOW IMA-B5 P2').productKey).toBe(
+			'B5P211'
+		);
+		expect(
+			resolveAssetSpec('IB5M11 - IT NOW IMA-B5+ FUNDO DE ÍNDICE').productKey
+		).toBe('IB5M11');
 	});
 
 	it('is accent- and spacing-stable for product keys', () => {
