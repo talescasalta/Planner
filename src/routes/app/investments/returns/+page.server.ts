@@ -2,10 +2,13 @@ import type { PageServerLoad } from './$types';
 import { getUserHouseholdId } from '$lib/server/household';
 import { loadCdiRates } from '$lib/server/investment-cdi';
 import {
+	appliedSeries,
 	monthReturn,
 	recentMonths,
+	type AppliedSeries,
 	type MonthReturn
 } from '$lib/server/investment-monthly';
+import type { TaxAssetRow } from '$lib/server/investment-tax';
 import type {
 	EventRow,
 	QuoteRow,
@@ -32,6 +35,11 @@ export const load: PageServerLoad = async ({
 	locals: { supabase, safeGetSession }
 }) => {
 	const empty = {
+		applied: {
+			points: [],
+			excludedCount: 0,
+			excludedValue: 0
+		} as AppliedSeries,
 		months: [] as (MonthReturn & { assets: MonthReturn['assets'] })[],
 		labels: {} as Record<string, AssetLabel>,
 		currentUserId: '',
@@ -89,6 +97,16 @@ export const load: PageServerLoad = async ({
 	}
 
 	return {
+		applied: appliedSeries(
+			assets as unknown as TaxAssetRow[],
+			events,
+			snapshots,
+			quotes,
+			// A full year of the pair reads better than the six months the
+			// month picker offers.
+			recentMonths(today, 12),
+			today
+		),
 		months: computed.map((month) => ({
 			...month,
 			// Only assets that actually held a position are worth listing.

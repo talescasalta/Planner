@@ -9,6 +9,16 @@ import {
 	onlyDigits,
 	formatCnpj
 } from '$lib/server/investment-funds';
+import {
+	extractFundsFromImage,
+	extractFundsFromText
+} from '$lib/server/investment-fund-extract';
+import {
+	detectImageMimeType,
+	isPdf,
+	extractTextFromPdf
+} from '$lib/server/import-extract';
+import { searchFunds } from '$lib/server/investment-registry';
 
 // Funds are registered by hand because they never reach B3 custody. The form
 // asks for what a broker statement actually shows — balance and accumulated
@@ -187,7 +197,79 @@ async function persistFund(
 	return quoteError?.message ?? snapshotError?.message ?? null;
 }
 
+// Reads a broker screen and hands the numbers back for the user to review in
+// the form. Nothing is written here: extraction is a suggestion, and the CNPJ
+// still has to come from the registry rather than from the model.
+async function readFundScreenshot(file: File) {
+	const buffer = Buffer.from(await file.arrayBuffer());
+	if (isPdf(buffer)) {
+		const extracted = await extractTextFromPdf(buffer);
+		if (!extracted || extracted.text.length < 100) {
+			return {
+				message:
+					'O PDF não tem texto selecionável (provavelmente digitalizado). Envie um print da tela.'
+			};
+		}
+		return { extraction: await extractFundsFromText(extracted.text) };
+	}
+	const mimeType = detectImageMimeType(buffer);
+	if (!mimeType) {
+		return {
+			message: 'Envie um print em PNG, JPEG ou WebP, ou um PDF com texto.'
+		};
+	}
+	return { extraction: await extractFundsFromImage(buffer, mimeType) };
+}
+
 export const actions: Actions = {
+	read_screenshot: async ({ request, locals: { safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const file = (await request.formData()).get('screenshot') as File | null;
+		if (!file || file.size === 0) {
+			return fail(400, { success: false, message: 'Envie um print ou PDF.' });
+		}
+
+		let result;
+		try {
+			result = await readFundScreenshot(file);
+		} catch (error) {
+			return fail(500, {
+				success: false,
+				message: `Falha ao ler a imagem: ${String((error as Error).message)}`
+			});
+		}
+		if ('message' in result)
+			return fail(400, { success: false, message: result.message });
+
+		const { extraction } = result;
+		if (extraction.funds.length === 0) {
+			return fail(400, {
+				success: false,
+				message:
+					extraction.notes ??
+					'Não identifiquei nenhuma posição de fundo nesta imagem.'
+			});
+		}
+
+		// Each extracted fund is matched against the registry so the form can
+		// offer real CNPJs to pick from.
+		const found = await Promise.all(
+			extraction.funds.map(async (fund) => ({
+				...fund,
+				candidates: fund.cnpj ? [] : await searchFunds(fund.name)
+			}))
+		);
+
+		return {
+			success: true,
+			extracted: found,
+			confidence: extraction.confidence,
+			notes: extraction.notes ?? null
+		};
+	},
+
 	add: async ({ request, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });

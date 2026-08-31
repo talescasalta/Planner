@@ -1,4 +1,4 @@
-import { unzipSync, strFromU8 } from 'fflate';
+import { unzipSync } from 'fflate';
 import { supabaseAdmin } from '$lib/server/supabase';
 
 // Daily quotas for open-ended funds and previdência plans, from the CVM's
@@ -6,6 +6,12 @@ import { supabaseAdmin } from '$lib/server/supabase';
 // every registered fund (~25k). Published with roughly two business days of
 // lag, which is why valuation always takes the freshest row rather than
 // insisting on a particular date.
+
+// CVM ships these files in latin-1; decoding them as UTF-8 silently corrupts
+// every accented character.
+function decodeCvm(content: Uint8Array): string {
+	return new TextDecoder('latin1').decode(content);
+}
 
 const INFORME_URL =
 	'https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS/inf_diario_fi_';
@@ -93,7 +99,7 @@ export async function fetchCvmQuotes(
 			const zipped = new Uint8Array(await response.arrayBuffer());
 			const files = unzipSync(zipped);
 			for (const content of Object.values(files)) {
-				collectLatestQuotes(strFromU8(content), wantedKeys, quotes);
+				collectLatestQuotes(decodeCvm(content), wantedKeys, quotes);
 			}
 		} catch (error) {
 			errors.push(`${month} (${String((error as Error).message)})`);

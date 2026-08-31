@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	appliedSeries,
 	assetMonthReturn,
 	modifiedDietz,
 	monthReturn,
@@ -254,6 +255,186 @@ describe('assetMonthReturn', () => {
 	});
 });
 
+describe('appliedSeries', () => {
+	const asset = (partial = {}) => ({
+		id: 'a1',
+		tax_bucket: 'etf_rv' as const,
+		override_quantity: null,
+		override_total_cost: null,
+		override_date: null,
+		...partial
+	});
+
+	it('tracks money in against what it became', () => {
+		const { points } = appliedSeries(
+			[asset()],
+			[event({ event_date: '2026-07-10', quantity: 100, total_value: 1000 })],
+			[],
+			[quote('2026-07-31', 11), quote('2026-08-31', 12)],
+			['2026-07', '2026-08'],
+			'2026-09-01'
+		);
+		expect(points[0]).toMatchObject({
+			month: '2026-07',
+			applied: 1000,
+			gross: 1100
+		});
+		// No new money in August: applied holds, gross follows the price.
+		expect(points[1]).toMatchObject({
+			month: '2026-08',
+			applied: 1000,
+			gross: 1200
+		});
+	});
+
+	it('removes the cost of what was sold, not the sale proceeds', () => {
+		const { points } = appliedSeries(
+			[asset()],
+			[
+				event({ event_date: '2026-07-10', quantity: 100, total_value: 1000 }),
+				event({
+					event_date: '2026-08-10',
+					event_type: 'Venda',
+					direction: 'debit',
+					quantity: 50,
+					total_value: 900
+				})
+			],
+			[],
+			[quote('2026-07-31', 10), quote('2026-08-31', 18)],
+			['2026-07', '2026-08'],
+			'2026-09-01'
+		);
+		// Sold half of a position bought at 10: applied drops by 500, the cost,
+		// even though the sale brought in 900.
+		expect(points[1].applied).toBeCloseTo(500);
+	});
+
+	it('counts an undated cost basis as capital already in place', () => {
+		// Funds registered from a statement: the amount is known, the date is not.
+		const { points } = appliedSeries(
+			[asset({ override_quantity: 100, override_total_cost: 61208.05 })],
+			[],
+			[
+				snapshot({
+					snapshot_date: '2026-08-27',
+					quantity: 100,
+					close_price: 987.2,
+					net_value: 98720
+				})
+			],
+			[quote('2026-07-31', 950), quote('2026-08-31', 987.2)],
+			['2026-07', '2026-08'],
+			'2026-09-01'
+		);
+		expect(points[0].applied).toBeCloseTo(61208.05);
+		expect(points[1].applied).toBeCloseTo(61208.05);
+	});
+
+	it('holds a dated cost basis out of the months before it', () => {
+		const { points } = appliedSeries(
+			[
+				asset({
+					override_quantity: 100,
+					override_total_cost: 5000,
+					override_date: '2026-08-05'
+				})
+			],
+			[],
+			[],
+			[],
+			['2026-07', '2026-08'],
+			'2026-09-01'
+		);
+		expect(points[0].applied).toBe(0);
+		expect(points[1].applied).toBeCloseTo(5000);
+	});
+
+	it('leaves a holding out of the whole series, not of half of it', () => {
+		// The real LCA: capital that only gets a mark when a position file
+		// arrives. Counting its cost while it has no price pushes the gross line
+		// under the applied one and invents a loss, then a jump.
+		const { points } = appliedSeries(
+			[asset({ id: 'ok' }), asset({ id: 'lca' })],
+			[
+				event({
+					asset_id: 'ok',
+					event_date: '2026-06-10',
+					quantity: 100,
+					total_value: 1000
+				}),
+				event({
+					asset_id: 'lca',
+					event_date: '2026-06-10',
+					quantity: 500,
+					total_value: 5000
+				})
+			],
+			[],
+			// Only "ok" is ever priced.
+			[quote('2026-07-31', 11, 'ok'), quote('2026-08-31', 12, 'ok')],
+			['2026-07', '2026-08'],
+			'2026-09-01'
+		);
+		// The R$ 5.000 of the unpriceable holding is absent from both lines, so
+		// the band still reads as a real gain.
+		expect(points[0]).toMatchObject({ applied: 1000, gross: 1100 });
+		expect(points[1]).toMatchObject({ applied: 1000, gross: 1200 });
+	});
+
+	it('drops an asset priced only at the end, instead of drawing a cliff', () => {
+		// The real August case: a position file arrives and several holdings get
+		// their first price at once. Counted only from that month, the patrimony
+		// appears to jump a third in thirty days.
+		const series = appliedSeries(
+			[asset({ id: 'ok' }), asset({ id: 'tarde' })],
+			[
+				event({
+					asset_id: 'ok',
+					event_date: '2026-06-10',
+					quantity: 100,
+					total_value: 1000
+				}),
+				event({
+					asset_id: 'tarde',
+					event_date: '2026-06-10',
+					quantity: 200,
+					total_value: 20000
+				})
+			],
+			[],
+			[
+				quote('2026-07-31', 11, 'ok'),
+				quote('2026-08-31', 12, 'ok'),
+				// Only ever priced in the last month of the window.
+				quote('2026-08-31', 150, 'tarde')
+			],
+			['2026-07', '2026-08'],
+			'2026-09-01'
+		);
+		expect(series.points[0].gross).toBeCloseTo(1100);
+		expect(series.points[1].gross).toBeCloseTo(1200);
+		expect(series.excludedCount).toBe(1);
+		expect(series.excludedValue).toBeCloseTo(30000);
+	});
+
+	it('returns the months in order regardless of how they were asked', () => {
+		const { points } = appliedSeries(
+			[asset()],
+			[],
+			[],
+			[],
+			['2026-08', '2026-06', '2026-07'],
+			'2026-09-01'
+		);
+		expect(points.map((point) => point.month)).toEqual([
+			'2026-06',
+			'2026-07',
+			'2026-08'
+		]);
+	});
+});
+
 describe('monthReturn', () => {
 	it('weights the portfolio rate by size, not by asset count', () => {
 		const snapshots = [
@@ -321,6 +502,27 @@ describe('monthReturn', () => {
 		expect(result.returnRate).toBeCloseTo(0.1);
 		expect(result.unpricedValue).toBeCloseTo(5000);
 		expect(result.unpricedCount).toBe(1);
+	});
+
+	it('reports how far the CDI series actually reaches', () => {
+		// BCB publishes with a lag, so a running month is otherwise measured
+		// against a short benchmark and looks better than it is.
+		const result = monthReturn(
+			['a1'],
+			'2026-08',
+			'2026-08-31',
+			[snapshot()],
+			[],
+			[quote('2026-07-31', 10), quote('2026-08-31', 10.5)],
+			[
+				{ date: '2026-08-25', rate: 0.05 },
+				{ date: '2026-08-26', rate: 0.05 },
+				// Nothing published for the rest of the month yet.
+				{ date: '2026-09-02', rate: 0.05 }
+			]
+		);
+		expect(result.cdiThrough).toBe('2026-08-26');
+		expect(result.end).toBe('2026-08-31');
 	});
 
 	it('counts a holding with no price anywhere, which marks as zero', () => {

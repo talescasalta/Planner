@@ -4,6 +4,7 @@ import { env } from '$env/dynamic/private';
 import { refreshInvestmentQuotes } from '$lib/server/investment-quotes';
 import { syncCdiRates } from '$lib/server/investment-cdi';
 import { backfillQuoteHistory } from '$lib/server/investment-history';
+import { syncFundRegistry } from '$lib/server/investment-registry';
 
 // Vercel cron (weekday evenings, after B3 close). Same auth contract as
 // /api/health/supabase: nothing runs without the exact CRON_SECRET bearer.
@@ -37,10 +38,15 @@ export const GET: RequestHandler = async ({ request }) => {
 		.slice(0, 10);
 	const backfill = await backfillQuoteHistory(since);
 
+	// The searchable copy of the CVM registry: what lets a fund be found by the
+	// name a broker screenshot shows, without ever composing a CNPJ.
+	const registry = await syncFundRegistry();
+
 	const errors = [
 		...summary.errors,
 		...(cdi.error ? [`cdi: ${cdi.error}`] : []),
-		...backfill.errors
+		...backfill.errors,
+		...(registry.error ? [`registry: ${registry.error}`] : [])
 	];
 	if (errors.length > 0) {
 		console.error('[cron/investment-quotes]', errors);
@@ -50,6 +56,7 @@ export const GET: RequestHandler = async ({ request }) => {
 		...summary,
 		cdiRatesInserted: cdi.inserted,
 		historyInserted: backfill.inserted,
+		registryRows: registry.upserted,
 		errors
 	});
 };

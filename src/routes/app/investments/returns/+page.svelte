@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import ReturnGauge from '$lib/components/charts/ReturnGauge.svelte';
+	import AppliedVsGrossChart from '$lib/components/charts/AppliedVsGrossChart.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -21,6 +23,31 @@
 			return true;
 		});
 	});
+
+	// Two different questions about the same month: what moved the most, and
+	// what moved the patrimony the most. A 12% jump on a small holding wins the
+	// first and barely registers in the second.
+	const TOP = 6;
+	let measured = $derived(rows.filter((row) => !row.unpriced));
+	let byVariation = $derived(
+		[...measured]
+			.filter((row) => row.returnRate !== null)
+			.sort((a, b) => Math.abs(b.returnRate ?? 0) - Math.abs(a.returnRate ?? 0))
+			.slice(0, TOP)
+	);
+	let byImpact = $derived(
+		[...measured]
+			.sort((a, b) => Math.abs(b.gain) - Math.abs(a.gain))
+			.slice(0, TOP)
+	);
+	let maxVariation = $derived(
+		Math.max(0.0001, ...byVariation.map((row) => Math.abs(row.returnRate ?? 0)))
+	);
+	let maxImpact = $derived(
+		Math.max(1, ...byImpact.map((row) => Math.abs(row.gain)))
+	);
+	const barWidth = (value: number | null, max: number) =>
+		Math.min(100, (Math.abs(value ?? 0) / max) * 100);
 
 	const brl = new Intl.NumberFormat('pt-BR', {
 		style: 'currency',
@@ -104,6 +131,39 @@
 		</div>
 
 		{#if month}
+			<div class="grid gap-4 lg:grid-cols-[260px_1fr]">
+				<div
+					class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-4"
+				>
+					<ReturnGauge
+						portfolio={month.returnRate}
+						cdi={month.cdiRate}
+						label={monthName(month.month)}
+						centerValue={brl.format(month.endValue)}
+						centerCaption={`ganho de ${brl.format(month.gain)}`}
+						percentOfCdi={month.percentOfCdi}
+					/>
+				</div>
+				<div class="rounded-lg border border-gray-200 bg-white p-4">
+					<h2 class="text-sm font-semibold text-gray-900">
+						Valor aplicado × saldo bruto
+					</h2>
+					<p class="mt-1 mb-2 text-xs text-gray-500">
+						A faixa entre as linhas é o ganho acumulado.
+					</p>
+					<AppliedVsGrossChart data={data.applied.points} />
+					{#if data.applied.excludedCount > 0}
+						<p class="mt-2 text-xs text-amber-700">
+							{data.applied.excludedCount}
+							{data.applied.excludedCount === 1 ? 'ativo fica' : 'ativos ficam'} fora
+							desta curva ({brl.format(data.applied.excludedValue)}): não têm
+							preço em todo o período, e entrariam como um degrau no mês em que
+							aparecem.
+						</p>
+					{/if}
+				</div>
+			</div>
+
 			<div class="grid gap-4 sm:grid-cols-4">
 				<div class="rounded-lg border border-gray-200 bg-white p-4">
 					<p class="text-xs text-gray-500">Rendeu no mês</p>
@@ -147,6 +207,16 @@
 				líquidos no mês.
 			</p>
 
+			{#if month.cdiThrough && month.cdiThrough < month.end}
+				<div
+					class="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"
+				>
+					O Banco Central publica o CDI com atraso: a série vai só até {month.cdiThrough},
+					não até {month.end}. O CDI do período está incompleto, então o "% do
+					CDI" acima está mais alto do que ficará quando o mês fechar.
+				</div>
+			{/if}
+
 			{#if month.unpricedCount > 0}
 				<div
 					class="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"
@@ -158,6 +228,88 @@
 					não entram nesta rentabilidade.
 				</div>
 			{/if}
+
+			<div class="grid gap-4 lg:grid-cols-2">
+				<div class="rounded-lg border border-gray-200 bg-white p-4">
+					<h2 class="text-sm font-semibold text-gray-900">Quem mais variou</h2>
+					<p class="mt-1 text-xs text-gray-500">
+						Movimento percentual, independente do tamanho da posição.
+					</p>
+					<div class="mt-3 space-y-1">
+						{#each byVariation as row (row.assetId)}
+							<div class="flex items-center gap-2 text-xs">
+								<span class="w-28 truncate text-gray-700"
+									>{data.labels[row.assetId]?.label ?? '—'}</span
+								>
+								<div class="flex flex-1 items-center">
+									<div class="flex h-4 w-1/2 justify-end">
+										{#if (row.returnRate ?? 0) < 0}
+											<div
+												class="h-4 rounded-l bg-red-400"
+												style={`width: ${barWidth(row.returnRate, maxVariation)}%`}
+											></div>
+										{/if}
+									</div>
+									<div class="h-4 w-px bg-gray-300"></div>
+									<div class="flex h-4 w-1/2">
+										{#if (row.returnRate ?? 0) > 0}
+											<div
+												class="h-4 rounded-r bg-emerald-500"
+												style={`width: ${barWidth(row.returnRate, maxVariation)}%`}
+											></div>
+										{/if}
+									</div>
+								</div>
+								<span
+									class={`w-16 text-right ${(row.returnRate ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}
+									>{pct(row.returnRate)}</span
+								>
+							</div>
+						{/each}
+					</div>
+				</div>
+
+				<div class="rounded-lg border border-gray-200 bg-white p-4">
+					<h2 class="text-sm font-semibold text-gray-900">
+						Quem mais pesou no patrimônio
+					</h2>
+					<p class="mt-1 text-xs text-gray-500">
+						Impacto em reais — o que realmente moveu o total.
+					</p>
+					<div class="mt-3 space-y-1">
+						{#each byImpact as row (row.assetId)}
+							<div class="flex items-center gap-2 text-xs">
+								<span class="w-28 truncate text-gray-700"
+									>{data.labels[row.assetId]?.label ?? '—'}</span
+								>
+								<div class="flex flex-1 items-center">
+									<div class="flex h-4 w-1/2 justify-end">
+										{#if row.gain < 0}
+											<div
+												class="h-4 rounded-l bg-red-400"
+												style={`width: ${barWidth(row.gain, maxImpact)}%`}
+											></div>
+										{/if}
+									</div>
+									<div class="h-4 w-px bg-gray-300"></div>
+									<div class="flex h-4 w-1/2">
+										{#if row.gain > 0}
+											<div
+												class="h-4 rounded-r bg-emerald-500"
+												style={`width: ${barWidth(row.gain, maxImpact)}%`}
+											></div>
+										{/if}
+									</div>
+								</div>
+								<span
+									class={`w-24 text-right ${row.gain >= 0 ? 'text-emerald-700' : 'text-red-700'}`}
+									>{brl.format(row.gain)}</span
+								>
+							</div>
+						{/each}
+					</div>
+				</div>
+			</div>
 
 			<div class="rounded-lg border border-gray-200 bg-white p-4">
 				<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
