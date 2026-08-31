@@ -25,6 +25,7 @@ const CLASS_LABELS: Record<AssetClass, string> = {
 	fii: 'FIIs',
 	acao: 'Ações',
 	fundo: 'Fundos',
+	previdencia: 'Previdência',
 	tesouro: 'Tesouro Direto',
 	cdb: 'CDB/RDB',
 	lca_lci: 'LCA/LCI',

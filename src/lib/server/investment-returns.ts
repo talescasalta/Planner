@@ -133,9 +133,15 @@ function assetsWithoutEntryCost(
 	}
 	const excluded = new Set<string>();
 	for (const asset of assets) {
-		const hasOverride =
-			asset.override_quantity !== null && asset.override_total_cost !== null;
-		if (hasOverride) continue;
+		// A cost basis without a date cannot anchor a rate — it is the case of
+		// funds registered from a current statement, where the amount invested
+		// is known but not when. Those still count as patrimony; they just
+		// cannot be measured against a benchmark.
+		const hasDatedOverride =
+			asset.override_quantity !== null &&
+			asset.override_total_cost !== null &&
+			asset.override_date !== null;
+		if (hasDatedOverride) continue;
 		if (!acquiredForAPrice.has(asset.id) || arrivedFree.has(asset.id)) {
 			excluded.add(asset.id);
 		}
@@ -173,10 +179,14 @@ export function buildCashFlows(
 	const flows: CashFlow[] = [];
 
 	for (const asset of assets) {
-		if (asset.override_quantity === null || asset.override_total_cost === null)
+		if (
+			asset.override_quantity === null ||
+			asset.override_total_cost === null ||
+			asset.override_date === null
+		)
 			continue;
 		flows.push({
-			date: asset.override_date ?? '2000-01-01',
+			date: asset.override_date,
 			amount: -asset.override_total_cost
 		});
 	}

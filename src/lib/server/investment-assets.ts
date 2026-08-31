@@ -6,7 +6,15 @@
 // funnels into a normalized product_key that investment_assets is unique on.
 
 export type AssetClass =
-	'etf' | 'fii' | 'acao' | 'fundo' | 'tesouro' | 'cdb' | 'lca_lci' | 'outro';
+	| 'etf'
+	| 'fii'
+	| 'acao'
+	| 'fundo'
+	| 'previdencia'
+	| 'tesouro'
+	| 'cdb'
+	| 'lca_lci'
+	| 'outro';
 
 export type TaxBucket = 'fii' | 'acoes' | 'etf_rv' | 'retido_fonte' | 'isento';
 
@@ -47,9 +55,12 @@ export function defaultTaxBucket(
 			return tipo && /renda fixa/i.test(tipo) ? 'retido_fonte' : 'etf_rv';
 		case 'lca_lci':
 			return 'isento';
+		// Previdência is withheld by the insurer under the regressive table;
+		// the others by the administrator (come-cotas or on redemption).
 		case 'tesouro':
 		case 'cdb':
 		case 'fundo':
+		case 'previdencia':
 			return 'retido_fonte';
 		case 'outro':
 			// Deliberately conservative: never compute a DARF for something we
