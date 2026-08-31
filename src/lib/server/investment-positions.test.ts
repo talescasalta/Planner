@@ -169,6 +169,105 @@ describe('deriveQuantity', () => {
 		expect(deriveQuantity('a1', [snapshot({})], events).quantity).toBe(100);
 	});
 
+	it('treats Atualização as a restatement, not as a purchase', () => {
+		// The real BOVA11 case: 16 "Atualização" rows, every one reading 170,
+		// which is exactly the position. Summing them multiplied the holding.
+		const events = [
+			event({
+				event_date: '2026-08-05',
+				event_type: 'Atualização',
+				quantity: 170
+			}),
+			event({
+				event_date: '2026-08-06',
+				event_type: 'Atualização',
+				quantity: 170
+			}),
+			event({
+				event_date: '2026-08-07',
+				event_type: 'Atualização',
+				quantity: 170
+			})
+		];
+		expect(
+			deriveQuantity('a1', [snapshot({ quantity: 170 })], events).quantity
+		).toBe(170);
+	});
+
+	it('a restatement overrides the running quantity', () => {
+		const events = [
+			event({ event_date: '2026-08-05', event_type: 'Compra', quantity: 30 }),
+			event({
+				event_date: '2026-08-06',
+				event_type: 'Atualização',
+				quantity: 170
+			})
+		];
+		expect(
+			deriveQuantity('a1', [snapshot({ quantity: 100 })], events).quantity
+		).toBe(170);
+	});
+
+	it('walks backwards when the only snapshot is in the future', () => {
+		// A fund known solely from a recent statement: before that date the
+		// position did not spring from zero, it was there minus what moved.
+		const snapshots = [
+			snapshot({ snapshot_date: '2026-08-27', quantity: 100 })
+		];
+		const events = [
+			event({ event_date: '2026-08-10', event_type: 'Compra', quantity: 40 })
+		];
+		const derived = deriveQuantity('a1', snapshots, events, '2026-07-31');
+		expect(derived.quantity).toBe(60);
+		expect(derived.baselineDate).toBe('2026-08-27');
+	});
+
+	it('holds the position steady backwards when nothing moved', () => {
+		const snapshots = [
+			snapshot({ snapshot_date: '2026-08-27', quantity: 213960 })
+		];
+		expect(deriveQuantity('a1', snapshots, [], '2026-07-31').quantity).toBe(
+			213960
+		);
+	});
+
+	it('ignores negociação rows when walking backwards', () => {
+		const snapshots = [
+			snapshot({ snapshot_date: '2026-08-27', quantity: 100 })
+		];
+		const events = [
+			event({
+				event_date: '2026-08-10',
+				event_type: 'Transferência - Liquidação',
+				quantity: 40
+			}),
+			event({
+				event_date: '2026-08-10',
+				event_type: 'Compra',
+				quantity: 40,
+				source: 'b3_negociacao'
+			})
+		];
+		expect(deriveQuantity('a1', snapshots, events, '2026-07-31').quantity).toBe(
+			60
+		);
+	});
+
+	it('never reports a negative position', () => {
+		// Tesouro Selic 2025 in the real data: its redemption is in the history,
+		// its purchase predates it. A negative holding would subtract from the
+		// patrimony as if the money were owed.
+		const events = [
+			event({
+				event_date: '2025-03-01',
+				event_type: 'Vencimento',
+				direction: 'debit',
+				quantity: 20
+			})
+		];
+		expect(deriveQuantity('a1', [], events).quantity).toBe(0);
+	});
+
 	it('works without any snapshot (movimentação-only history)', () => {
 		const events = [
 			event({ event_date: '2026-08-05', event_type: 'Compra', quantity: 40 })

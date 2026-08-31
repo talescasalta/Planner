@@ -3,6 +3,7 @@ import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { refreshInvestmentQuotes } from '$lib/server/investment-quotes';
 import { syncCdiRates } from '$lib/server/investment-cdi';
+import { backfillQuoteHistory } from '$lib/server/investment-history';
 
 // Vercel cron (weekday evenings, after B3 close). Same auth contract as
 // /api/health/supabase: nothing runs without the exact CRON_SECRET bearer.
@@ -26,9 +27,20 @@ export const GET: RequestHandler = async ({ request }) => {
 		refreshInvestmentQuotes(),
 		syncCdiRates()
 	]);
+
+	// Monthly returns need the closing price of the previous month, and a newly
+	// imported asset arrives with none. Backfilling a short window each run
+	// fills those in; existing rows are never overwritten, so it settles into a
+	// no-op once the history is complete.
+	const since = new Date(Date.now() - 120 * 86400000)
+		.toISOString()
+		.slice(0, 10);
+	const backfill = await backfillQuoteHistory(since);
+
 	const errors = [
 		...summary.errors,
-		...(cdi.error ? [`cdi: ${cdi.error}`] : [])
+		...(cdi.error ? [`cdi: ${cdi.error}`] : []),
+		...backfill.errors
 	];
 	if (errors.length > 0) {
 		console.error('[cron/investment-quotes]', errors);
@@ -37,6 +49,7 @@ export const GET: RequestHandler = async ({ request }) => {
 		ok: errors.length === 0,
 		...summary,
 		cdiRatesInserted: cdi.inserted,
+		historyInserted: backfill.inserted,
 		errors
 	});
 };
