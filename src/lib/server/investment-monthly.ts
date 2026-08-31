@@ -19,6 +19,7 @@ import {
 	type SnapshotRow
 } from './investment-positions';
 import { cdiFactor, type CdiRate } from './investment-returns';
+import { computeCostBasis, type TaxAssetRow } from './investment-tax';
 
 export interface MonthWindow {
 	month: string; // YYYY-MM
@@ -207,6 +208,99 @@ export interface MonthReturn {
 	// lag, so a running month is measured against a short benchmark — which
 	// flatters the comparison until the series catches up.
 	cdiThrough: string | null;
+}
+
+export interface AppliedPoint {
+	month: string;
+	applied: number; // capital put in and not yet taken out
+	gross: number; // what it is worth
+}
+
+// The pair a broker shows as "Valor Aplicado" and "Saldo Bruto": the money
+// that went in against what it became. Their gap is the accumulated gain, and
+// watching it open (or close) says more than either line alone.
+//
+// Applied is not the sum of purchases: a sale removes the cost of what was
+// sold, at the average price paid, which is exactly the cost basis the tax
+// engine already tracks.
+export interface AppliedSeries {
+	points: AppliedPoint[];
+	// Holdings left out because they cannot be valued across the whole window,
+	// and what they are worth today — so the reader knows what the trend omits.
+	excludedCount: number;
+	excludedValue: number;
+}
+
+export function appliedSeries(
+	assets: TaxAssetRow[],
+	events: EventRow[],
+	snapshots: SnapshotRow[],
+	quotes: QuoteRow[],
+	months: string[],
+	today: string
+): AppliedSeries {
+	const ordered = [...months].sort((a, b) => a.localeCompare(b));
+	const ends = ordered.map((month) => monthWindow(month, today).end);
+
+	// A trend needs the same panel in every month. An asset priced only from
+	// the day a position file arrived would enter the chart as a cliff — the
+	// patrimony appearing to jump a third in a month — so it is left out of
+	// the whole series rather than half of it.
+	const eligible: TaxAssetRow[] = [];
+	let excludedCount = 0;
+	let excludedValue = 0;
+	for (const asset of assets) {
+		const pricedEverywhere = ends.every((end) => {
+			const quantity = deriveQuantity(
+				asset.id,
+				snapshots,
+				events,
+				end
+			).quantity;
+			return (
+				quantity === 0 || priceAt(asset.id, quotes, snapshots, end) !== null
+			);
+		});
+		if (pricedEverywhere) {
+			eligible.push(asset);
+			continue;
+		}
+		excludedCount++;
+		const last = ends.at(-1)!;
+		const quantity = deriveQuantity(asset.id, snapshots, events, last).quantity;
+		const price = priceAt(asset.id, quotes, snapshots, last);
+		if (price !== null) excludedValue += quantity * price;
+	}
+
+	const points = ordered.map((month, index) => {
+		const end = ends[index];
+		let applied = 0;
+		let gross = 0;
+		for (const asset of eligible) {
+			const quantity = deriveQuantity(
+				asset.id,
+				snapshots,
+				events,
+				end
+			).quantity;
+			const upTo = events.filter(
+				(event) => event.asset_id === asset.id && event.event_date <= end
+			);
+			// An override with no date is capital already in place before the
+			// window, so it counts from the first month shown.
+			const seeded =
+				asset.override_date === null || asset.override_date <= end
+					? asset
+					: { ...asset, override_quantity: null, override_total_cost: null };
+			applied += Math.max(0, computeCostBasis(seeded, upTo).cost.totalCost);
+			if (quantity === 0) continue;
+			const price = priceAt(asset.id, quotes, snapshots, end);
+			if (price !== null) gross += quantity * price;
+		}
+		return { month, applied, gross };
+	});
+
+	return { points, excludedCount, excludedValue };
 }
 
 export function lastCdiDate(
