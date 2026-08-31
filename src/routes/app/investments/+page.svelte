@@ -16,6 +16,62 @@
 	);
 	let total = $derived(positions.reduce((sum, p) => sum + p.value, 0));
 
+	// Positions table: class filter, free-text search and sortable columns.
+	type SortKey = 'value' | 'label' | 'classLabel' | 'quantity' | 'price';
+	let classFilter = $state('todas');
+	let search = $state('');
+	let sortKey: SortKey = $state('value');
+	let sortAsc = $state(false);
+
+	let classOptions = $derived(
+		[...new Set(positions.map((p) => p.classLabel))].sort((a, b) =>
+			a.localeCompare(b, 'pt-BR')
+		)
+	);
+
+	let visiblePositions = $derived.by(() => {
+		const term = search.trim().toLowerCase();
+		const filtered = positions.filter(
+			(p) =>
+				(classFilter === 'todas' || p.classLabel === classFilter) &&
+				(term === '' ||
+					p.label.toLowerCase().includes(term) ||
+					p.name.toLowerCase().includes(term))
+		);
+		const direction = sortAsc ? 1 : -1;
+		return [...filtered].sort((a, b) => {
+			if (sortKey === 'label' || sortKey === 'classLabel') {
+				return a[sortKey].localeCompare(b[sortKey], 'pt-BR') * direction;
+			}
+			// Assets without a quote sort last regardless of direction, so an
+			// unpriced row never looks like the cheapest holding.
+			const left = sortKey === 'price' ? a.price : a[sortKey];
+			const right = sortKey === 'price' ? b.price : b[sortKey];
+			if (left === null) return 1;
+			if (right === null) return -1;
+			return (left - right) * direction;
+		});
+	});
+
+	let visibleTotal = $derived(
+		visiblePositions.reduce((sum, p) => sum + p.value, 0)
+	);
+
+	function toggleSort(key: SortKey) {
+		if (sortKey === key) {
+			sortAsc = !sortAsc;
+			return;
+		}
+		sortKey = key;
+		// Text sorts read best A→Z; numbers read best largest-first.
+		sortAsc = key === 'label' || key === 'classLabel';
+	}
+
+	function sortIndicator(key: SortKey) {
+		if (sortKey !== key) return '';
+		return sortAsc ? ' ↑' : ' ↓';
+	}
+
 	// Class → assets treemap, computed client-side so the owner filter applies.
 	let allocation = $derived.by(() => {
 		const byClass = new SvelteMap<
@@ -48,7 +104,9 @@
 	let evolutionMax = $derived(
 		Math.max(0, ...data.evolution.map((p) => p.totalValue))
 	);
-	let incomeMax = $derived(Math.max(1, ...data.income.map((i) => i.total)));
+	let incomeMax = $derived(Math.max(1, ...data.income.map((i) => i.recurring)));
+	let maturityMonths = $derived(data.income.filter((i) => i.maturity > 0));
+	let lastRecurring = $derived(data.income.at(-1)?.recurring ?? null);
 
 	const brl = new Intl.NumberFormat('pt-BR', {
 		style: 'currency',
@@ -127,9 +185,11 @@
 			</p>
 		</div>
 		<div class="rounded-lg border border-gray-200 bg-white p-4">
-			<p class="text-xs text-gray-500">Renda passiva (último mês com dados)</p>
+			<p class="text-xs text-gray-500">
+				Renda passiva recorrente (último mês com dados)
+			</p>
 			<p class="mt-1 text-2xl font-semibold text-gray-900">
-				{data.income.length > 0 ? brl.format(data.income.at(-1)!.total) : '—'}
+				{lastRecurring === null ? '—' : brl.format(lastRecurring)}
 			</p>
 		</div>
 	</div>
@@ -205,38 +265,112 @@
 							<div class="h-4 flex-1 rounded bg-gray-100">
 								<div
 									class="h-4 rounded bg-emerald-500"
-									style={`width: ${Math.max(2, (row.total / incomeMax) * 100)}%`}
+									style={`width: ${Math.max(2, (row.recurring / incomeMax) * 100)}%`}
 								></div>
 							</div>
 							<span class="w-24 text-right text-gray-700"
-								>{brl.format(row.total)}</span
+								>{brl.format(row.recurring)}</span
 							>
 						</div>
 					{/each}
 				</div>
+				{#if maturityMonths.length > 0}
+					<p class="mt-3 border-t border-gray-100 pt-2 text-xs text-gray-500">
+						Fora da série (juros liberados no vencimento do papel, referentes a
+						todo o período de aplicação):
+						{#each maturityMonths as row, index (row.month)}{index > 0
+								? ', '
+								: ' '}{row.month} — {brl.format(row.maturity)}{/each}
+					</p>
+				{/if}
 			{/if}
 		</div>
 	</div>
 
 	<div class="rounded-lg border border-gray-200 bg-white p-4">
-		<h2 class="mb-2 text-sm font-semibold text-gray-900">Posições</h2>
+		<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+			<h2 class="text-sm font-semibold text-gray-900">Posições</h2>
+			{#if positions.length > 0}
+				<div class="flex flex-wrap items-center gap-2">
+					<input
+						type="search"
+						bind:value={search}
+						placeholder="Buscar ativo…"
+						class="w-44 rounded border border-gray-300 px-2 py-1 text-sm"
+					/>
+					<select
+						bind:value={classFilter}
+						class="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700"
+					>
+						<option value="todas">Todas as classes</option>
+						{#each classOptions as option (option)}
+							<option value={option}>{option}</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
+		</div>
 		{#if positions.length === 0}
 			<p class="py-6 text-center text-sm text-gray-500">Nada por aqui ainda.</p>
+		{:else if visiblePositions.length === 0}
+			<p class="py-6 text-center text-sm text-gray-500">
+				Nenhum ativo corresponde ao filtro.
+			</p>
 		{:else}
+			<p class="mb-2 text-xs text-gray-500">
+				{visiblePositions.length} de {positions.length} posições · {brl.format(
+					visibleTotal
+				)}
+			</p>
 			<div class="overflow-x-auto">
 				<table class="w-full text-left text-sm">
 					<thead>
 						<tr class="border-b text-xs text-gray-500">
-							<th class="py-1 pr-2">Ativo</th>
-							<th class="py-1 pr-2">Classe</th>
-							<th class="py-1 pr-2 text-right">Quantidade</th>
+							<th class="py-1 pr-2">
+								<button
+									type="button"
+									class="hover:text-gray-900"
+									onclick={() => toggleSort('label')}
+									>Ativo{sortIndicator('label')}</button
+								>
+							</th>
+							<th class="py-1 pr-2">
+								<button
+									type="button"
+									class="hover:text-gray-900"
+									onclick={() => toggleSort('classLabel')}
+									>Classe{sortIndicator('classLabel')}</button
+								>
+							</th>
+							<th class="py-1 pr-2 text-right">
+								<button
+									type="button"
+									class="hover:text-gray-900"
+									onclick={() => toggleSort('quantity')}
+									>Quantidade{sortIndicator('quantity')}</button
+								>
+							</th>
 							<th class="py-1 pr-2 text-right">Preço médio</th>
-							<th class="py-1 pr-2 text-right">Cotação</th>
-							<th class="py-1 text-right">Valor</th>
+							<th class="py-1 pr-2 text-right">
+								<button
+									type="button"
+									class="hover:text-gray-900"
+									onclick={() => toggleSort('price')}
+									>Cotação{sortIndicator('price')}</button
+								>
+							</th>
+							<th class="py-1 text-right">
+								<button
+									type="button"
+									class="hover:text-gray-900"
+									onclick={() => toggleSort('value')}
+									>Valor{sortIndicator('value')}</button
+								>
+							</th>
 						</tr>
 					</thead>
 					<tbody>
-						{#each positions as position (position.assetId)}
+						{#each visiblePositions as position (position.assetId)}
 							<tr class="border-b border-gray-100">
 								<td class="py-1 pr-2">
 									<span class="font-medium text-gray-900">{position.label}</span
