@@ -35,6 +35,7 @@ export interface QuoteRow {
 
 export type EventEffect =
 	| 'quantity' // moves the position size (sign from direction)
+	| 'restatement' // declares the whole position, replacing it
 	| 'income' // cash in, size untouched (dividends, juros)
 	| 'fee' // cash out, size untouched
 	| 'cost_basis' // changes the tax cost basis, size untouched (FII amortization)
@@ -53,7 +54,11 @@ const EFFECT_BY_TYPE: Record<string, EventEffect> = {
 	'resgate antecipado': 'quantity',
 	resgate: 'quantity',
 	vencimento: 'quantity',
-	atualizacao: 'quantity',
+	// "Atualização" restates the whole holding rather than moving it: B3 emits
+	// it periodically with the position's full size. Adding it as a delta
+	// multiplies the holding — BOVA11 carries 16 of them, all reading 170,
+	// which is exactly the position.
+	atualizacao: 'restatement',
 	desdobro: 'quantity',
 	grupamento: 'quantity',
 	'bonificacao em ativos': 'quantity',
@@ -130,9 +135,98 @@ function countsForDerivation(
 	return !baseline || event.event_date > baseline.snapshot_date;
 }
 
-// Current quantity = latest snapshot on/before asOf + quantity events after it.
-// Only movimentação (and manual) events count: negociação rows describe the
-// same trades that settle as "Transferência - Liquidação" and would double.
+// Nothing here can be held short: the B3 export only ever describes what the
+// investor owns. A running total that goes below zero means the acquisition
+// happened before the available history — Tesouro Selic 2025 shows its own
+// redemption with no matching purchase — and the honest answer is an empty
+// position, not a negative one that would subtract from the patrimony.
+function notNegative(quantity: number): number {
+	return quantity > 0 ? quantity : 0;
+}
+
+function earliestSnapshotAfter(
+	assetId: string,
+	snapshots: SnapshotRow[],
+	cutoff: string
+): SnapshotRow | null {
+	let earliest: SnapshotRow | null = null;
+	for (const snapshot of snapshots) {
+		if (snapshot.asset_id !== assetId || snapshot.snapshot_date <= cutoff)
+			continue;
+		if (!earliest || snapshot.snapshot_date < earliest.snapshot_date)
+			earliest = snapshot;
+	}
+	return earliest;
+}
+
+// Signed quantity change of one event, or null when it does not move the size.
+function quantityDelta(event: EventRow): number | null {
+	if (classifyEvent(event) !== 'quantity' || event.quantity === null)
+		return null;
+	return event.direction === 'credit' ? event.quantity : -event.quantity;
+}
+
+// Walks back from a snapshot that lies in the future of the asked date,
+// undoing everything that happened in between. Without this, any date before
+// the first snapshot would be answered from an empty position — reading a
+// fund's whole balance as if it had appeared out of nowhere that month.
+function quantityBefore(
+	assetId: string,
+	future: SnapshotRow,
+	events: EventRow[],
+	cutoff: string
+): number {
+	let quantity = future.quantity;
+	for (const event of events) {
+		if (event.asset_id !== assetId || event.source === 'b3_negociacao')
+			continue;
+		if (event.event_date <= cutoff || event.event_date > future.snapshot_date)
+			continue;
+		const delta = quantityDelta(event);
+		if (delta !== null) quantity -= delta;
+	}
+	return quantity;
+}
+
+function unknownTypesFor(
+	assetId: string,
+	events: EventRow[],
+	cutoff: string
+): string[] {
+	const unknown = new Set<string>();
+	for (const event of events) {
+		if (event.asset_id !== assetId || event.source === 'b3_negociacao')
+			continue;
+		if (event.event_date > cutoff) continue;
+		if (classifyEvent(event) === 'unknown') unknown.add(event.event_type);
+	}
+	return [...unknown];
+}
+
+function quantityForward(
+	assetId: string,
+	baseline: SnapshotRow | null,
+	events: EventRow[],
+	cutoff: string
+): number {
+	let quantity = baseline?.quantity ?? 0;
+	for (const event of events) {
+		if (!countsForDerivation(event, assetId, cutoff, baseline)) continue;
+		if (classifyEvent(event) === 'restatement' && event.quantity !== null) {
+			// The position as B3 declares it, replacing whatever we had.
+			quantity = event.quantity;
+			continue;
+		}
+		const delta = quantityDelta(event);
+		if (delta !== null) quantity += delta;
+	}
+	return quantity;
+}
+
+// Current quantity = nearest snapshot plus the events between it and the asked
+// date, applied forwards or backwards depending on which side the snapshot
+// falls. Only movimentação (and manual) events count: negociação rows describe
+// the same trades that settle as "Transferência - Liquidação" and would double.
 export function deriveQuantity(
 	assetId: string,
 	snapshots: SnapshotRow[],
@@ -141,20 +235,25 @@ export function deriveQuantity(
 ): DerivedPosition {
 	const cutoff = asOf ?? '9999-12-31';
 	const baseline = latestSnapshotFor(assetId, snapshots, cutoff);
-	let quantity = baseline?.quantity ?? 0;
-	const unknown = new Set<string>();
-	for (const event of events) {
-		if (!countsForDerivation(event, assetId, cutoff, baseline)) continue;
-		const effect = classifyEvent(event);
-		if (effect === 'unknown') unknown.add(event.event_type);
-		if (effect !== 'quantity' || event.quantity === null) continue;
-		quantity += event.direction === 'credit' ? event.quantity : -event.quantity;
+	const unknown = unknownTypesFor(assetId, events, cutoff);
+
+	if (!baseline) {
+		const future = earliestSnapshotAfter(assetId, snapshots, cutoff);
+		if (future) {
+			return {
+				assetId,
+				quantity: notNegative(quantityBefore(assetId, future, events, cutoff)),
+				baselineDate: future.snapshot_date,
+				unknownEventTypes: unknown
+			};
+		}
 	}
+
 	return {
 		assetId,
-		quantity,
+		quantity: notNegative(quantityForward(assetId, baseline, events, cutoff)),
 		baselineDate: baseline?.snapshot_date ?? null,
-		unknownEventTypes: [...unknown]
+		unknownEventTypes: unknown
 	};
 }
 

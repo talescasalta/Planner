@@ -157,6 +157,12 @@
 				Importar arquivos da B3
 			</a>
 			<a
+				href={resolve('/app/investments/returns')}
+				class="text-sm text-blue-700 underline"
+			>
+				Rendimento mensal
+			</a>
+			<a
 				href={resolve('/app/investments/funds')}
 				class="text-sm text-blue-700 underline"
 			>
