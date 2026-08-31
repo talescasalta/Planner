@@ -78,12 +78,18 @@ INSERT INTO public.investment_events (id, household_id, asset_id, event_date, ev
 	('bbbbbbbb-0000-0000-0000-00000000000c', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bbbbbbbb-0000-0000-0000-00000000000a', '2026-08-02', 'Rendimento', 'credit', 'ETFB11 - ETF B', 'b3_movimentacao', 'seed-b');
 
 INSERT INTO public.investment_quotes (id, household_id, asset_id, quote_date, price, source) VALUES
-	('aaaaaaaa-0000-0000-0000-00000000000d', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-0000-0000-0000-00000000000a', '2026-08-03', 100, 'brapi'),
-	('bbbbbbbb-0000-0000-0000-00000000000d', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bbbbbbbb-0000-0000-0000-00000000000a', '2026-08-03', 200, 'brapi');
+	('aaaaaaaa-0000-0000-0000-00000000000d', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-0000-0000-0000-00000000000a', '2026-08-03', 100, 'yahoo'),
+	('bbbbbbbb-0000-0000-0000-00000000000d', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bbbbbbbb-0000-0000-0000-00000000000a', '2026-08-03', 200, 'yahoo');
 
 INSERT INTO public.investment_darf_status (id, household_id, owner_user_id, reference_month, paid) VALUES
 	('aaaaaaaa-0000-0000-0000-00000000000e', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '11111111-1111-1111-1111-111111111111', '2026-08-01', false),
 	('bbbbbbbb-0000-0000-0000-00000000000e', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '22222222-2222-2222-2222-222222222222', '2026-08-01', false);
+
+-- Dado público de mercado: não pertence a household nenhum. Todo usuário
+-- logado lê as mesmas linhas; anon continua sem ler nada.
+INSERT INTO public.cdi_daily_rates (rate_date, rate) VALUES
+	('2026-08-03', 0.051660),
+	('2026-08-04', 0.051660);
 
 -- Tabela interna deny-all: linhas existem, mas nenhuma role da API pode vê-las.
 INSERT INTO public.classification_rate_limits (user_id) VALUES
@@ -98,7 +104,7 @@ INSERT INTO public.classification_rate_limits (user_id) VALUES
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
 
-SELECT plan(59);
+SELECT plan(61);
 
 -- ============================================================
 -- 1. anon não lê nada (todas as 18 tabelas públicas)
@@ -124,6 +130,7 @@ SELECT is_empty('SELECT id FROM public.investment_snapshots', 'anon não lê inv
 SELECT is_empty('SELECT id FROM public.investment_events', 'anon não lê investment_events');
 SELECT is_empty('SELECT id FROM public.investment_quotes', 'anon não lê investment_quotes');
 SELECT is_empty('SELECT id FROM public.investment_darf_status', 'anon não lê investment_darf_status');
+SELECT is_empty('SELECT rate_date FROM public.cdi_daily_rates', 'anon não lê cdi_daily_rates');
 
 SELECT throws_ok(
 	$$INSERT INTO public.transactions (household_id, date, description, amount, created_by_user_id)
@@ -160,6 +167,8 @@ SELECT results_eq('SELECT id FROM public.investment_snapshots', ARRAY['aaaaaaaa-
 SELECT results_eq('SELECT id FROM public.investment_events', ARRAY['aaaaaaaa-0000-0000-0000-00000000000c'::uuid], 'A vê só eventos do household A');
 SELECT results_eq('SELECT id FROM public.investment_quotes', ARRAY['aaaaaaaa-0000-0000-0000-00000000000d'::uuid], 'A vê só cotações do household A');
 SELECT results_eq('SELECT id FROM public.investment_darf_status', ARRAY['aaaaaaaa-0000-0000-0000-00000000000e'::uuid], 'A vê só DARFs do household A');
+-- Referência pública, de propósito: a série do CDI é a mesma para todos.
+SELECT isnt_empty('SELECT rate_date FROM public.cdi_daily_rates', 'membro lê a série pública de CDI');
 
 -- Escrita cruzada: A tentando alcançar o household B
 SELECT throws_ok(

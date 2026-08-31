@@ -1,12 +1,21 @@
-import { env } from '$env/dynamic/private';
 import { supabaseAdmin } from '$lib/server/supabase';
 
 // Daily quote refresh so patrimony stays current without monthly posição
-// uploads: brapi.dev covers B3-listed tickers (ETF/FII/ações), the Tesouro
+// uploads: Yahoo Finance covers B3-listed tickers (ETF/FII/ações), the Tesouro
 // Transparente open dataset covers Tesouro Direto. Bank-issued fixed income
 // has no public price — valuation falls back to the last snapshot value.
 
-const BRAPI_URL = 'https://brapi.dev/api/quote';
+// Yahoo suffixes B3 tickers with ".SA" and serves one symbol per call, with no
+// key. (brapi.dev was the obvious choice until it started charging for every
+// request, including plain quotes.)
+const YAHOO_CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart';
+// Yahoo answers 429 to requests without a browser-ish User-Agent.
+const YAHOO_HEADERS = {
+	accept: 'application/json',
+	'user-agent':
+		'Mozilla/5.0 (compatible; PlannerBot/1.0; +https://github.com/talescasalta/Planner)'
+};
+
 const TESOURO_CSV_URL =
 	'https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/PrecoTaxaTesouroDireto.csv';
 
@@ -26,29 +35,52 @@ export interface QuoteRefreshSummary {
 	errors: string[];
 }
 
-// One batched call per run; per-ticker absence is tolerated (delisted paper,
-// brapi hiccup) — the asset just keeps its last known quote.
-export async function fetchBrapiQuotes(
+export function yahooSymbol(ticker: string): string {
+	return `${ticker.toUpperCase()}.SA`;
+}
+
+export function priceFromYahooChart(body: unknown): number | null {
+	const meta = (
+		body as {
+			chart?: { result?: { meta?: { regularMarketPrice?: unknown } }[] };
+		}
+	)?.chart?.result?.[0]?.meta;
+	const price = meta?.regularMarketPrice;
+	return typeof price === 'number' && Number.isFinite(price) && price > 0
+		? price
+		: null;
+}
+
+// One call per ticker (Yahoo's chart endpoint takes a single symbol). A ticker
+// that fails is skipped rather than aborting the run: the asset simply keeps
+// its last known quote, which is also how unquotable fixed income behaves.
+export async function fetchTickerQuotes(
 	tickers: string[],
 	fetcher: typeof fetch = fetch
-): Promise<Map<string, number>> {
+): Promise<{ quotes: Map<string, number>; failures: string[] }> {
 	const quotes = new Map<string, number>();
-	if (tickers.length === 0) return quotes;
-	const token = env.BRAPI_TOKEN?.trim();
-	const url = `${BRAPI_URL}/${tickers.join(',')}${token ? `?token=${token}` : ''}`;
-	const response = await fetcher(url, {
-		headers: { accept: 'application/json' }
-	});
-	if (!response.ok) throw new Error(`brapi respondeu ${response.status}`);
-	const body = (await response.json()) as {
-		results?: { symbol?: string; regularMarketPrice?: number }[];
-	};
-	for (const result of body.results ?? []) {
-		if (result.symbol && typeof result.regularMarketPrice === 'number') {
-			quotes.set(result.symbol.toUpperCase(), result.regularMarketPrice);
+	const failures: string[] = [];
+	for (const ticker of tickers) {
+		try {
+			const response = await fetcher(
+				`${YAHOO_CHART_URL}/${yahooSymbol(ticker)}?range=1d&interval=1d`,
+				{ headers: YAHOO_HEADERS }
+			);
+			if (!response.ok) {
+				failures.push(`${ticker} (${response.status})`);
+				continue;
+			}
+			const price = priceFromYahooChart(await response.json());
+			if (price === null) {
+				failures.push(`${ticker} (sem preço)`);
+				continue;
+			}
+			quotes.set(ticker.toUpperCase(), price);
+		} catch (error) {
+			failures.push(`${ticker} (${String((error as Error).message)})`);
 		}
 	}
-	return quotes;
+	return { quotes, failures };
 }
 
 // "Tesouro IPCA+ 2032" (our product name) ↔ CSV row (Tipo Titulo="Tesouro
@@ -151,26 +183,22 @@ async function collectTickerUpserts(
 	summary.tickersRequested = tickers.length;
 	if (tickers.length === 0) return [];
 	const today = new Date().toISOString().slice(0, 10);
-	try {
-		const quotes = await fetchBrapiQuotes(tickers, fetcher);
-		summary.tickerQuotes = quotes.size;
-		return tickerAssets.flatMap((asset) => {
-			const price = quotes.get(asset.ticker!.toUpperCase());
-			if (price === undefined) return [];
-			return [
-				{
-					household_id: asset.household_id,
-					asset_id: asset.id,
-					quote_date: today,
-					price,
-					source: 'brapi'
-				}
-			];
-		});
-	} catch (error) {
-		summary.errors.push(`brapi: ${String((error as Error).message)}`);
-		return [];
-	}
+	const { quotes, failures } = await fetchTickerQuotes(tickers, fetcher);
+	summary.tickerQuotes = quotes.size;
+	if (failures.length > 0) summary.errors.push(`yahoo: ${failures.join(', ')}`);
+	return tickerAssets.flatMap((asset) => {
+		const price = quotes.get(asset.ticker!.toUpperCase());
+		if (price === undefined) return [];
+		return [
+			{
+				household_id: asset.household_id,
+				asset_id: asset.id,
+				quote_date: today,
+				price,
+				source: 'yahoo'
+			}
+		];
+	});
 }
 
 async function collectTesouroUpserts(

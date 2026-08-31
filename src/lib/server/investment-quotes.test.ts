@@ -4,7 +4,8 @@ vi.mock('$env/dynamic/private', () => ({ env: {} }));
 vi.mock('$lib/server/supabase', () => ({ supabaseAdmin: { from: vi.fn() } }));
 
 import {
-	fetchBrapiQuotes,
+	fetchTickerQuotes,
+	priceFromYahooChart,
 	ingestTesouroCsvLine,
 	tesouroKeyFromProductName,
 	tesouroMatchKey
@@ -65,32 +66,59 @@ describe('tesouro matching', () => {
 	});
 });
 
-describe('fetchBrapiQuotes', () => {
-	it('maps symbols to prices and tolerates missing tickers', async () => {
-		const fetcher = vi.fn().mockResolvedValue({
-			ok: true,
-			json: async () => ({
-				results: [
-					{ symbol: 'BOVA11', regularMarketPrice: 171.82 },
-					{ symbol: 'KNCR11' } // no price → skipped
-				]
-			})
-		});
-		const quotes = await fetchBrapiQuotes(
-			['BOVA11', 'KNCR11'],
+function yahooChart(price: number | null) {
+	return {
+		ok: true,
+		json: async () => ({
+			chart: {
+				result: [{ meta: price === null ? {} : { regularMarketPrice: price } }]
+			}
+		})
+	};
+}
+
+describe('fetchTickerQuotes', () => {
+	it('queries Yahoo per ticker with the .SA suffix', async () => {
+		const fetcher = vi.fn().mockResolvedValue(yahooChart(171.82));
+		const { quotes } = await fetchTickerQuotes(
+			['BOVA11'],
 			fetcher as unknown as typeof fetch
 		);
 		expect(quotes.get('BOVA11')).toBe(171.82);
-		expect(quotes.has('KNCR11')).toBe(false);
 		expect(fetcher).toHaveBeenCalledWith(
-			'https://brapi.dev/api/quote/BOVA11,KNCR11',
+			'https://query1.finance.yahoo.com/v8/finance/chart/BOVA11.SA?range=1d&interval=1d',
 			expect.anything()
 		);
 	});
 
+	it('keeps going when one ticker fails, reporting it', async () => {
+		const fetcher = vi
+			.fn()
+			.mockResolvedValueOnce({ ok: false, status: 404 })
+			.mockResolvedValueOnce(yahooChart(107))
+			.mockResolvedValueOnce(yahooChart(null));
+		const { quotes, failures } = await fetchTickerQuotes(
+			['DELISTED11', 'KNCR11', 'SEMPRECO11'],
+			fetcher as unknown as typeof fetch
+		);
+		expect(quotes.get('KNCR11')).toBe(107);
+		expect(quotes.size).toBe(1);
+		expect(failures).toEqual(['DELISTED11 (404)', 'SEMPRECO11 (sem preço)']);
+	});
+
+	it('survives a thrown network error', async () => {
+		const fetcher = vi.fn().mockRejectedValue(new Error('ECONNRESET'));
+		const { quotes, failures } = await fetchTickerQuotes(
+			['BOVA11'],
+			fetcher as unknown as typeof fetch
+		);
+		expect(quotes.size).toBe(0);
+		expect(failures).toEqual(['BOVA11 (ECONNRESET)']);
+	});
+
 	it('skips the request entirely with no tickers', async () => {
 		const fetcher = vi.fn();
-		const quotes = await fetchBrapiQuotes(
+		const { quotes } = await fetchTickerQuotes(
 			[],
 			fetcher as unknown as typeof fetch
 		);
@@ -98,10 +126,20 @@ describe('fetchBrapiQuotes', () => {
 		expect(fetcher).not.toHaveBeenCalled();
 	});
 
-	it('throws on non-2xx so the cron reports the failure', async () => {
-		const fetcher = vi.fn().mockResolvedValue({ ok: false, status: 429 });
-		await expect(
-			fetchBrapiQuotes(['BOVA11'], fetcher as unknown as typeof fetch)
-		).rejects.toThrow(/429/);
+	it('rejects non-positive or missing prices', () => {
+		expect(
+			priceFromYahooChart({ chart: { result: [{ meta: {} }] } })
+		).toBeNull();
+		expect(
+			priceFromYahooChart({
+				chart: { result: [{ meta: { regularMarketPrice: 0 } }] }
+			})
+		).toBeNull();
+		expect(priceFromYahooChart({})).toBeNull();
+		expect(
+			priceFromYahooChart({
+				chart: { result: [{ meta: { regularMarketPrice: 12.5 } }] }
+			})
+		).toBe(12.5);
 	});
 });
