@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '$lib/server/supabase';
+import { collectFundQuoteUpserts } from './investment-funds';
 
 // Daily quote refresh so patrimony stays current without monthly posição
 // uploads: Yahoo Finance covers B3-listed tickers (ETF/FII/ações), the Tesouro
@@ -31,6 +32,8 @@ export interface QuoteRefreshSummary {
 	tickersRequested: number;
 	tickerQuotes: number;
 	tesouroQuotes: number;
+	fundsRequested: number;
+	fundQuotes: number;
 	upserted: number;
 	errors: string[];
 }
@@ -252,6 +255,8 @@ export async function refreshInvestmentQuotes(
 		tickersRequested: 0,
 		tickerQuotes: 0,
 		tesouroQuotes: 0,
+		fundsRequested: 0,
+		fundQuotes: 0,
 		upserted: 0,
 		errors: []
 	};
@@ -264,9 +269,14 @@ export async function refreshInvestmentQuotes(
 		return summary;
 	}
 	const assets = (data ?? []) as QuoteAsset[];
+	const funds = await collectFundQuoteUpserts(fetcher);
+	summary.fundsRequested = funds.fundsRequested;
+	summary.fundQuotes = funds.fundQuotes;
+	summary.errors.push(...funds.errors);
 	const upserts = [
 		...(await collectTickerUpserts(assets, summary, fetcher)),
-		...(await collectTesouroUpserts(assets, summary, fetcher))
+		...(await collectTesouroUpserts(assets, summary, fetcher)),
+		...funds.upserts
 	];
 
 	if (upserts.length > 0) {
