@@ -1,0 +1,216 @@
+import type { PageServerLoad, Actions } from './$types';
+import { fail } from '@sveltejs/kit';
+import { getUserHouseholdId } from '$lib/server/household';
+import { loadCdiRates } from '$lib/server/investment-cdi';
+import { monthReturn, recentMonths } from '$lib/server/investment-monthly';
+import {
+	deriveQuantity,
+	latestPrice,
+	type EventRow,
+	type QuoteRow,
+	type SnapshotRow
+} from '$lib/server/investment-positions';
+import { computeTaxReport, type TaxAssetRow } from '$lib/server/investment-tax';
+import {
+	askAssistant,
+	type AssistantTurn,
+	type PortfolioContext
+} from '$lib/server/investment-assistant';
+import {
+	searchFunds,
+	type FundCandidate
+} from '$lib/server/investment-registry';
+
+interface AssetRow {
+	id: string;
+	owner_user_id: string;
+	ticker: string | null;
+	name: string;
+	asset_class: string;
+	tax_bucket: string;
+	override_quantity: number | null;
+	override_total_cost: number | null;
+	override_date: string | null;
+}
+
+// Builds the only view of the household's data the assistant ever sees: the
+// same figures the pages render, summarized. Nothing else is sent out.
+async function buildContext(
+	supabase: Parameters<typeof getUserHouseholdId>[0],
+	householdId: string
+): Promise<PortfolioContext> {
+	const [assetsRes, snapshotsRes, eventsRes, quotesRes, darfRes] =
+		await Promise.all([
+			supabase
+				.from('investment_assets')
+				.select(
+					'id, owner_user_id, ticker, name, asset_class, tax_bucket, override_quantity, override_total_cost, override_date'
+				)
+				.eq('household_id', householdId),
+			supabase
+				.from('investment_snapshots')
+				.select('asset_id, snapshot_date, quantity, close_price, net_value')
+				.eq('household_id', householdId),
+			supabase
+				.from('investment_events')
+				.select(
+					'asset_id, event_date, event_type, direction, quantity, unit_price, total_value, source'
+				)
+				.eq('household_id', householdId),
+			supabase
+				.from('investment_quotes')
+				.select('asset_id, quote_date, price, source')
+				.eq('household_id', householdId),
+			supabase
+				.from('investment_darf_status')
+				.select('reference_month, paid')
+				.eq('household_id', householdId)
+		]);
+
+	const assets = (assetsRes.data ?? []) as AssetRow[];
+	const snapshots = (snapshotsRes.data ?? []) as SnapshotRow[];
+	const events = (eventsRes.data ?? []) as EventRow[];
+	const quotes = (quotesRes.data ?? []) as QuoteRow[];
+	const today = new Date().toISOString().slice(0, 10);
+
+	const months = recentMonths(today, 3);
+	const rates = await loadCdiRates(`${months.at(-1)}-01`, today);
+	const assetIds = assets.map((asset) => asset.id);
+	const computed = months.map((month) =>
+		monthReturn(assetIds, month, today, snapshots, events, quotes, rates)
+	);
+	const currentMonth = computed[0];
+	const gainByAsset = new Map(
+		(currentMonth?.assets ?? []).map((asset) => [asset.assetId, asset])
+	);
+
+	const taxReport = computeTaxReport(assets as TaxAssetRow[], events);
+	const averageCost = new Map(
+		taxReport.costs.map((cost) => [cost.assetId, cost.averageCost])
+	);
+	const paidMonths = new Set(
+		(darfRes.data ?? [])
+			.filter((row) => row.paid)
+			.map((row) => (row.reference_month as string).slice(0, 7))
+	);
+
+	const positions = assets
+		.map((asset) => {
+			const quantity = deriveQuantity(asset.id, snapshots, events).quantity;
+			const price = latestPrice(asset.id, quotes, snapshots);
+			const monthly = gainByAsset.get(asset.id);
+			return {
+				label: asset.ticker ?? asset.name,
+				assetClass: asset.asset_class,
+				quantity,
+				value: price ? quantity * price.price : 0,
+				averageCost: averageCost.get(asset.id) ?? null,
+				monthGain: monthly && !monthly.unpriced ? monthly.gain : null,
+				monthReturn: monthly && !monthly.unpriced ? monthly.returnRate : null
+			};
+		})
+		.filter((position) => position.quantity > 0)
+		.sort((a, b) => b.value - a.value);
+
+	return {
+		today,
+		totalValue: positions.reduce((sum, position) => sum + position.value, 0),
+		lastReconciliation: snapshots.reduce<string | null>(
+			(latest, snapshot) =>
+				!latest || snapshot.snapshot_date > latest
+					? snapshot.snapshot_date
+					: latest,
+			null
+		),
+		positions,
+		months: computed.map((month) => ({
+			month: month.month,
+			gain: month.gain,
+			returnRate: month.returnRate,
+			cdiRate: month.cdiRate,
+			percentOfCdi: month.percentOfCdi,
+			unpricedCount: month.unpricedCount
+		})),
+		pendingDarf: taxReport.months
+			.filter((month) => month.darfAmount > 0 && !paidMonths.has(month.month))
+			.map((month) => ({
+				month: month.month,
+				amount: month.darfAmount,
+				dueDate: month.dueDate
+			}))
+	};
+}
+
+// Bounded so a long thread cannot grow the prompt without limit.
+function readHistory(raw: string | undefined): AssistantTurn[] {
+	try {
+		const parsed = JSON.parse(raw || '[]');
+		if (!Array.isArray(parsed)) return [];
+		return parsed
+			.filter(
+				(turn): turn is AssistantTurn =>
+					(turn?.role === 'user' || turn?.role === 'assistant') &&
+					typeof turn?.content === 'string'
+			)
+			.slice(-10);
+	} catch {
+		return [];
+	}
+}
+
+export const load: PageServerLoad = async () => {
+	return {};
+};
+
+export const actions: Actions = {
+	ask: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId) {
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
+		}
+
+		const formData = await request.formData();
+		const question = (formData.get('question')?.toString() ?? '').trim();
+		if (!question)
+			return fail(400, { success: false, message: 'Escreva uma pergunta.' });
+
+		const turns = [
+			...readHistory(formData.get('history')?.toString()),
+			{ role: 'user' as const, content: question }
+		];
+
+		const context = await buildContext(supabase, householdId);
+
+		// Candidates the model may choose from. A first pass gives it whatever
+		// the question already names; if it asks for a different term, one more
+		// lookup runs and the model answers again with the new list.
+		let candidates: FundCandidate[] = await searchFunds(question);
+		let answer;
+		try {
+			answer = await askAssistant(turns, context, candidates);
+			if (answer.search && !answer.proposal) {
+				candidates = await searchFunds(answer.search);
+				if (candidates.length > 0) {
+					answer = await askAssistant(turns, context, candidates);
+				}
+			}
+		} catch (error) {
+			return fail(500, {
+				success: false,
+				message: `Falha ao consultar o assistente: ${String((error as Error).message)}`
+			});
+		}
+
+		return {
+			success: true,
+			reply: answer.reply,
+			proposal: answer.proposal,
+			history: [...turns, { role: 'assistant' as const, content: answer.reply }]
+		};
+	}
+};

@@ -323,6 +323,27 @@ describe('monthReturn', () => {
 		expect(result.unpricedCount).toBe(1);
 	});
 
+	it('reports how far the CDI series actually reaches', () => {
+		// BCB publishes with a lag, so a running month is otherwise measured
+		// against a short benchmark and looks better than it is.
+		const result = monthReturn(
+			['a1'],
+			'2026-08',
+			'2026-08-31',
+			[snapshot()],
+			[],
+			[quote('2026-07-31', 10), quote('2026-08-31', 10.5)],
+			[
+				{ date: '2026-08-25', rate: 0.05 },
+				{ date: '2026-08-26', rate: 0.05 },
+				// Nothing published for the rest of the month yet.
+				{ date: '2026-09-02', rate: 0.05 }
+			]
+		);
+		expect(result.cdiThrough).toBe('2026-08-26');
+		expect(result.end).toBe('2026-08-31');
+	});
+
 	it('counts a holding with no price anywhere, which marks as zero', () => {
 		// July for the LCA: the position exists (derived backwards from the
 		// August snapshot) but nothing can value it, so the value is silent and

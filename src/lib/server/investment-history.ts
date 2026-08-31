@@ -1,4 +1,4 @@
-import { unzipSync, strFromU8 } from 'fflate';
+import { unzipSync } from 'fflate';
 import { supabaseAdmin } from '$lib/server/supabase';
 import {
 	yahooSymbol,
@@ -13,6 +13,12 @@ import { fundKey, onlyDigits } from './investment-funds';
 //
 // Bank-issued fixed income (LCA/LCI/CDB) has no public price series at all, so
 // it stays out: those months are reported as unmeasured rather than guessed.
+
+// CVM ships these files in latin-1; decoding them as UTF-8 silently corrupts
+// every accented character.
+function decodeCvm(content: Uint8Array): string {
+	return new TextDecoder('latin1').decode(content);
+}
 
 const YAHOO_CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart';
 const YAHOO_HEADERS = {
@@ -268,7 +274,7 @@ async function readInformeMonths(
 			}
 			const files = unzipSync(new Uint8Array(await response.arrayBuffer()));
 			for (const content of Object.values(files)) {
-				collectFundHistory(strFromU8(content), wantedKeys, history);
+				collectFundHistory(decodeCvm(content), wantedKeys, history);
 			}
 		} catch (error) {
 			summary.errors.push(`cvm ${month}: ${String((error as Error).message)}`);

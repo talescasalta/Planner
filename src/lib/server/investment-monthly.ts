@@ -203,6 +203,22 @@ export interface MonthReturn {
 	// zero — so the count is what tells the reader something is missing.
 	unpricedValue: number;
 	unpricedCount: number;
+	// Last CDI day actually available inside the window. BCB publishes with a
+	// lag, so a running month is measured against a short benchmark — which
+	// flatters the comparison until the series catches up.
+	cdiThrough: string | null;
+}
+
+export function lastCdiDate(
+	rates: CdiRate[],
+	window: MonthWindow
+): string | null {
+	let last: string | null = null;
+	for (const rate of rates) {
+		if (rate.date <= window.start || rate.date > window.end) continue;
+		if (!last || rate.date > last) last = rate.date;
+	}
+	return last;
 }
 
 function percentOfCdi(
@@ -331,6 +347,7 @@ export function monthReturn(
 		percentOfCdi: percentOfCdi(returnRate, cdiRate),
 		assets: assets.sort((a, b) => b.gain - a.gain),
 		unpricedValue: unpriced.reduce((sum, asset) => sum + asset.endValue, 0),
-		unpricedCount: unpriced.length
+		unpricedCount: unpriced.length,
+		cdiThrough: lastCdiDate(rates, window)
 	};
 }
