@@ -27,6 +27,11 @@ export interface InvestmentAssetRow {
 	override_quantity: number | null;
 	override_total_cost: number | null;
 	override_date: string | null;
+	issue_date: string | null;
+	maturity_date: string | null;
+	index_type: string | null;
+	index_percent: number | null;
+	index_spread: number | null;
 }
 
 export interface InvestmentRows {
@@ -37,7 +42,7 @@ export interface InvestmentRows {
 }
 
 const ASSET_COLUMNS =
-	'id, owner_user_id, asset_class, ticker, name, product_key, tax_bucket, cnpj, override_quantity, override_total_cost, override_date';
+	'id, owner_user_id, asset_class, ticker, name, product_key, tax_bucket, cnpj, override_quantity, override_total_cost, override_date, issue_date, maturity_date, index_type, index_percent, index_spread';
 
 // The layout load and the page load run in parallel on the same request and
 // want the same four tables. Keying the in-flight promise by the request's own

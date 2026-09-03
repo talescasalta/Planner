@@ -126,6 +126,79 @@ async function resolveAssets(
 	return { byKey, created: missing.length };
 }
 
+// Issue date, maturity and indexer come from the position sheet and describe
+// the paper itself, so they are filled once and never overwritten: a maturity
+// does not change, and the indexer B3 omits is one the user declared by hand.
+interface PositionMetadata {
+	issueDate: string | null;
+	maturityDate: string | null;
+	indexType: string | null;
+}
+
+function positionMetadata(
+	positions: ParsedPosition[],
+	byKey: Map<string, string>
+): Map<string, PositionMetadata> {
+	const parsed = new Map<string, PositionMetadata>();
+	for (const position of positions) {
+		const assetId = byKey.get(position.spec.productKey);
+		const described =
+			position.issueDate || position.maturityDate || position.indexType;
+		if (!assetId || !described) continue;
+		parsed.set(assetId, {
+			issueDate: position.issueDate,
+			maturityDate: position.maturityDate,
+			indexType: position.indexType
+		});
+	}
+	return parsed;
+}
+
+// Only the columns still empty. A maturity does not change, and an indexer the
+// file omits is one the user declared by hand — neither may be overwritten.
+function metadataUpdate(
+	row: Record<string, unknown>,
+	incoming: PositionMetadata
+): Record<string, string> {
+	const update: Record<string, string> = {};
+	if (!row.issue_date && incoming.issueDate)
+		update.issue_date = incoming.issueDate;
+	if (!row.maturity_date && incoming.maturityDate)
+		update.maturity_date = incoming.maturityDate;
+	if (!row.index_type && incoming.indexType)
+		update.index_type = incoming.indexType;
+	return update;
+}
+
+async function applyPositionMetadata(
+	householdId: string,
+	positions: ParsedPosition[],
+	byKey: Map<string, string>
+): Promise<string | null> {
+	const parsed = positionMetadata(positions, byKey);
+	if (parsed.size === 0) return null;
+
+	const { data: current, error } = await supabaseAdmin
+		.from('investment_assets')
+		.select('id, issue_date, maturity_date, index_type')
+		.eq('household_id', householdId)
+		.in('id', [...parsed.keys()]);
+	if (error) return error.message;
+
+	for (const row of current ?? []) {
+		const incoming = parsed.get(row.id as string);
+		const update = incoming ? metadataUpdate(row, incoming) : {};
+		if (Object.keys(update).length === 0) continue;
+		const { error: updateError } = await supabaseAdmin
+			.from('investment_assets')
+			.update(update)
+			.eq('id', row.id)
+			.eq('household_id', householdId);
+		if (updateError) return updateError.message;
+	}
+	return null;
+}
+
 async function persistPositions(
 	householdId: string,
 	positions: ParsedPosition[],
@@ -136,6 +209,13 @@ async function persistPositions(
 	| { inserted: number; reconciliation: ReconciliationDiff[] }
 	| { errorMessage: string }
 > {
+	const metadataError = await applyPositionMetadata(
+		householdId,
+		positions,
+		byKey
+	);
+	if (metadataError) return { errorMessage: metadataError };
+
 	const assetIds = [
 		...new Set(positions.map((p) => byKey.get(p.spec.productKey)!))
 	];

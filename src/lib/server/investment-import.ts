@@ -26,6 +26,11 @@ export interface ParsedPosition {
 	grossValue: number | null;
 	netValue: number;
 	appliedValue: number | null;
+	issueDate: string | null;
+	maturityDate: string | null;
+	// B3's Indexador column, normalized. Comes empty for bank-issued paper,
+	// which is why the carry rate has to be declared by hand.
+	indexType: string | null;
 }
 
 export interface ParsedEvent {
@@ -93,6 +98,18 @@ function sheetClass(
 	return undefined;
 }
 
+// B3 writes the indexer as it pleases ("IPCA", "prefixado", "SELIC") and as
+// "-" when it does not know — which is every bank-issued paper.
+export function normalizeIndexer(raw: string | null): string | null {
+	if (!raw) return null;
+	const value = raw.toLowerCase();
+	if (value.includes('ipca')) return 'ipca';
+	if (value.includes('selic')) return 'selic';
+	if (value.includes('cdi') || value.includes('di')) return 'cdi';
+	if (value.includes('pre')) return 'pre';
+	return null;
+}
+
 function parsePosicaoSheet(
 	sheet: B3Sheet,
 	warnings: string[]
@@ -104,6 +121,9 @@ function parsePosicaoSheet(
 	const codigo = columnIndex(sheet, 'código');
 	const emissor = columnIndex(sheet, 'emissor');
 	const closePrice = columnIndex(sheet, 'preço de fechamento');
+	const indexador = columnIndex(sheet, 'indexador');
+	const emissao = columnIndex(sheet, 'data de emissão');
+	const vencimento = columnIndex(sheet, 'vencimento');
 	const applied = columnIndex(sheet, 'valor aplicado');
 	const gross = columnIndex(sheet, 'valor bruto');
 	// Renda Fixa values three ways; first available wins (their rows fill
@@ -152,7 +172,10 @@ function parsePosicaoSheet(
 			closePrice: asNumber(cell(row, closePrice)),
 			grossValue: asNumber(cell(row, gross)),
 			netValue,
-			appliedValue: asNumber(cell(row, applied))
+			appliedValue: asNumber(cell(row, applied)),
+			issueDate: parseB3Date(asString(cell(row, emissao))),
+			maturityDate: parseB3Date(asString(cell(row, vencimento))),
+			indexType: normalizeIndexer(asString(cell(row, indexador)))
 		});
 	}
 	return positions;

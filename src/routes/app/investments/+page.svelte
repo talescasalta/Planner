@@ -3,11 +3,12 @@
 	import { resolve } from '$app/paths';
 	import CategoryTreemap from '$lib/components/charts/CategoryTreemap.svelte';
 	import AssetDetailPanel from '$lib/components/investments/AssetDetailPanel.svelte';
+	import CarryRateCard from '$lib/components/investments/CarryRateCard.svelte';
 	import { CLASS_COLORS, classColor } from '$lib/investments/classes';
 	import { brl, dateBr } from '$lib/investments/format';
-	import type { PageData } from './$types';
+	import type { PageData, ActionData } from './$types';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let ownerFilter: 'todos' | 'meus' = $state('todos');
 	let positions = $derived(
@@ -109,6 +110,13 @@
 	// much of the total is carried at the last B3 value.
 	let unpricedValue = $derived(
 		positions.filter((p) => p.price === null).reduce((s, p) => s + p.value, 0)
+	);
+
+	// Bank-issued paper, which is priced by accrual rather than by a quote.
+	let carryPositions = $derived(
+		positions.filter(
+			(p) => p.assetClass === 'cdb' || p.assetClass === 'lca_lci'
+		)
 	);
 
 	const steps = [
@@ -221,6 +229,8 @@
 				</p>
 			</div>
 		</div>
+
+		<CarryRateCard positions={carryPositions} message={form?.message ?? null} />
 
 		<div class="rounded-lg border border-gray-200 bg-white p-4">
 			<div class="mb-2 flex flex-wrap items-baseline justify-between gap-2">

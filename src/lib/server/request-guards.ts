@@ -33,6 +33,20 @@ export function clampText(value: string, max: number): string {
 	return value.length > max ? value.slice(0, max) : value;
 }
 
+// A rate as a person types it: "96", "96,5", "91.5", optionally with the
+// percent sign. Matched whole rather than stripped character by character —
+// stripping accepts whatever is left over, and what is left over is not a
+// number the caller should have to reason about.
+const RATE = /^(\d{1,4}(?:[.,]\d{1,4})?)\s*%?$/;
+
+export function parseRate(value: string | null | undefined): number | null {
+	if (value === null || value === undefined) return null;
+	const match = RATE.exec(value.trim());
+	if (!match) return null;
+	const parsed = Number(match[1].replace(',', '.'));
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 // A date that both looks like YYYY-MM-DD and exists on the calendar, so

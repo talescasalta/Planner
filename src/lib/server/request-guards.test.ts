@@ -5,6 +5,7 @@ import {
 	clampText,
 	isIsoDate,
 	isIsoMonth,
+	parseRate,
 	secretMatches,
 	uploadTooLarge
 } from './request-guards';
@@ -75,5 +76,26 @@ describe('secretMatches / bearerMatches', () => {
 		expect(bearerMatches('abc123', 'abc123')).toBe(false);
 		expect(bearerMatches(null, 'abc123')).toBe(false);
 		expect(bearerMatches('Bearer ', 'abc123')).toBe(false);
+	});
+});
+
+describe('parseRate', () => {
+	it('accepts a rate the way a person types it', () => {
+		expect(parseRate('96')).toBe(96);
+		expect(parseRate('96,5')).toBe(96.5);
+		expect(parseRate('91.5')).toBe(91.5);
+		expect(parseRate('96%')).toBe(96);
+		expect(parseRate(' 96,5 % ')).toBe(96.5);
+	});
+
+	it('refuses anything that is not exactly one number', () => {
+		expect(parseRate('96%%')).toBeNull();
+		expect(parseRate('96 96')).toBeNull();
+		expect(parseRate('9,6,5')).toBeNull();
+		expect(parseRate('-96')).toBeNull();
+		expect(parseRate('abc')).toBeNull();
+		expect(parseRate('')).toBeNull();
+		expect(parseRate(null)).toBeNull();
+		expect(parseRate(undefined)).toBeNull();
 	});
 });

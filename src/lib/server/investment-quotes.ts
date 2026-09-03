@@ -1,10 +1,13 @@
 import { supabaseAdmin } from '$lib/server/supabase';
 import { collectFundQuoteUpserts } from './investment-funds';
+import { loadCdiRates } from './investment-cdi';
+import { accrualSeries, isAccruable } from './investment-accrual';
 
 // Daily quote refresh so patrimony stays current without monthly posição
 // uploads: Yahoo Finance covers B3-listed tickers (ETF/FII/ações), the Tesouro
-// Transparente open dataset covers Tesouro Direto. Bank-issued fixed income
-// has no public price — valuation falls back to the last snapshot value.
+// Transparente open dataset covers Tesouro Direto, and bank-issued fixed
+// income — which has no public price at all — is accrued from its declared
+// carry rate over the CDI series (see investment-accrual).
 
 // Yahoo suffixes B3 tickers with ".SA" and serves one symbol per call, with no
 // key. (brapi.dev was the obvious choice until it started charging for every
@@ -26,12 +29,17 @@ interface QuoteAsset {
 	asset_class: string;
 	ticker: string | null;
 	product_key: string;
+	maturity_date: string | null;
+	index_type: string | null;
+	index_percent: number | null;
+	index_spread: number | null;
 }
 
 export interface QuoteRefreshSummary {
 	tickersRequested: number;
 	tickerQuotes: number;
 	tesouroQuotes: number;
+	curvaQuotes: number;
 	fundsRequested: number;
 	fundQuotes: number;
 	upserted: number;
@@ -92,9 +100,18 @@ export function tesouroMatchKey(title: string, maturityYear: string): string {
 	return `${title.toUpperCase().replace(/\s+/g, ' ').trim()} ${maturityYear}`;
 }
 
-export function tesouroKeyFromProductName(name: string): string | null {
+// The year in a product name is usually the maturity, but Renda+ names the
+// year the income starts: "Tesouro Renda+ Aposentadoria Extra 2065" matures in
+// 2084, twenty years of payments later. Whenever the position file gave us a
+// maturity, that is what the CSV is keyed by.
+export function tesouroKeyFromProductName(
+	name: string,
+	maturityDate?: string | null
+): string | null {
 	const match = name.toUpperCase().match(/^(TESOURO .*?)\s*(\d{4})$/);
-	return match ? tesouroMatchKey(match[1], match[2]) : null;
+	if (!match) return null;
+	const year = maturityDate?.slice(0, 4) ?? match[2];
+	return tesouroMatchKey(match[1], year);
 }
 
 // Streams the cumulative CSV (semicolon-separated, decimal comma, no quoted
@@ -215,7 +232,8 @@ async function collectTesouroUpserts(
 			key:
 				asset.asset_class === 'tesouro'
 					? tesouroKeyFromProductName(
-							asset.product_key.replace(/^TESOURO:/, '')
+							asset.product_key.replace(/^TESOURO:/, ''),
+							asset.maturity_date
 						)
 					: null
 		}))
@@ -248,6 +266,97 @@ async function collectTesouroUpserts(
 	}
 }
 
+// The newest position row per asset, as a unit price. These sheets carry no
+// unit price of their own, so it comes from net value over quantity — which is
+// exactly B3's "Preço Atualizado CURVA".
+function latestAnchors(
+	rows: Record<string, unknown>[]
+): Map<string, { date: string; price: number }> {
+	const anchors = new Map<string, { date: string; price: number }>();
+	for (const row of rows) {
+		const assetId = row.asset_id as string;
+		const quantity = Number(row.quantity);
+		if (anchors.has(assetId) || !Number.isFinite(quantity) || quantity === 0)
+			continue;
+		anchors.set(assetId, {
+			date: row.snapshot_date as string,
+			price: Number(row.net_value) / quantity
+		});
+	}
+	return anchors;
+}
+
+// Bank-issued fixed income: no public quote exists, so the price is carried
+// forward from the last B3 anchor at the paper's declared rate. Papers without
+// a declared rate are left alone — they stay visibly unmeasured, which is the
+// honest state, and the app asks for the rate elsewhere.
+async function collectCurvaUpserts(
+	assets: QuoteAsset[],
+	summary: QuoteRefreshSummary,
+	today: string
+): Promise<QuoteUpsert[]> {
+	const accruable = assets.filter((asset) =>
+		isAccruable({
+			indexType: asset.index_type ?? '',
+			percent: asset.index_percent,
+			spread: asset.index_spread
+		})
+	);
+	if (accruable.length === 0) return [];
+
+	// The anchor is B3's own curve price on the day of the latest position
+	// export: net value over quantity, since these rows carry no unit price.
+	const { data: snapshots, error } = await supabaseAdmin
+		.from('investment_snapshots')
+		.select('asset_id, snapshot_date, quantity, net_value')
+		.in(
+			'asset_id',
+			accruable.map((asset) => asset.id)
+		)
+		.order('snapshot_date', { ascending: false });
+	if (error) {
+		summary.errors.push(`curva: ${error.message}`);
+		return [];
+	}
+
+	const anchors = latestAnchors(snapshots ?? []);
+	if (anchors.size === 0) return [];
+
+	const oldest = [...anchors.values()].reduce(
+		(earliest, anchor) => (anchor.date < earliest ? anchor.date : earliest),
+		today
+	);
+	const rates = await loadCdiRates(oldest, today);
+	if (rates.length === 0) return [];
+
+	const upserts: QuoteUpsert[] = [];
+	for (const asset of accruable) {
+		const anchor = anchors.get(asset.id);
+		if (!anchor) continue;
+		const series = accrualSeries(
+			anchor,
+			{
+				indexType: asset.index_type ?? '',
+				percent: asset.index_percent,
+				spread: asset.index_spread
+			},
+			rates,
+			today
+		);
+		for (const point of series) {
+			upserts.push({
+				household_id: asset.household_id,
+				asset_id: asset.id,
+				quote_date: point.date,
+				price: point.price,
+				source: 'curva'
+			});
+		}
+	}
+	summary.curvaQuotes = upserts.length;
+	return upserts;
+}
+
 export async function refreshInvestmentQuotes(
 	fetcher: typeof fetch = fetch
 ): Promise<QuoteRefreshSummary> {
@@ -255,6 +364,7 @@ export async function refreshInvestmentQuotes(
 		tickersRequested: 0,
 		tickerQuotes: 0,
 		tesouroQuotes: 0,
+		curvaQuotes: 0,
 		fundsRequested: 0,
 		fundQuotes: 0,
 		upserted: 0,
@@ -263,7 +373,9 @@ export async function refreshInvestmentQuotes(
 
 	const { data, error } = await supabaseAdmin
 		.from('investment_assets')
-		.select('id, household_id, asset_class, ticker, product_key');
+		.select(
+			'id, household_id, asset_class, ticker, product_key, maturity_date, index_type, index_percent, index_spread'
+		);
 	if (error) {
 		summary.errors.push(`assets: ${error.message}`);
 		return summary;
@@ -273,9 +385,11 @@ export async function refreshInvestmentQuotes(
 	summary.fundsRequested = funds.fundsRequested;
 	summary.fundQuotes = funds.fundQuotes;
 	summary.errors.push(...funds.errors);
+	const today = new Date().toISOString().slice(0, 10);
 	const upserts = [
 		...(await collectTickerUpserts(assets, summary, fetcher)),
 		...(await collectTesouroUpserts(assets, summary, fetcher)),
+		...(await collectCurvaUpserts(assets, summary, today)),
 		...funds.upserts
 	];
 
