@@ -24,6 +24,12 @@
 		});
 	});
 
+	// The money-weighted rate since the first contribution, which answers a
+	// different question from the month picker above it.
+	let perf = $derived(data.performance.sinceInception);
+	let incomeMax = $derived(Math.max(1, ...data.income.map((i) => i.recurring)));
+	let maturityMonths = $derived(data.income.filter((i) => i.maturity > 0));
+
 	// Two different questions about the same month: what moved the most, and
 	// what moved the patrimony the most. A 12% jump on a small holding wins the
 	// first and barely registers in the second.
@@ -78,7 +84,7 @@
 <div class="mx-auto max-w-6xl space-y-6 p-4">
 	<div class="flex flex-wrap items-end justify-between gap-3">
 		<div>
-			<h1 class="text-xl font-semibold text-gray-900">Rendimento mensal</h1>
+			<h2 class="text-sm font-semibold text-gray-900">Rendimento mensal</h2>
 			<p class="mt-1 text-sm text-gray-600">
 				Quanto a carteira rendeu no mês, já descontando aportes e resgates, e
 				quanto isso representa do CDI do mesmo período.
@@ -94,12 +100,6 @@
 					<option value="meus">Só os meus</option>
 				</select>
 			{/if}
-			<a
-				href={resolve('/app/investments')}
-				class="text-sm text-blue-700 underline"
-			>
-				Patrimônio
-			</a>
 		</div>
 	</div>
 
@@ -309,6 +309,141 @@
 						{/each}
 					</div>
 				</div>
+			</div>
+
+			<div class="rounded-lg border border-gray-200 bg-white p-4">
+				<h2 class="text-sm font-semibold text-gray-900">Rentabilidade vs CDI</h2>
+				{#if perf}
+					<div class="mt-3 flex flex-wrap items-end gap-6">
+						<div>
+							<p class="text-xs text-gray-500">Sua carteira (a.a.)</p>
+							<p class="text-2xl font-semibold text-gray-900">
+								{pct(perf.portfolioAnnual)}
+							</p>
+						</div>
+						<div>
+							<p class="text-xs text-gray-500">CDI no mesmo período (a.a.)</p>
+							<p class="text-2xl font-semibold text-gray-600">
+								{pct(perf.cdiAnnual)}
+							</p>
+						</div>
+						<div>
+							<p class="text-xs text-gray-500">Equivalente a</p>
+							<p
+								class={perf.percentOfCdi !== null && perf.percentOfCdi >= 100
+									? 'text-2xl font-semibold text-emerald-700'
+									: 'text-2xl font-semibold text-amber-700'}
+							>
+								{perf.percentOfCdi === null
+									? '—'
+									: `${perf.percentOfCdi.toFixed(1)}% do CDI`}
+							</p>
+						</div>
+					</div>
+					<p class="mt-2 text-xs text-gray-500">
+						Retorno ponderado pelo dinheiro (XIRR) de {perf.from} até {perf.to},
+						sobre aportes, resgates e proventos — cobrindo {data.performance.coveragePercent.toFixed(
+							0
+						)}% do patrimônio.
+					</p>
+					{#if data.performance.excludedLabels.length > 0}
+						<div
+							class="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800"
+						>
+							<p>
+								<strong>Número pouco confiável.</strong> A B3 não registra o custo
+								de entrada de {data.performance.excludedLabels.length} ativos ({(
+									100 - data.performance.coveragePercent
+								).toFixed(0)}% do patrimônio), que ficam fora da conta: eles
+								chegaram por transferência de corretora ou são anteriores ao
+								histórico disponível. Como o resultado é bem sensível a essas
+								lacunas, trate-o como ordem de grandeza, não como medida.
+							</p>
+							<p class="mt-1">
+								Para torná-lo confiável, informe o custo inicial de
+								{data.performance.excludedLabels.join(', ')} em
+								<a class="underline" href={resolve('/app/investments/taxes')}
+									>IR a recolher</a
+								>.
+							</p>
+						</div>
+					{/if}
+				{:else}
+					<p class="mt-3 text-sm text-gray-500">
+						Ainda não há dados suficientes para calcular a rentabilidade. É preciso
+						ter movimentações importadas e a série do CDI, que o cron busca no Banco
+						Central.
+					</p>
+				{/if}
+
+				{#if data.performance.curve.length >= 2}
+					<div class="mt-4 border-t border-gray-100 pt-3">
+						<p class="mb-2 text-xs text-gray-500">
+							Evolução comparada (base 100 em {data.performance.curve[0].date}) —
+							carteira <span class="font-medium text-blue-700">azul</span>, CDI
+							<span class="font-medium text-gray-500">cinza</span>
+						</p>
+						<div class="space-y-1">
+							{#each data.performance.curve.slice(-10) as point (point.date)}
+								<div class="flex items-center gap-2 text-xs">
+									<span class="w-20 text-gray-500">{point.date}</span>
+									<span class="w-16 text-right font-medium text-blue-700"
+										>{point.portfolioIndex.toFixed(2)}</span
+									>
+									<span class="w-16 text-right text-gray-500"
+										>{point.cdiIndex.toFixed(2)}</span
+									>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{:else}
+					<p class="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-500">
+						A curva diária vs CDI começa a existir conforme o cron registra as
+						cotações — hoje há {data.performance.curve.length === 0
+							? 'menos de dois dias'
+							: 'apenas um dia'} de preços. Diferente do número acima, ela não depende
+						de custo de entrada: compara o valor da carteira dia a dia, descontando aportes,
+						então será a medida confiável daqui pra frente.
+					</p>
+				{/if}
+			</div>
+
+			<div class="rounded-lg border border-gray-200 bg-white p-4">
+				<h2 class="mb-2 text-sm font-semibold text-gray-900">
+					Renda passiva mensal
+				</h2>
+				{#if data.income.length === 0}
+					<p class="py-10 text-center text-sm text-gray-500">
+						Importe a movimentação da B3 para ver rendimentos e juros.
+					</p>
+				{:else}
+					<div class="space-y-1">
+						{#each data.income as row (row.month)}
+							<div class="flex items-center gap-2 text-xs">
+								<span class="w-14 text-gray-500">{row.month}</span>
+								<div class="h-4 flex-1 rounded bg-gray-100">
+									<div
+										class="h-4 rounded bg-emerald-500"
+										style={`width: ${Math.max(2, (row.recurring / incomeMax) * 100)}%`}
+									></div>
+								</div>
+								<span class="w-24 text-right text-gray-700"
+									>{brl.format(row.recurring)}</span
+								>
+							</div>
+						{/each}
+					</div>
+					{#if maturityMonths.length > 0}
+						<p class="mt-3 border-t border-gray-100 pt-2 text-xs text-gray-500">
+							Fora da série (juros liberados no vencimento do papel, referentes a
+							todo o período de aplicação):
+							{#each maturityMonths as row, index (row.month)}{index > 0
+									? ', '
+									: ' '}{row.month} — {brl.format(row.maturity)}{/each}
+						</p>
+					{/if}
+				{/if}
 			</div>
 
 			<div class="rounded-lg border border-gray-200 bg-white p-4">

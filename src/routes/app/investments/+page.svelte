@@ -1,8 +1,5 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import { SvelteMap } from 'svelte/reactivity';
-	import { scaleBand } from 'd3-scale';
-	import { Axis, Chart, Spline, Svg } from 'layerchart';
 	import CategoryTreemap from '$lib/components/charts/CategoryTreemap.svelte';
 	import type { PageData } from './$types';
 
@@ -98,27 +95,13 @@
 		return [...byClass.values()].sort((a, b) => b.total - a.total);
 	});
 
-	let evolutionData = $derived(
-		data.evolution.map((point) => ({ ...point, label: point.date.slice(0, 7) }))
-	);
-	let evolutionMax = $derived(
-		Math.max(0, ...data.evolution.map((p) => p.totalValue))
-	);
-	let incomeMax = $derived(Math.max(1, ...data.income.map((i) => i.recurring)));
-	let maturityMonths = $derived(data.income.filter((i) => i.maturity > 0));
 	let lastRecurring = $derived(data.income.at(-1)?.recurring ?? null);
 
-	let perf = $derived(data.performance.sinceInception);
-	const pct = (rate: number) => `${(rate * 100).toFixed(2)}%`;
 
 	const brl = new Intl.NumberFormat('pt-BR', {
 		style: 'currency',
 		currency: 'BRL'
 	});
-	const brlCompact = (value: number) =>
-		Math.abs(value) >= 1000
-			? `R$ ${(value / 1000).toFixed(0)}k`
-			: brl.format(value);
 </script>
 
 <svelte:head>
@@ -127,60 +110,23 @@
 
 <div class="mx-auto max-w-7xl space-y-6 p-4">
 	<div class="flex flex-wrap items-end justify-between gap-3">
-		<div>
-			<h1 class="text-xl font-semibold text-gray-900">
-				Patrimônio em investimentos
-			</h1>
-			<p class="mt-1 text-sm text-gray-600">
-				{#if data.lastSnapshotDate}
-					Última reconciliação com a B3: {data.lastSnapshotDate}. Valores desde
-					então são calculados a partir de movimentações e cotações.
-				{:else}
-					Nenhuma posição importada ainda.
-				{/if}
-			</p>
-		</div>
-		<div class="flex items-center gap-3">
-			{#if data.owners.length > 1}
-				<select
-					bind:value={ownerFilter}
-					class="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700"
-				>
-					<option value="todos">Todos do grupo</option>
-					<option value="meus">Só os meus</option>
-				</select>
+		<p class="text-sm text-gray-600">
+			{#if data.lastSnapshotDate}
+				Última reconciliação com a B3: {data.lastSnapshotDate}. Valores desde então
+				são calculados a partir de movimentações e cotações.
+			{:else}
+				Nenhuma posição importada ainda.
 			{/if}
-			<a
-				href={resolve('/app/investments/import')}
-				class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+		</p>
+		{#if data.owners.length > 1}
+			<select
+				bind:value={ownerFilter}
+				class="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700"
 			>
-				Importar arquivos da B3
-			</a>
-			<a
-				href={resolve('/app/investments/assistant')}
-				class="text-sm text-blue-700 underline"
-			>
-				Assistente
-			</a>
-			<a
-				href={resolve('/app/investments/returns')}
-				class="text-sm text-blue-700 underline"
-			>
-				Rendimento mensal
-			</a>
-			<a
-				href={resolve('/app/investments/funds')}
-				class="text-sm text-blue-700 underline"
-			>
-				Fundos
-			</a>
-			<a
-				href={resolve('/app/investments/taxes')}
-				class="text-sm text-blue-700 underline"
-			>
-				IR a recolher
-			</a>
-		</div>
+				<option value="todos">Todos do grupo</option>
+				<option value="meus">Só os meus</option>
+			</select>
+		{/if}
 	</div>
 
 	{#if data.unknownEventTypes.length > 0}
@@ -216,104 +162,6 @@
 	</div>
 
 	<div class="rounded-lg border border-gray-200 bg-white p-4">
-		<h2 class="text-sm font-semibold text-gray-900">Rentabilidade vs CDI</h2>
-		{#if perf}
-			<div class="mt-3 flex flex-wrap items-end gap-6">
-				<div>
-					<p class="text-xs text-gray-500">Sua carteira (a.a.)</p>
-					<p class="text-2xl font-semibold text-gray-900">
-						{pct(perf.portfolioAnnual)}
-					</p>
-				</div>
-				<div>
-					<p class="text-xs text-gray-500">CDI no mesmo período (a.a.)</p>
-					<p class="text-2xl font-semibold text-gray-600">
-						{pct(perf.cdiAnnual)}
-					</p>
-				</div>
-				<div>
-					<p class="text-xs text-gray-500">Equivalente a</p>
-					<p
-						class={perf.percentOfCdi !== null && perf.percentOfCdi >= 100
-							? 'text-2xl font-semibold text-emerald-700'
-							: 'text-2xl font-semibold text-amber-700'}
-					>
-						{perf.percentOfCdi === null
-							? '—'
-							: `${perf.percentOfCdi.toFixed(1)}% do CDI`}
-					</p>
-				</div>
-			</div>
-			<p class="mt-2 text-xs text-gray-500">
-				Retorno ponderado pelo dinheiro (XIRR) de {perf.from} até {perf.to},
-				sobre aportes, resgates e proventos — cobrindo {data.performance.coveragePercent.toFixed(
-					0
-				)}% do patrimônio.
-			</p>
-			{#if data.performance.excludedLabels.length > 0}
-				<div
-					class="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800"
-				>
-					<p>
-						<strong>Número pouco confiável.</strong> A B3 não registra o custo
-						de entrada de {data.performance.excludedLabels.length} ativos ({(
-							100 - data.performance.coveragePercent
-						).toFixed(0)}% do patrimônio), que ficam fora da conta: eles
-						chegaram por transferência de corretora ou são anteriores ao
-						histórico disponível. Como o resultado é bem sensível a essas
-						lacunas, trate-o como ordem de grandeza, não como medida.
-					</p>
-					<p class="mt-1">
-						Para torná-lo confiável, informe o custo inicial de
-						{data.performance.excludedLabels.join(', ')} em
-						<a class="underline" href={resolve('/app/investments/taxes')}
-							>IR a recolher</a
-						>.
-					</p>
-				</div>
-			{/if}
-		{:else}
-			<p class="mt-3 text-sm text-gray-500">
-				Ainda não há dados suficientes para calcular a rentabilidade. É preciso
-				ter movimentações importadas e a série do CDI, que o cron busca no Banco
-				Central.
-			</p>
-		{/if}
-
-		{#if data.performance.curve.length >= 2}
-			<div class="mt-4 border-t border-gray-100 pt-3">
-				<p class="mb-2 text-xs text-gray-500">
-					Evolução comparada (base 100 em {data.performance.curve[0].date}) —
-					carteira <span class="font-medium text-blue-700">azul</span>, CDI
-					<span class="font-medium text-gray-500">cinza</span>
-				</p>
-				<div class="space-y-1">
-					{#each data.performance.curve.slice(-10) as point (point.date)}
-						<div class="flex items-center gap-2 text-xs">
-							<span class="w-20 text-gray-500">{point.date}</span>
-							<span class="w-16 text-right font-medium text-blue-700"
-								>{point.portfolioIndex.toFixed(2)}</span
-							>
-							<span class="w-16 text-right text-gray-500"
-								>{point.cdiIndex.toFixed(2)}</span
-							>
-						</div>
-					{/each}
-				</div>
-			</div>
-		{:else}
-			<p class="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-500">
-				A curva diária vs CDI começa a existir conforme o cron registra as
-				cotações — hoje há {data.performance.curve.length === 0
-					? 'menos de dois dias'
-					: 'apenas um dia'} de preços. Diferente do número acima, ela não depende
-				de custo de entrada: compara o valor da carteira dia a dia, descontando aportes,
-				então será a medida confiável daqui pra frente.
-			</p>
-		{/if}
-	</div>
-
-	<div class="rounded-lg border border-gray-200 bg-white p-4">
 		<h2 class="mb-2 text-sm font-semibold text-gray-900">
 			Alocação por classe
 		</h2>
@@ -324,86 +172,6 @@
 		{:else}
 			<CategoryTreemap nodes={allocation} height={360} />
 		{/if}
-	</div>
-
-	<div class="grid gap-4 lg:grid-cols-2">
-		<div class="rounded-lg border border-gray-200 bg-white p-4">
-			<h2 class="mb-2 text-sm font-semibold text-gray-900">
-				Evolução do patrimônio
-			</h2>
-			{#if evolutionData.length < 2}
-				<p class="py-10 text-center text-sm text-gray-500">
-					Cada import de posição adiciona um ponto à curva.
-				</p>
-			{:else}
-				<div class="h-64 w-full">
-					<Chart
-						data={evolutionData}
-						x="date"
-						xScale={scaleBand().padding(0.1)}
-						y="totalValue"
-						yDomain={[0, evolutionMax]}
-						yNice
-						padding={{ top: 16, right: 16, bottom: 28, left: 64 }}
-					>
-						<Svg>
-							<Axis
-								placement="left"
-								grid
-								rule
-								format={(v: number) => brlCompact(v)}
-							/>
-							<Axis
-								placement="bottom"
-								rule
-								format={(d: string) => d.slice(0, 7)}
-							/>
-							<Spline class="stroke-blue-600 stroke-2 fill-none" />
-						</Svg>
-					</Chart>
-				</div>
-				<p class="mt-1 text-xs text-gray-500">
-					Pontos oficiais (posições B3) + ponto atual calculado por cotações.
-				</p>
-			{/if}
-		</div>
-
-		<div class="rounded-lg border border-gray-200 bg-white p-4">
-			<h2 class="mb-2 text-sm font-semibold text-gray-900">
-				Renda passiva mensal
-			</h2>
-			{#if data.income.length === 0}
-				<p class="py-10 text-center text-sm text-gray-500">
-					Importe a movimentação da B3 para ver rendimentos e juros.
-				</p>
-			{:else}
-				<div class="space-y-1">
-					{#each data.income as row (row.month)}
-						<div class="flex items-center gap-2 text-xs">
-							<span class="w-14 text-gray-500">{row.month}</span>
-							<div class="h-4 flex-1 rounded bg-gray-100">
-								<div
-									class="h-4 rounded bg-emerald-500"
-									style={`width: ${Math.max(2, (row.recurring / incomeMax) * 100)}%`}
-								></div>
-							</div>
-							<span class="w-24 text-right text-gray-700"
-								>{brl.format(row.recurring)}</span
-							>
-						</div>
-					{/each}
-				</div>
-				{#if maturityMonths.length > 0}
-					<p class="mt-3 border-t border-gray-100 pt-2 text-xs text-gray-500">
-						Fora da série (juros liberados no vencimento do papel, referentes a
-						todo o período de aplicação):
-						{#each maturityMonths as row, index (row.month)}{index > 0
-								? ', '
-								: ' '}{row.month} — {brl.format(row.maturity)}{/each}
-					</p>
-				{/if}
-			{/if}
-		</div>
 	</div>
 
 	<div class="rounded-lg border border-gray-200 bg-white p-4">

@@ -2,7 +2,6 @@ import type { PageServerLoad } from './$types';
 import { getUserHouseholdId } from '$lib/server/household';
 import {
 	deriveQuantity,
-	evolutionSeries,
 	latestPrice,
 	monthlyPassiveIncome,
 	type EventRow,
@@ -10,14 +9,6 @@ import {
 	type SnapshotRow
 } from '$lib/server/investment-positions';
 import { computeTaxReport, type TaxAssetRow } from '$lib/server/investment-tax';
-import {
-	buildCashFlows,
-	compareToCdi,
-	twrSeries,
-	valuationSeries,
-	xirr
-} from '$lib/server/investment-returns';
-import { loadCdiRates } from '$lib/server/investment-cdi';
 import type { AssetClass, TaxBucket } from '$lib/server/investment-assets';
 
 const CLASS_LABELS: Record<AssetClass, string> = {
@@ -45,84 +36,12 @@ interface AssetRow {
 	override_date: string | null;
 }
 
-// Performance has two halves that answer different questions: a single
-// money-weighted rate covering the whole history (the only thing computable
-// from B3's one snapshot), and a time-weighted curve that starts the day the
-// quotes cron began recording prices.
-async function buildPerformance(
-	assets: AssetRow[],
-	events: EventRow[],
-	positions: { assetId: string; value: number }[],
-	quotes: QuoteRow[],
-	snapshots: SnapshotRow[],
-	today: string
-) {
-	const valueByAsset = new Map(positions.map((p) => [p.assetId, p.value]));
-	const { flows, excludedAssetIds } = buildCashFlows(
-		assets,
-		events,
-		valueByAsset,
-		today
-	);
-	const first = flows.reduce<string | null>(
-		(earliest, flow) =>
-			!earliest || flow.date < earliest ? flow.date : earliest,
-		null
-	);
-	const rate = xirr(flows);
-	const rates = first ? await loadCdiRates(first, today) : [];
-	const sinceInception =
-		rate !== null && first ? compareToCdi(rate, rates, first, today) : null;
-
-	// Only dates the cron actually priced can anchor a valuation.
-	const quoteDates = [
-		...new Set(
-			quotes.filter((q) => q.source !== 'snapshot').map((q) => q.quote_date)
-		)
-	];
-	const curve =
-		quoteDates.length >= 2
-			? twrSeries(
-					valuationSeries(
-						assets.map((asset) => asset.id),
-						snapshots,
-						events,
-						quotes,
-						quoteDates
-					),
-					rates
-				)
-			: [];
-
-	const excludedLabels = assets
-		.filter((asset) => excludedAssetIds.includes(asset.id))
-		.map((asset) => asset.ticker ?? asset.name);
-	const totalValue = positions.reduce((sum, p) => sum + p.value, 0);
-	const coveredValue = positions
-		.filter((p) => !excludedAssetIds.includes(p.assetId))
-		.reduce((sum, p) => sum + p.value, 0);
-
-	return {
-		sinceInception,
-		curve,
-		excludedLabels,
-		coveragePercent: totalValue > 0 ? (coveredValue / totalValue) * 100 : 0
-	};
-}
-
 export const load: PageServerLoad = async ({
 	locals: { supabase, safeGetSession }
 }) => {
 	const empty = {
 		positions: [],
-		evolution: [],
 		income: [],
-		performance: {
-			sinceInception: null,
-			curve: [],
-			excludedLabels: [],
-			coveragePercent: 0
-		},
 		owners: [],
 		currentUserId: '',
 		lastSnapshotDate: null,
@@ -162,7 +81,6 @@ export const load: PageServerLoad = async ({
 	const events = (eventsRes.data ?? []) as EventRow[];
 	const quotes = (quotesRes.data ?? []) as QuoteRow[];
 
-	const today = new Date().toISOString().slice(0, 10);
 	const taxReport = computeTaxReport(assets as TaxAssetRow[], events);
 	const averageCostByAsset = new Map(
 		taxReport.costs.map((cost) => [cost.assetId, cost.averageCost])
@@ -205,20 +123,9 @@ export const load: PageServerLoad = async ({
 		null
 	);
 
-	const performance = await buildPerformance(
-		assets,
-		events,
-		positions,
-		quotes,
-		snapshots,
-		today
-	);
-
 	return {
 		positions,
-		evolution: evolutionSeries(snapshots, events, quotes, today),
 		income,
-		performance,
 		owners: [...new Set(assets.map((asset) => asset.owner_user_id))],
 		currentUserId: user.id,
 		lastSnapshotDate,
