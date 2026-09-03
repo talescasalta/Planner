@@ -267,17 +267,18 @@ export function buildDuplicateKey(row: ParsedRow): string {
 	return buildImportDedupKey(row);
 }
 
-// A reference month here is a settlement cycle, not a calendar month: the
-// household closes a month by paying for what the previous month consumed.
+// The reference month is when the spending happened — the question the app is
+// actually asked, and the convention personal finance products share.
 //
-// So a bank or benefit-card payment made in July is settled in the August
-// cycle, one month after its own date. A credit card invoice already works
-// that way on its own -- the invoice closing in August bills July's purchases
-// -- so those rows simply keep the invoice month picked at import.
+// A bank or benefit-card row belongs to the month of its own date. Deriving
+// that from the row rather than from the upload keeps a transaction in the
+// same month no matter which 60-day statement window carried it, which is what
+// makes the import dedup stable across overlaps.
 //
-// Deriving this from each row's date rather than from the upload keeps a
-// transaction in the same cycle no matter which 60-day statement window
-// carried it, which is what makes the import dedup stable across overlaps.
+// A credit card invoice stays whole and keeps the month picked at import,
+// which is the month the invoice CLOSES. An invoice closing on the 26th is
+// almost entirely that month's spending; labelling it by the due date instead
+// would push the card a month ahead of the statement it should sit beside.
 const STATEMENT_SOURCE_TYPES = new Set<CsvSourceType>([
 	'bank_account',
 	'vale_alimentacao',
@@ -294,15 +295,11 @@ export function resolveReferenceMonth(
 	if (!STATEMENT_SOURCE_TYPES.has(sourceType)) return invoiceMonth;
 	const match = ISO_MONTH.exec(date.slice(0, 7));
 	// A row whose date failed to parse would otherwise land in a nonsense
-	// cycle; fall back to the month the user chose.
+	// month; fall back to the month the user chose.
 	if (!match) return invoiceMonth;
-	const year = Number(match[1]);
 	const month = Number(match[2]);
 	if (month < 1 || month > 12) return invoiceMonth;
-	// December settles in January of the following year.
-	const nextYear = month === 12 ? year + 1 : year;
-	const nextMonth = month === 12 ? 1 : month + 1;
-	return `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
+	return date.slice(0, 7);
 }
 
 export function buildImportDedupKey(

@@ -205,7 +205,10 @@
 		<div>
 			<label
 				for="reference_month"
-				class="block text-sm font-medium text-gray-700">Mês de referência</label
+				class="block text-sm font-medium text-gray-700"
+				>{sourceType === 'credit_card'
+					? 'Mês de fechamento da fatura'
+					: 'Mês de referência'}</label
 			>
 			<input
 				id="reference_month"
@@ -216,8 +219,13 @@
 				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2"
 			/>
 			<p class="mt-1 text-xs text-gray-500">
-				Mês ao qual esta fatura se refere. As transações serão agrupadas por
-				este mês.
+				{#if sourceType === 'credit_card'}
+					Mês em que a fatura <strong>fechou</strong>, não o do vencimento: a
+					fatura que fecha em 26/08 e vence em 03/09 é agosto.
+				{:else}
+					Cada lançamento é agrupado pelo mês da própria data. Este campo só
+					vale para linhas cuja data não puder ser lida.
+				{/if}
 			</p>
 		</div>
 
