@@ -10,6 +10,7 @@ import {
 import { loadCdiRates } from '$lib/server/investment-cdi';
 import { monthReturn, recentMonths } from '$lib/server/investment-monthly';
 import type { TaxBucket } from '$lib/server/investment-assets';
+import { selectAll } from '$lib/server/supabase-paging';
 
 // The four tables every investment view reads, loaded once per request with
 // the user's own client so RLS stays the authority, and the derived numbers
@@ -76,42 +77,50 @@ async function fetchInvestmentRows(
 	householdId: string,
 	assetIds?: string[]
 ): Promise<InvestmentRows> {
-	const assets = supabase
-		.from('investment_assets')
-		.select(ASSET_COLUMNS)
-		.eq('household_id', householdId);
-	const snapshots = supabase
-		.from('investment_snapshots')
-		.select('asset_id, snapshot_date, quantity, close_price, net_value')
-		.eq('household_id', householdId);
-	const events = supabase
-		.from('investment_events')
-		.select(
-			'asset_id, event_date, event_type, direction, quantity, unit_price, total_value, source'
-		)
-		.eq('household_id', householdId);
-	const quotes = supabase
-		.from('investment_quotes')
-		.select('asset_id, quote_date, price, source')
-		.eq('household_id', householdId);
+	// Every table is read in full and ordered by its primary key, which is what
+	// keeps the paged ranges from repeating or skipping rows.
+	const [assets, snapshots, events, quotes] = await Promise.all([
+		selectAll<InvestmentAssetRow>('investment_assets', (from, to) => {
+			const query = supabase
+				.from('investment_assets')
+				.select(ASSET_COLUMNS)
+				.eq('household_id', householdId)
+				.order('id')
+				.range(from, to);
+			return assetIds ? query.in('id', assetIds) : query;
+		}),
+		selectAll<SnapshotRow>('investment_snapshots', (from, to) => {
+			const query = supabase
+				.from('investment_snapshots')
+				.select('asset_id, snapshot_date, quantity, close_price, net_value')
+				.eq('household_id', householdId)
+				.order('id')
+				.range(from, to);
+			return assetIds ? query.in('asset_id', assetIds) : query;
+		}),
+		selectAll<EventRow>('investment_events', (from, to) => {
+			const query = supabase
+				.from('investment_events')
+				.select(
+					'asset_id, event_date, event_type, direction, quantity, unit_price, total_value, source'
+				)
+				.eq('household_id', householdId)
+				.order('id')
+				.range(from, to);
+			return assetIds ? query.in('asset_id', assetIds) : query;
+		}),
+		selectAll<QuoteRow>('investment_quotes', (from, to) => {
+			const query = supabase
+				.from('investment_quotes')
+				.select('asset_id, quote_date, price, source')
+				.eq('household_id', householdId)
+				.order('id')
+				.range(from, to);
+			return assetIds ? query.in('asset_id', assetIds) : query;
+		})
+	]);
 
-	const [assetsRes, snapshotsRes, eventsRes, quotesRes] = await Promise.all(
-		assetIds
-			? [
-					assets.in('id', assetIds),
-					snapshots.in('asset_id', assetIds),
-					events.in('asset_id', assetIds),
-					quotes.in('asset_id', assetIds)
-				]
-			: [assets, snapshots, events, quotes]
-	);
-
-	return {
-		assets: (assetsRes.data ?? []) as InvestmentAssetRow[],
-		snapshots: (snapshotsRes.data ?? []) as SnapshotRow[],
-		events: (eventsRes.data ?? []) as EventRow[],
-		quotes: (quotesRes.data ?? []) as QuoteRow[]
-	};
+	return { assets, snapshots, events, quotes };
 }
 
 export interface PositionValue {

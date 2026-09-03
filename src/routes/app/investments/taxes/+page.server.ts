@@ -5,6 +5,7 @@ import { supabaseAdmin } from '$lib/server/supabase';
 import { computeTaxReport, type TaxAssetRow } from '$lib/server/investment-tax';
 import type { EventRow } from '$lib/server/investment-positions';
 import { isIsoDate, isIsoMonth } from '$lib/server/request-guards';
+import { selectAll } from '$lib/server/supabase-paging';
 
 // IR é apurado por CPF: cada usuário vê e calcula apenas a própria apuração
 // (ativos cujo owner_user_id é o seu), ainda que o household compartilhe a
@@ -43,14 +44,18 @@ export const load: PageServerLoad = async ({
 	if (assets.length === 0) return empty;
 
 	const assetIds = assets.map((asset) => asset.id);
-	const [{ data: eventRows }, { data: darfRows }] = await Promise.all([
-		supabase
-			.from('investment_events')
-			.select(
-				'asset_id, event_date, event_type, direction, quantity, unit_price, total_value, source'
-			)
-			.eq('household_id', householdId)
-			.in('asset_id', assetIds),
+	const [eventRows, { data: darfRows }] = await Promise.all([
+		selectAll<EventRow>('investment_events', (from, to) =>
+			supabase
+				.from('investment_events')
+				.select(
+					'asset_id, event_date, event_type, direction, quantity, unit_price, total_value, source'
+				)
+				.eq('household_id', householdId)
+				.in('asset_id', assetIds)
+				.order('id')
+				.range(from, to)
+		),
 		supabase
 			.from('investment_darf_status')
 			.select('reference_month, paid, paid_at, amount_paid')
@@ -58,7 +63,7 @@ export const load: PageServerLoad = async ({
 			.eq('owner_user_id', user.id)
 	]);
 
-	const report = computeTaxReport(assets, (eventRows ?? []) as EventRow[]);
+	const report = computeTaxReport(assets, eventRows);
 	const labelByAsset = new Map(
 		assets.map((asset) => [asset.id, asset.ticker ?? asset.name])
 	);

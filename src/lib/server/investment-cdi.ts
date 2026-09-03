@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '$lib/server/supabase';
+import { selectAll } from '$lib/server/supabase-paging';
 import type { CdiRate } from './investment-returns';
 
 // CDI comes from the Banco Central's open SGS API (series 12, "taxa CDI ao
@@ -84,14 +85,20 @@ export async function loadCdiRates(
 	from: string,
 	to: string
 ): Promise<CdiRate[]> {
-	const { data } = await supabaseAdmin
-		.from('cdi_daily_rates')
-		.select('rate_date, rate')
-		.gte('rate_date', from)
-		.lte('rate_date', to)
-		.order('rate_date');
-	return (data ?? []).map((row) => ({
-		date: row.rate_date as string,
+	// rate_date is the primary key, so ordering by it makes the ranges stable.
+	const rows = await selectAll<{ rate_date: string; rate: number }>(
+		'cdi_daily_rates',
+		(pageFrom, pageTo) =>
+			supabaseAdmin
+				.from('cdi_daily_rates')
+				.select('rate_date, rate')
+				.gte('rate_date', from)
+				.lte('rate_date', to)
+				.order('rate_date')
+				.range(pageFrom, pageTo)
+	);
+	return rows.map((row) => ({
+		date: row.rate_date,
 		rate: Number(row.rate)
 	}));
 }
