@@ -9,6 +9,7 @@ import {
 } from '$lib/server/investment-overview';
 import { computeTaxReport, type TaxAssetRow } from '$lib/server/investment-tax';
 import { isAccruable } from '$lib/server/investment-accrual';
+import { parseRate } from '$lib/server/request-guards';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { classLabel } from '$lib/investments/classes';
 
@@ -107,11 +108,7 @@ interface CarryRateForm {
 }
 
 function parseNumber(raw: FormDataEntryValue | null): number | null {
-	if (raw === null) return null;
-	const text = String(raw).trim().replace('%', '').replace(',', '.');
-	if (text === '') return null;
-	const value = Number(text);
-	return Number.isFinite(value) ? value : null;
+	return raw === null ? null : parseRate(String(raw));
 }
 
 function readPercent(
