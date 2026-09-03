@@ -21,13 +21,24 @@
 		currency = 'BRL',
 		height = 420,
 		selected = null,
-		onSelect
+		onSelect,
+		selectedGroupId = null,
+		onSelectGroup,
+		colors,
+		emptyMessage = 'Sem despesas para os filtros atuais.'
 	}: {
 		nodes: Group[];
 		currency?: string;
 		height?: number;
 		selected?: TreemapSelection | null;
 		onSelect?: (sel: TreemapSelection | null) => void;
+		// Clicking a group header selects the whole group (toggle). Independent
+		// from leaf selection so a page can filter by class or open one asset.
+		selectedGroupId?: string | null;
+		onSelectGroup?: (groupId: string | null) => void;
+		// Fixed colors per group id; groups without one fall back to the palette.
+		colors?: Record<string, string>;
+		emptyMessage?: string;
 	} = $props();
 
 	const PALETTE = [
@@ -89,7 +100,7 @@
 	let colorByCategory = $derived.by(() => {
 		const map = new SvelteMap<string, string>();
 		nodes.forEach((node, idx) => {
-			map.set(node.id, PALETTE[idx % PALETTE.length]);
+			map.set(node.id, colors?.[node.id] ?? PALETTE[idx % PALETTE.length]);
 		});
 		return map;
 	});
@@ -169,6 +180,12 @@
 		);
 	}
 
+	function handleGroupClick(group: TreeNode) {
+		if (!onSelectGroup) return;
+		const id = nodeDataValue(group, 'id');
+		onSelectGroup(selectedGroupId === id ? null : id);
+	}
+
 	function isSelected(leaf: TreeNode): boolean {
 		if (!selected) return false;
 		const cat = categoryNodeFor(leaf);
@@ -184,7 +201,7 @@
 		class="flex items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500"
 		style={`height:${height}px`}
 	>
-		Sem despesas para os filtros atuais.
+		{emptyMessage}
 	</div>
 {:else}
 	<div
@@ -202,17 +219,34 @@
 							colorByCategory.get(node.data.id ?? '') ?? '#94a3b8'}
 						{@const w = Math.max(0, (node.x1 ?? 0) - (node.x0 ?? 0))}
 						{@const h = Math.max(0, (node.y1 ?? 0) - (node.y0 ?? 0))}
-						<g>
+						{@const groupSelected = selectedGroupId === (node.data.id ?? '')}
+						<!-- Spread rather than conditional attributes: without a group
+						     handler the header is decorative and must not announce
+						     itself as a button. -->
+						{@const groupRole = onSelectGroup
+							? { role: 'button' as const, tabindex: 0 }
+							: {}}
+						<g
+							{...groupRole}
+							class={onSelectGroup ? 'cursor-pointer' : ''}
+							onclick={() => handleGroupClick(node)}
+							onkeydown={(e) => {
+								if (onSelectGroup && (e.key === 'Enter' || e.key === ' ')) {
+									e.preventDefault();
+									handleGroupClick(node);
+								}
+							}}
+						>
 							<rect
 								x={node.x0}
 								y={node.y0}
 								width={w}
 								height={h}
 								fill={color}
-								fill-opacity="0.12"
-								stroke={color}
-								stroke-opacity="0.5"
-								stroke-width="1"
+								fill-opacity={groupSelected ? 0.22 : 0.12}
+								stroke={groupSelected ? '#0f172a' : color}
+								stroke-opacity={groupSelected ? 1 : 0.5}
+								stroke-width={groupSelected ? 2 : 1}
 								rx="5"
 							/>
 							{#if w > 60 && h > PADDING_TOP}

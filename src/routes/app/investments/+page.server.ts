@@ -1,40 +1,13 @@
 import type { PageServerLoad } from './$types';
 import { getUserHouseholdId } from '$lib/server/household';
+import { monthlyPassiveIncome } from '$lib/server/investment-positions';
 import {
-	deriveQuantity,
-	latestPrice,
-	monthlyPassiveIncome,
-	type EventRow,
-	type QuoteRow,
-	type SnapshotRow
-} from '$lib/server/investment-positions';
+	lastSnapshotDate,
+	loadInvestmentRows,
+	valuePositions
+} from '$lib/server/investment-overview';
 import { computeTaxReport, type TaxAssetRow } from '$lib/server/investment-tax';
-import type { AssetClass, TaxBucket } from '$lib/server/investment-assets';
-
-const CLASS_LABELS: Record<AssetClass, string> = {
-	etf: 'ETFs',
-	fii: 'FIIs',
-	acao: 'Ações',
-	fundo: 'Fundos',
-	previdencia: 'Previdência',
-	tesouro: 'Tesouro Direto',
-	cdb: 'CDB/RDB',
-	lca_lci: 'LCA/LCI',
-	outro: 'Outros'
-};
-
-interface AssetRow {
-	id: string;
-	owner_user_id: string;
-	asset_class: AssetClass;
-	ticker: string | null;
-	name: string;
-	product_key: string;
-	tax_bucket: TaxBucket;
-	override_quantity: number | null;
-	override_total_cost: number | null;
-	override_date: string | null;
-}
+import { classLabel } from '$lib/investments/classes';
 
 export const load: PageServerLoad = async ({
 	locals: { supabase, safeGetSession }
@@ -53,82 +26,48 @@ export const load: PageServerLoad = async ({
 	const householdId = await getUserHouseholdId(supabase, user.id);
 	if (!householdId) return empty;
 
-	const [assetsRes, snapshotsRes, eventsRes, quotesRes] = await Promise.all([
-		supabase
-			.from('investment_assets')
-			.select(
-				'id, owner_user_id, asset_class, ticker, name, product_key, tax_bucket, override_quantity, override_total_cost, override_date'
-			)
-			.eq('household_id', householdId),
-		supabase
-			.from('investment_snapshots')
-			.select('asset_id, snapshot_date, quantity, close_price, net_value')
-			.eq('household_id', householdId),
-		supabase
-			.from('investment_events')
-			.select(
-				'asset_id, event_date, event_type, direction, quantity, unit_price, total_value, source'
-			)
-			.eq('household_id', householdId),
-		supabase
-			.from('investment_quotes')
-			.select('asset_id, quote_date, price, source')
-			.eq('household_id', householdId)
-	]);
+	const rows = await loadInvestmentRows(supabase, householdId);
+	const assetById = new Map(rows.assets.map((asset) => [asset.id, asset]));
 
-	const assets = (assetsRes.data ?? []) as AssetRow[];
-	const snapshots = (snapshotsRes.data ?? []) as SnapshotRow[];
-	const events = (eventsRes.data ?? []) as EventRow[];
-	const quotes = (quotesRes.data ?? []) as QuoteRow[];
-
-	const taxReport = computeTaxReport(assets as TaxAssetRow[], events);
+	const taxReport = computeTaxReport(
+		rows.assets as unknown as TaxAssetRow[],
+		rows.events
+	);
 	const averageCostByAsset = new Map(
 		taxReport.costs.map((cost) => [cost.assetId, cost.averageCost])
 	);
 
 	const unknownTypes = new Set<string>();
-	const positions = assets
-		.map((asset) => {
-			const derived = deriveQuantity(asset.id, snapshots, events);
-			for (const unknownType of derived.unknownEventTypes)
+	const positions = valuePositions(rows)
+		.map((position) => {
+			for (const unknownType of position.unknownEventTypes)
 				unknownTypes.add(unknownType);
-			const price = latestPrice(asset.id, quotes, snapshots);
-			const value = price ? derived.quantity * price.price : 0;
+			const asset = assetById.get(position.assetId)!;
 			return {
 				assetId: asset.id,
 				ownerUserId: asset.owner_user_id,
 				label: asset.ticker ?? asset.name,
 				name: asset.name,
 				assetClass: asset.asset_class,
-				classLabel: CLASS_LABELS[asset.asset_class],
-				quantity: derived.quantity,
-				price: price?.price ?? null,
-				priceDate: price?.date ?? null,
-				value,
+				classLabel: classLabel(asset.asset_class),
+				quantity: position.quantity,
+				price: position.price,
+				priceDate: position.priceDate,
+				value: position.value,
 				averageCost: averageCostByAsset.get(asset.id) ?? null
 			};
 		})
 		.filter((position) => position.quantity > 0)
 		.sort((a, b) => b.value - a.value);
 
-	// Passive income by month, with maturity payouts kept apart from the
-	// recurring series (see monthlyPassiveIncome).
-	const income = monthlyPassiveIncome(events).slice(-12);
-
-	const lastSnapshotDate = snapshots.reduce<string | null>(
-		(latest, snapshot) =>
-			!latest || snapshot.snapshot_date > latest
-				? snapshot.snapshot_date
-				: latest,
-		null
-	);
-
 	return {
 		positions,
-		income,
-		owners: [...new Set(assets.map((asset) => asset.owner_user_id))],
+		// Passive income by month, with maturity payouts kept apart from the
+		// recurring series (see monthlyPassiveIncome).
+		income: monthlyPassiveIncome(rows.events).slice(-12),
+		owners: [...new Set(rows.assets.map((asset) => asset.owner_user_id))],
 		currentUserId: user.id,
-		lastSnapshotDate,
+		lastSnapshotDate: lastSnapshotDate(rows.snapshots),
 		unknownEventTypes: [...unknownTypes]
 	};
 };

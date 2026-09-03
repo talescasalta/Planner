@@ -4,12 +4,10 @@ import { getUserHouseholdId } from '$lib/server/household';
 import { loadCdiRates } from '$lib/server/investment-cdi';
 import { monthReturn, recentMonths } from '$lib/server/investment-monthly';
 import {
-	deriveQuantity,
-	latestPrice,
-	type EventRow,
-	type QuoteRow,
-	type SnapshotRow
-} from '$lib/server/investment-positions';
+	loadInvestmentRows,
+	lastSnapshotDate,
+	valuePositions
+} from '$lib/server/investment-overview';
 import { computeTaxReport, type TaxAssetRow } from '$lib/server/investment-tax';
 import {
 	askAssistant,
@@ -29,56 +27,20 @@ import {
 	clampText
 } from '$lib/server/request-guards';
 
-interface AssetRow {
-	id: string;
-	owner_user_id: string;
-	ticker: string | null;
-	name: string;
-	asset_class: string;
-	tax_bucket: string;
-	override_quantity: number | null;
-	override_total_cost: number | null;
-	override_date: string | null;
-}
-
 // Builds the only view of the household's data the assistant ever sees: the
 // same figures the pages render, summarized. Nothing else is sent out.
 async function buildContext(
 	supabase: Parameters<typeof getUserHouseholdId>[0],
 	householdId: string
 ): Promise<PortfolioContext> {
-	const [assetsRes, snapshotsRes, eventsRes, quotesRes, darfRes] =
-		await Promise.all([
-			supabase
-				.from('investment_assets')
-				.select(
-					'id, owner_user_id, ticker, name, asset_class, tax_bucket, override_quantity, override_total_cost, override_date'
-				)
-				.eq('household_id', householdId),
-			supabase
-				.from('investment_snapshots')
-				.select('asset_id, snapshot_date, quantity, close_price, net_value')
-				.eq('household_id', householdId),
-			supabase
-				.from('investment_events')
-				.select(
-					'asset_id, event_date, event_type, direction, quantity, unit_price, total_value, source'
-				)
-				.eq('household_id', householdId),
-			supabase
-				.from('investment_quotes')
-				.select('asset_id, quote_date, price, source')
-				.eq('household_id', householdId),
-			supabase
-				.from('investment_darf_status')
-				.select('reference_month, paid')
-				.eq('household_id', householdId)
-		]);
-
-	const assets = (assetsRes.data ?? []) as AssetRow[];
-	const snapshots = (snapshotsRes.data ?? []) as SnapshotRow[];
-	const events = (eventsRes.data ?? []) as EventRow[];
-	const quotes = (quotesRes.data ?? []) as QuoteRow[];
+	const [rows, darfRes] = await Promise.all([
+		loadInvestmentRows(supabase, householdId),
+		supabase
+			.from('investment_darf_status')
+			.select('reference_month, paid')
+			.eq('household_id', householdId)
+	]);
+	const { assets, snapshots, events, quotes } = rows;
 	const today = new Date().toISOString().slice(0, 10);
 
 	const months = recentMonths(today, 3);
@@ -102,16 +64,16 @@ async function buildContext(
 			.map((row) => (row.reference_month as string).slice(0, 7))
 	);
 
-	const positions = assets
-		.map((asset) => {
-			const quantity = deriveQuantity(asset.id, snapshots, events).quantity;
-			const price = latestPrice(asset.id, quotes, snapshots);
+	const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+	const positions = valuePositions(rows)
+		.map(({ assetId, quantity, value }) => {
+			const asset = assetById.get(assetId)!;
 			const monthly = gainByAsset.get(asset.id);
 			return {
 				label: asset.ticker ?? asset.name,
 				assetClass: asset.asset_class,
 				quantity,
-				value: price ? quantity * price.price : 0,
+				value,
 				averageCost: averageCost.get(asset.id) ?? null,
 				monthGain: monthly && !monthly.unpriced ? monthly.gain : null,
 				monthReturn: monthly && !monthly.unpriced ? monthly.returnRate : null
@@ -123,13 +85,7 @@ async function buildContext(
 	return {
 		today,
 		totalValue: positions.reduce((sum, position) => sum + position.value, 0),
-		lastReconciliation: snapshots.reduce<string | null>(
-			(latest, snapshot) =>
-				!latest || snapshot.snapshot_date > latest
-					? snapshot.snapshot_date
-					: latest,
-			null
-		),
+		lastReconciliation: lastSnapshotDate(snapshots),
 		positions,
 		months: computed.map((month) => ({
 			month: month.month,

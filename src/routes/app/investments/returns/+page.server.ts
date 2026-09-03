@@ -15,28 +15,13 @@ import {
 	valuationSeries,
 	xirr
 } from '$lib/server/investment-returns';
+import { monthlyPassiveIncome } from '$lib/server/investment-positions';
 import {
-	deriveQuantity,
-	latestPrice,
-	monthlyPassiveIncome
-} from '$lib/server/investment-positions';
+	loadInvestmentRows,
+	valuePositions,
+	type InvestmentRows
+} from '$lib/server/investment-overview';
 import type { TaxAssetRow } from '$lib/server/investment-tax';
-import type {
-	EventRow,
-	QuoteRow,
-	SnapshotRow
-} from '$lib/server/investment-positions';
-
-interface AssetRow {
-	id: string;
-	owner_user_id: string;
-	ticker: string | null;
-	name: string;
-	asset_class: string;
-	override_quantity: number | null;
-	override_total_cost: number | null;
-	override_date: string | null;
-}
 
 const HOW_MANY_MONTHS = 6;
 
@@ -51,13 +36,11 @@ interface AssetLabel {
 // from B3's one snapshot), and a time-weighted curve that starts the day the
 // quotes cron began recording prices.
 async function buildPerformance(
-	assets: AssetRow[],
-	events: EventRow[],
+	rows: InvestmentRows,
 	positions: { assetId: string; value: number }[],
-	quotes: QuoteRow[],
-	snapshots: SnapshotRow[],
 	today: string
 ) {
+	const { assets, events, quotes, snapshots } = rows;
 	const valueByAsset = new Map(positions.map((p) => [p.assetId, p.value]));
 	const { flows, excludedAssetIds } = buildCashFlows(
 		assets,
@@ -137,33 +120,8 @@ export const load: PageServerLoad = async ({
 	const householdId = await getUserHouseholdId(supabase, user.id);
 	if (!householdId) return empty;
 
-	const [assetsRes, snapshotsRes, eventsRes, quotesRes] = await Promise.all([
-		supabase
-			.from('investment_assets')
-			.select(
-				'id, owner_user_id, ticker, name, asset_class, override_quantity, override_total_cost, override_date'
-			)
-			.eq('household_id', householdId),
-		supabase
-			.from('investment_snapshots')
-			.select('asset_id, snapshot_date, quantity, close_price, net_value')
-			.eq('household_id', householdId),
-		supabase
-			.from('investment_events')
-			.select(
-				'asset_id, event_date, event_type, direction, quantity, unit_price, total_value, source'
-			)
-			.eq('household_id', householdId),
-		supabase
-			.from('investment_quotes')
-			.select('asset_id, quote_date, price, source')
-			.eq('household_id', householdId)
-	]);
-
-	const assets = (assetsRes.data ?? []) as AssetRow[];
-	const snapshots = (snapshotsRes.data ?? []) as SnapshotRow[];
-	const events = (eventsRes.data ?? []) as EventRow[];
-	const quotes = (quotesRes.data ?? []) as QuoteRow[];
+	const rows = await loadInvestmentRows(supabase, householdId);
+	const { assets, snapshots, events, quotes } = rows;
 	if (assets.length === 0) return { ...empty, currentUserId: user.id };
 
 	const today = new Date().toISOString().slice(0, 10);
@@ -171,13 +129,9 @@ export const load: PageServerLoad = async ({
 	const oldest = `${months.at(-1)}-01`;
 	const rates = await loadCdiRates(oldest, today);
 
-	const positions = assets
-		.map((asset) => {
-			const quantity = deriveQuantity(asset.id, snapshots, events).quantity;
-			const price = latestPrice(asset.id, quotes, snapshots);
-			return { assetId: asset.id, value: price ? quantity * price.price : 0 };
-		})
-		.filter((position) => position.value > 0);
+	const positions = valuePositions(rows).filter(
+		(position) => position.value > 0
+	);
 
 	const assetIds = assets.map((asset) => asset.id);
 	const computed: MonthReturn[] = months.map((month) =>
@@ -194,14 +148,7 @@ export const load: PageServerLoad = async ({
 	}
 
 	return {
-		performance: await buildPerformance(
-			assets,
-			events,
-			positions,
-			quotes,
-			snapshots,
-			today
-		),
+		performance: await buildPerformance(rows, positions, today),
 		// Passive income by month, with maturity payouts kept apart from the
 		// recurring series (see monthlyPassiveIncome).
 		income: monthlyPassiveIncome(events).slice(-12),
