@@ -25,8 +25,10 @@ function stubClient() {
 				select: () => builder,
 				eq: () => builder,
 				in: () => builder,
-				then: (resolve: (value: { data: unknown[] }) => unknown) =>
-					Promise.resolve({ data: [] }).then(resolve)
+				order: () => builder,
+				range: () => builder,
+				then: (resolve: (value: { data: unknown[]; error: null }) => unknown) =>
+					Promise.resolve({ data: [], error: null }).then(resolve)
 			};
 			return builder;
 		}

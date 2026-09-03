@@ -65,6 +65,9 @@ export const load: PageServerLoad = async ({
 	const assetIds = funds.map((fund) => fund.id);
 	const latest = new Map<string, { date: string; price: number }>();
 	if (assetIds.length > 0) {
+		// Newest first, and only the first row per fund is kept — so the
+		// thousand-row cap PostgREST applies drops history we do not want
+		// anyway. See supabase-paging for reads where that cap does bite.
 		const { data: quotes } = await supabase
 			.from('investment_quotes')
 			.select('asset_id, quote_date, price')
