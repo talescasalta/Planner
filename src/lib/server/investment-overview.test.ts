@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
+
+// This module reaches the CDI loader through its import chain, which builds
+// the admin client at load time. Stub it so the suite needs no credentials.
+vi.mock('$lib/server/supabase', () => ({ supabaseAdmin: { from: vi.fn() } }));
 import {
 	lastQuoteDate,
 	lastSnapshotDate,
