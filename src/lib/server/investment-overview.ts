@@ -39,7 +39,34 @@ export interface InvestmentRows {
 const ASSET_COLUMNS =
 	'id, owner_user_id, asset_class, ticker, name, product_key, tax_bucket, cnpj, override_quantity, override_total_cost, override_date';
 
-export async function loadInvestmentRows(
+// The layout load and the page load run in parallel on the same request and
+// want the same four tables. Keying the in-flight promise by the request's own
+// Supabase client (hooks builds one per request) lets the second caller join
+// the first instead of repeating the reads; the entry dies with the client.
+const inFlight = new WeakMap<
+	SupabaseClient<Database>,
+	Map<string, Promise<InvestmentRows>>
+>();
+
+export function loadInvestmentRows(
+	supabase: SupabaseClient<Database>,
+	householdId: string,
+	assetIds?: string[]
+): Promise<InvestmentRows> {
+	// Only the whole-household read is shared; a by-id read is a different set.
+	if (assetIds) return fetchInvestmentRows(supabase, householdId, assetIds);
+
+	const perClient = inFlight.get(supabase) ?? new Map();
+	inFlight.set(supabase, perClient);
+	const cached = perClient.get(householdId);
+	if (cached) return cached;
+
+	const pending = fetchInvestmentRows(supabase, householdId);
+	perClient.set(householdId, pending);
+	return pending;
+}
+
+async function fetchInvestmentRows(
 	supabase: SupabaseClient<Database>,
 	householdId: string,
 	assetIds?: string[]
