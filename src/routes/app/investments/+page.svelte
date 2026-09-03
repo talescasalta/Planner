@@ -97,7 +97,6 @@
 
 	let lastRecurring = $derived(data.income.at(-1)?.recurring ?? null);
 
-
 	const brl = new Intl.NumberFormat('pt-BR', {
 		style: 'currency',
 		currency: 'BRL'
@@ -112,8 +111,8 @@
 	<div class="flex flex-wrap items-end justify-between gap-3">
 		<p class="text-sm text-gray-600">
 			{#if data.lastSnapshotDate}
-				Última reconciliação com a B3: {data.lastSnapshotDate}. Valores desde então
-				são calculados a partir de movimentações e cotações.
+				Última reconciliação com a B3: {data.lastSnapshotDate}. Valores desde
+				então são calculados a partir de movimentações e cotações.
 			{:else}
 				Nenhuma posição importada ainda.
 			{/if}

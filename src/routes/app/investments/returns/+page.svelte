@@ -312,7 +312,9 @@
 			</div>
 
 			<div class="rounded-lg border border-gray-200 bg-white p-4">
-				<h2 class="text-sm font-semibold text-gray-900">Rentabilidade vs CDI</h2>
+				<h2 class="text-sm font-semibold text-gray-900">
+					Rentabilidade vs CDI
+				</h2>
 				{#if perf}
 					<div class="mt-3 flex flex-wrap items-end gap-6">
 						<div>
@@ -351,13 +353,13 @@
 							class="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800"
 						>
 							<p>
-								<strong>Número pouco confiável.</strong> A B3 não registra o custo
-								de entrada de {data.performance.excludedLabels.length} ativos ({(
-									100 - data.performance.coveragePercent
-								).toFixed(0)}% do patrimônio), que ficam fora da conta: eles
-								chegaram por transferência de corretora ou são anteriores ao
-								histórico disponível. Como o resultado é bem sensível a essas
-								lacunas, trate-o como ordem de grandeza, não como medida.
+								<strong>Número pouco confiável.</strong> A B3 não registra o
+								custo de entrada de {data.performance.excludedLabels.length} ativos
+								({(100 - data.performance.coveragePercent).toFixed(0)}% do
+								patrimônio), que ficam fora da conta: eles chegaram por
+								transferência de corretora ou são anteriores ao histórico
+								disponível. Como o resultado é bem sensível a essas lacunas,
+								trate-o como ordem de grandeza, não como medida.
 							</p>
 							<p class="mt-1">
 								Para torná-lo confiável, informe o custo inicial de
@@ -370,17 +372,18 @@
 					{/if}
 				{:else}
 					<p class="mt-3 text-sm text-gray-500">
-						Ainda não há dados suficientes para calcular a rentabilidade. É preciso
-						ter movimentações importadas e a série do CDI, que o cron busca no Banco
-						Central.
+						Ainda não há dados suficientes para calcular a rentabilidade. É
+						preciso ter movimentações importadas e a série do CDI, que o cron
+						busca no Banco Central.
 					</p>
 				{/if}
 
 				{#if data.performance.curve.length >= 2}
 					<div class="mt-4 border-t border-gray-100 pt-3">
 						<p class="mb-2 text-xs text-gray-500">
-							Evolução comparada (base 100 em {data.performance.curve[0].date}) —
-							carteira <span class="font-medium text-blue-700">azul</span>, CDI
+							Evolução comparada (base 100 em {data.performance.curve[0].date})
+							— carteira <span class="font-medium text-blue-700">azul</span>,
+							CDI
 							<span class="font-medium text-gray-500">cinza</span>
 						</p>
 						<div class="space-y-1">
@@ -403,8 +406,8 @@
 						cotações — hoje há {data.performance.curve.length === 0
 							? 'menos de dois dias'
 							: 'apenas um dia'} de preços. Diferente do número acima, ela não depende
-						de custo de entrada: compara o valor da carteira dia a dia, descontando aportes,
-						então será a medida confiável daqui pra frente.
+						de custo de entrada: compara o valor da carteira dia a dia, descontando
+						aportes, então será a medida confiável daqui pra frente.
 					</p>
 				{/if}
 			</div>
@@ -436,8 +439,8 @@
 					</div>
 					{#if maturityMonths.length > 0}
 						<p class="mt-3 border-t border-gray-100 pt-2 text-xs text-gray-500">
-							Fora da série (juros liberados no vencimento do papel, referentes a
-							todo o período de aplicação):
+							Fora da série (juros liberados no vencimento do papel, referentes
+							a todo o período de aplicação):
 							{#each maturityMonths as row, index (row.month)}{index > 0
 									? ', '
 									: ' '}{row.month} — {brl.format(row.maturity)}{/each}
