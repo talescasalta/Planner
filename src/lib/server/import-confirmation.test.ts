@@ -288,10 +288,10 @@ describe('reference month by source', () => {
 		);
 	}
 
-	// A 60-day statement covers two months, and each payment is settled in the
-	// cycle after it happened. Filing all of it under the month chosen at
-	// upload is what made July spending show up as August.
-	it('splits a statement across the cycles that settle its rows', async () => {
+	// A 60-day statement covers two months, and each row belongs to the month
+	// of its own date. Filing all of it under the month chosen at upload is
+	// what made June and July spending show up as August.
+	it('splits a statement across the months of its own rows', async () => {
 		const { inserted, run } = confirmWithRows(
 			'bank_account',
 			[{ date: '2026-06-20' }, { date: '2026-07-15' }, { date: '2026-08-03' }],
@@ -300,10 +300,10 @@ describe('reference month by source', () => {
 
 		await run();
 
-		expect(insertedMonths(inserted)).toEqual(['2026-07', '2026-08', '2026-09']);
+		expect(insertedMonths(inserted)).toEqual(['2026-06', '2026-07', '2026-08']);
 	});
 
-	it('keeps every credit card row on the chosen invoice month', async () => {
+	it('keeps every credit card row on the chosen closing month', async () => {
 		const { inserted, run } = confirmWithRows(
 			'credit_card',
 			[{ date: '2026-06-26' }, { date: '2026-07-26' }],

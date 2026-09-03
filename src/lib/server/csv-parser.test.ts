@@ -10,35 +10,38 @@ import {
 } from './csv-parser';
 
 describe('resolveReferenceMonth', () => {
-	it('settles statement rows in the cycle after their own date', () => {
-		// What was paid in July is closed in the August cycle, so a 60-day
-		// statement lands its rows in two cycles rather than all in the month
-		// the upload happened to be labelled with.
+	it('files statement rows in the month of their own date', () => {
+		// A 60-day statement lands its rows in two months rather than all in
+		// the month the upload happened to be labelled with.
 		expect(resolveReferenceMonth('bank_account', '2026-07-31', '2026-08')).toBe(
-			'2026-08'
+			'2026-07'
 		);
 		expect(resolveReferenceMonth('bank_account', '2026-08-03', '2026-08')).toBe(
-			'2026-09'
+			'2026-08'
 		);
 		expect(
 			resolveReferenceMonth('vale_alimentacao', '2026-06-15', '2026-08')
-		).toBe('2026-07');
+		).toBe('2026-06');
 		expect(
 			resolveReferenceMonth('vale_refeicao', '2026-06-15', '2026-08')
-		).toBe('2026-07');
+		).toBe('2026-06');
 	});
 
-	it('rolls December into January of the next year', () => {
+	it('does not roll a December row into the next year', () => {
 		expect(resolveReferenceMonth('bank_account', '2026-12-28', '2026-12')).toBe(
-			'2027-01'
+			'2026-12'
 		);
 	});
 
-	it('keeps the chosen invoice month for credit card rows', () => {
-		// The invoice already bills the previous month's purchases, so it needs
-		// no shift of its own.
-		expect(resolveReferenceMonth('credit_card', '2026-06-26', '2026-08')).toBe(
-			'2026-08'
+	it('keeps the chosen closing month for credit card rows', () => {
+		// The invoice is a unit and is labelled by the month it closed, so a
+		// purchase made just before closing keeps that label even though its
+		// own date falls in the previous month.
+		expect(resolveReferenceMonth('credit_card', '2026-07-26', '2026-07')).toBe(
+			'2026-07'
+		);
+		expect(resolveReferenceMonth('credit_card', '2026-06-27', '2026-07')).toBe(
+			'2026-07'
 		);
 	});
 
