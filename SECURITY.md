@@ -68,7 +68,8 @@ Funções `SECURITY DEFINER` no schema `public` são expostas em `/rest/v1/rpc/*
 
 - Descrições, valores e datas de transações são enviados ao provedor configurado (OpenAI ou OpenRouter) para classificação. Use provedores/modelos com política de não-retenção e prefira contas com data training desativado.
 - A chave de LLM nunca vai ao browser; chamadas só em `src/lib/server/llm.ts`.
-- O endpoint `/api/classify` tem rate limit persistente por usuário (10 req/min) e teto de 200 ids por chamada — manter limites em endpoints novos que disparem LLM.
+- Todo ponto de entrada que dispara LLM (`/api/classify`, preview de importação, leitura de print de fundos, assistente de investimentos) passa por `checkPersistentRateLimit` com o mesmo orçamento por usuário (`LLM_RATE_LIMIT` em `src/lib/server/request-guards.ts`, 10 req/min) e limita o tamanho do texto/arquivo enviado. Endpoint novo com LLM segue o mesmo padrão.
+- Uploads passam por `uploadTooLarge` antes de qualquer parser (xlsx, PDF, imagem). Segredos de cron são comparados com `bearerMatches` (tempo constante). Mensagens de erro do Supabase ou do provedor de LLM vão para o log do servidor, nunca para o browser.
 
 ## Checklist de revisão para toda mudança
 
@@ -78,6 +79,9 @@ Funções `SECURITY DEFINER` no schema `public` são expostas em `/rest/v1/rpc/*
 - [ ] Tabela nova tem RLS habilitado e policies escopadas por household (ou nenhuma policy, se for interna)?
 - [ ] `npm run quality:migrations` passa e a migration aplicada não foi alterada ou removida?
 - [ ] Uso de `supabaseAdmin` é precedido de checagem de autorização com o client do usuário?
+- [ ] Action que recebe arquivo aplica `uploadTooLarge`; action que dispara LLM aplica `checkPersistentRateLimit` e limita o texto enviado?
+- [ ] Datas, meses e enums vindos do formulário são validados no servidor (`isIsoDate`/`isIsoMonth`/whitelist) antes de chegar ao banco?
+- [ ] Erros internos (Supabase, LLM) são logados no servidor e o browser recebe uma mensagem genérica?
 - [ ] Nenhum segredo novo em código, log ou variável `PUBLIC_*`?
 - [ ] Input externo (form, query string, CSV, resposta de LLM) é validado/limitado antes de usar?
 

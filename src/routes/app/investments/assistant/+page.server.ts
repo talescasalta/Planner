@@ -20,6 +20,14 @@ import {
 	searchFunds,
 	type FundCandidate
 } from '$lib/server/investment-registry';
+import { checkPersistentRateLimit } from '$lib/server/rate-limit';
+import { supabaseAdmin } from '$lib/server/supabase';
+import {
+	LLM_RATE_LIMIT,
+	LLM_RATE_LIMIT_MESSAGE,
+	MAX_QUESTION_CHARS,
+	clampText
+} from '$lib/server/request-guards';
 
 interface AssetRow {
 	id: string;
@@ -141,7 +149,12 @@ async function buildContext(
 	};
 }
 
-// Bounded so a long thread cannot grow the prompt without limit.
+// Bounded in both turns and characters so a long (or crafted) thread cannot
+// grow the prompt without limit. The history is client-held, so it is treated
+// as untrusted text, never as prior instructions.
+const MAX_HISTORY_TURNS = 10;
+const MAX_TURN_CHARS = 4_000;
+
 function readHistory(raw: string | undefined): AssistantTurn[] {
 	try {
 		const parsed = JSON.parse(raw || '[]');
@@ -152,10 +165,38 @@ function readHistory(raw: string | undefined): AssistantTurn[] {
 					(turn?.role === 'user' || turn?.role === 'assistant') &&
 					typeof turn?.content === 'string'
 			)
-			.slice(-10);
+			.slice(-MAX_HISTORY_TURNS)
+			.map((turn) => ({
+				role: turn.role,
+				content: clampText(turn.content, MAX_TURN_CHARS)
+			}));
 	} catch {
 		return [];
 	}
+}
+
+// Everything that can refuse a question before any LLM call is made.
+async function admitQuestion(
+	userId: string,
+	formData: FormData
+): Promise<{ question: string } | { status: number; message: string }> {
+	const question = (formData.get('question')?.toString() ?? '').trim();
+	if (!question) return { status: 400, message: 'Escreva uma pergunta.' };
+	if (question.length > MAX_QUESTION_CHARS) {
+		return {
+			status: 400,
+			message: `Pergunta longa demais (máximo ${MAX_QUESTION_CHARS} caracteres).`
+		};
+	}
+	// Each question costs one or two LLM calls; the budget is shared with
+	// every other LLM entry point for this user.
+	const allowed = await checkPersistentRateLimit(
+		supabaseAdmin,
+		userId,
+		LLM_RATE_LIMIT
+	);
+	if (!allowed) return { status: 429, message: LLM_RATE_LIMIT_MESSAGE };
+	return { question };
 }
 
 export const load: PageServerLoad = async () => {
@@ -175,9 +216,14 @@ export const actions: Actions = {
 		}
 
 		const formData = await request.formData();
-		const question = (formData.get('question')?.toString() ?? '').trim();
-		if (!question)
-			return fail(400, { success: false, message: 'Escreva uma pergunta.' });
+		const admitted = await admitQuestion(user.id, formData);
+		if ('message' in admitted) {
+			return fail(admitted.status, {
+				success: false,
+				message: admitted.message
+			});
+		}
+		const { question } = admitted;
 
 		const turns = [
 			...readHistory(formData.get('history')?.toString()),
@@ -200,9 +246,10 @@ export const actions: Actions = {
 				}
 			}
 		} catch (error) {
+			console.error('[investments/assistant] llm call failed', error);
 			return fail(500, {
 				success: false,
-				message: `Falha ao consultar o assistente: ${String((error as Error).message)}`
+				message: 'Falha ao consultar o assistente. Tente de novo em instantes.'
 			});
 		}
 

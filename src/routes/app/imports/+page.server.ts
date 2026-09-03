@@ -9,6 +9,15 @@ import {
 	type ParsedRow
 } from '$lib/server/csv-parser';
 import { resolveImportMapping } from '$lib/server/import-mapping';
+import { checkPersistentRateLimit } from '$lib/server/rate-limit';
+import {
+	LLM_RATE_LIMIT,
+	LLM_RATE_LIMIT_MESSAGE,
+	MAX_PROMPT_TEXT_CHARS,
+	UPLOAD_TOO_LARGE_MESSAGE,
+	isIsoMonth,
+	uploadTooLarge
+} from '$lib/server/request-guards';
 import {
 	detectImageMimeType,
 	extractRowsFromImage,
@@ -182,9 +191,13 @@ async function resolveImportInput(
 ): Promise<ResolvedImportInput | null> {
 	const sourceType = readSourceType(formData);
 	const file = formData.get('file') as File | null;
-	const pastedText = pastedImportText(formData);
+	const pastedText = pastedImportText(formData)?.slice(
+		0,
+		MAX_PROMPT_TEXT_CHARS
+	);
 
 	if (file && file.size > 0) {
+		if (uploadTooLarge(file)) throw new Error(UPLOAD_TOO_LARGE_MESSAGE);
 		return resolveFileImport(file, sourceType, referenceMonth);
 	}
 
@@ -471,16 +484,33 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const referenceMonth = formData.get('reference_month') as string;
+		const referenceMonth = formData.get('reference_month')?.toString() ?? '';
 
-		if (!referenceMonth) {
+		if (!isIsoMonth(referenceMonth)) {
 			return fail(400, {
 				success: false,
-				message: 'Mês de referência não informado'
+				message: 'Mês de referência inválido'
 			});
 		}
 
-		const resolved = await resolveImportInput(formData, referenceMonth);
+		// Previews may run image or text extraction through the LLM; the
+		// budget is shared with every other LLM entry point for this user.
+		if (
+			!(await checkPersistentRateLimit(supabaseAdmin, user.id, LLM_RATE_LIMIT))
+		) {
+			return fail(429, { success: false, message: LLM_RATE_LIMIT_MESSAGE });
+		}
+
+		let resolved;
+		try {
+			resolved = await resolveImportInput(formData, referenceMonth);
+		} catch (error) {
+			const message = (error as Error).message;
+			if (message === UPLOAD_TOO_LARGE_MESSAGE) {
+				return fail(400, { success: false, message });
+			}
+			throw error;
+		}
 		if (!resolved) {
 			return fail(400, {
 				success: false,

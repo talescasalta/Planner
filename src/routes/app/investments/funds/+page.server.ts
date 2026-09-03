@@ -19,6 +19,14 @@ import {
 	extractTextFromPdf
 } from '$lib/server/import-extract';
 import { searchFunds } from '$lib/server/investment-registry';
+import { checkPersistentRateLimit } from '$lib/server/rate-limit';
+import {
+	LLM_RATE_LIMIT,
+	LLM_RATE_LIMIT_MESSAGE,
+	UPLOAD_TOO_LARGE_MESSAGE,
+	isIsoDate,
+	uploadTooLarge
+} from '$lib/server/request-guards';
 
 // Funds are registered by hand because they never reach B3 custody. The form
 // asks for what a broker statement actually shows — balance and accumulated
@@ -99,8 +107,16 @@ function parseMoney(raw: FormDataEntryValue | null): number | null {
 	return Number.isFinite(value) ? value : null;
 }
 
-function text(formData: FormData, key: string): string {
-	return (formData.get(key)?.toString() ?? '').trim();
+function text(formData: FormData, key: string, max = 200): string {
+	return (formData.get(key)?.toString() ?? '').trim().slice(0, max);
+}
+
+const FUND_CLASSES = new Set(['fundo', 'previdencia']);
+
+// null = not sent; undefined = sent but not a valid YYYY-MM-DD.
+function optionalDate(value: string): string | null | undefined {
+	if (!value) return null;
+	return isIsoDate(value) ? value : undefined;
 }
 
 interface FundForm {
@@ -114,26 +130,45 @@ interface FundForm {
 	startDate: string | null;
 }
 
-function readFundForm(formData: FormData): FundForm {
+// Raw form values before validation: dates may still be malformed.
+type FundFormInput = Omit<FundForm, 'balanceDate' | 'startDate'> & {
+	balanceDate: string | null | undefined;
+	startDate: string | null | undefined;
+};
+
+function readFundForm(formData: FormData): FundFormInput {
 	return {
-		cnpj: onlyDigits(text(formData, 'cnpj')),
-		subclass: text(formData, 'subclass'),
+		cnpj: onlyDigits(text(formData, 'cnpj', 32)),
+		subclass: text(formData, 'subclass', 16),
 		name: text(formData, 'name'),
-		assetClass: text(formData, 'asset_class') || 'fundo',
+		assetClass: text(formData, 'asset_class', 32) || 'fundo',
 		balance: parseMoney(formData.get('balance')) ?? NaN,
 		gain: parseMoney(formData.get('gain')) ?? NaN,
-		balanceDate: text(formData, 'balance_date') || null,
-		startDate: text(formData, 'start_date') || null
+		balanceDate: optionalDate(text(formData, 'balance_date', 10)),
+		startDate: optionalDate(text(formData, 'start_date', 10))
 	};
 }
 
-function validateFundForm(form: FundForm): string | null {
-	if (form.cnpj.length !== 14) return 'CNPJ inválido (precisa ter 14 dígitos).';
-	if (!form.name) return 'Informe o nome do fundo.';
+function validateFundForm(
+	form: FundFormInput
+): { ok: true; form: FundForm } | { ok: false; message: string } {
+	if (form.cnpj.length !== 14)
+		return { ok: false, message: 'CNPJ inválido (precisa ter 14 dígitos).' };
+	if (form.subclass && !/^[A-Za-z0-9]+$/.test(form.subclass))
+		return { ok: false, message: 'Subclasse inválida.' };
+	if (!form.name) return { ok: false, message: 'Informe o nome do fundo.' };
+	if (!FUND_CLASSES.has(form.assetClass))
+		return { ok: false, message: 'Tipo de fundo inválido.' };
 	if (!Number.isFinite(form.balance) || form.balance <= 0)
-		return 'Informe o saldo atual.';
-	if (!Number.isFinite(form.gain)) return 'Informe o rendimento acumulado.';
-	return null;
+		return { ok: false, message: 'Informe o saldo atual.' };
+	if (!Number.isFinite(form.gain))
+		return { ok: false, message: 'Informe o rendimento acumulado.' };
+	if (form.balanceDate === undefined || form.startDate === undefined)
+		return { ok: false, message: 'Data inválida (use AAAA-MM-DD).' };
+	return {
+		ok: true,
+		form: { ...form, balanceDate: form.balanceDate, startDate: form.startDate }
+	};
 }
 
 async function persistFund(
@@ -167,8 +202,10 @@ async function persistFund(
 		)
 		.select('id')
 		.single();
-	if (assetError || !asset)
-		return assetError?.message ?? 'Falha ao salvar o fundo.';
+	if (assetError || !asset) {
+		console.error('[investments/funds] asset upsert failed', assetError);
+		return 'Falha ao salvar o fundo.';
+	}
 
 	const [{ error: quoteError }, { error: snapshotError }] = await Promise.all([
 		supabaseAdmin.from('investment_quotes').upsert(
@@ -194,7 +231,14 @@ async function persistFund(
 			{ onConflict: 'household_id,asset_id,snapshot_date' }
 		)
 	]);
-	return quoteError?.message ?? snapshotError?.message ?? null;
+	if (quoteError || snapshotError) {
+		console.error('[investments/funds] quote/snapshot upsert failed', {
+			quoteError,
+			snapshotError
+		});
+		return 'Falha ao salvar a cota do fundo.';
+	}
+	return null;
 }
 
 // Reads a broker screen and hands the numbers back for the user to review in
@@ -222,22 +266,43 @@ async function readFundScreenshot(file: File) {
 }
 
 export const actions: Actions = {
-	read_screenshot: async ({ request, locals: { safeGetSession } }) => {
+	read_screenshot: async ({
+		request,
+		locals: { supabase, safeGetSession }
+	}) => {
 		const { user } = await safeGetSession();
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId)
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
 
 		const file = (await request.formData()).get('screenshot') as File | null;
 		if (!file || file.size === 0) {
 			return fail(400, { success: false, message: 'Envie um print ou PDF.' });
+		}
+		if (uploadTooLarge(file)) {
+			return fail(400, { success: false, message: UPLOAD_TOO_LARGE_MESSAGE });
+		}
+
+		// This action spends an LLM call per upload; it shares the per-user
+		// budget of every other LLM entry point.
+		if (
+			!(await checkPersistentRateLimit(supabaseAdmin, user.id, LLM_RATE_LIMIT))
+		) {
+			return fail(429, { success: false, message: LLM_RATE_LIMIT_MESSAGE });
 		}
 
 		let result;
 		try {
 			result = await readFundScreenshot(file);
 		} catch (error) {
+			console.error('[investments/funds] screenshot extraction failed', error);
 			return fail(500, {
 				success: false,
-				message: `Falha ao ler a imagem: ${String((error as Error).message)}`
+				message: 'Falha ao ler a imagem. Tente de novo em instantes.'
 			});
 		}
 		if ('message' in result)
@@ -280,9 +345,10 @@ export const actions: Actions = {
 				message: 'Usuário não pertence a um grupo'
 			});
 
-		const form = readFundForm(await request.formData());
-		const invalid = validateFundForm(form);
-		if (invalid) return fail(400, { success: false, message: invalid });
+		const validated = validateFundForm(readFundForm(await request.formData()));
+		if (!validated.ok)
+			return fail(400, { success: false, message: validated.message });
+		const form = validated.form;
 
 		// The quota that turns the balance into a number of quotas: preferably
 		// the one from the balance's own date, else the freshest published.
@@ -334,7 +400,13 @@ export const actions: Actions = {
 			.eq('id', assetId)
 			.eq('household_id', householdId)
 			.eq('owner_user_id', user.id);
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error) {
+			console.error('[investments/funds] delete failed', error);
+			return fail(500, {
+				success: false,
+				message: 'Falha ao remover o fundo.'
+			});
+		}
 		return { success: true, message: 'Fundo removido.' };
 	}
 };

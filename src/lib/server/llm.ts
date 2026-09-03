@@ -60,6 +60,10 @@ export interface LlmResponse {
 	}>;
 }
 
+// A hung provider must not hold a serverless function open until the
+// platform kills it.
+const LLM_TIMEOUT_MS = 60_000;
+
 export async function callLlm(payload: LlmPayload): Promise<LlmResponse> {
 	if (!API_KEY) {
 		throw new Error('LLM API key not configured');
@@ -67,6 +71,7 @@ export async function callLlm(payload: LlmPayload): Promise<LlmResponse> {
 
 	const res = await fetch(API_URL, {
 		method: 'POST',
+		signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
 		headers: {
 			'Content-Type': 'application/json',
 			Authorization: `Bearer ${API_KEY}`,
@@ -87,8 +92,10 @@ export async function callLlm(payload: LlmPayload): Promise<LlmResponse> {
 	});
 
 	if (!res.ok) {
-		const text = await res.text();
-		throw new Error(`LLM request failed: ${res.status} ${text}`);
+		// The provider's body can echo request details; it belongs in the
+		// server log, never in a message that reaches the browser.
+		console.error('[llm] request failed', res.status, await res.text());
+		throw new Error(`LLM request failed: ${res.status}`);
 	}
 
 	return res.json() as Promise<LlmResponse>;

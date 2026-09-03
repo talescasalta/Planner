@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { callLlm } from '$lib/server/llm';
 import { onlyDigits } from './investment-funds';
+import { MAX_PROMPT_TEXT_CHARS, clampText } from './request-guards';
 
 // Reads a fund position from a broker screenshot.
 //
@@ -170,7 +171,7 @@ export async function extractFundsFromText(
 	const response = await callLlm({
 		messages: [
 			{ role: 'system', content: prompt(today) },
-			{ role: 'user', content: text }
+			{ role: 'user', content: clampText(text, MAX_PROMPT_TEXT_CHARS) }
 		],
 		json_mode: true
 	});

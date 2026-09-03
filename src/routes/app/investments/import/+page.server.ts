@@ -7,6 +7,10 @@ import {
 	type ParsedB3File
 } from '$lib/server/investment-import';
 import { persistParsedB3File } from '$lib/server/investment-import-persist';
+import {
+	UPLOAD_TOO_LARGE_MESSAGE,
+	uploadTooLarge
+} from '$lib/server/request-guards';
 
 // Mirrors app/imports: preview and confirm each re-parse the uploaded File
 // (re-sent by the page on confirm), so nothing is staged server-side. B3
@@ -21,6 +25,7 @@ const KIND_LABELS: Record<ParsedB3File['kind'], string> = {
 async function resolveUpload(formData: FormData) {
 	const file = formData.get('file') as File | null;
 	if (!file || file.size === 0) return null;
+	if (uploadTooLarge(file)) throw new Error(UPLOAD_TOO_LARGE_MESSAGE);
 	const buffer = Buffer.from(await file.arrayBuffer());
 	const parsed = await parseB3File(buffer);
 	return { parsed, filename: file.name };

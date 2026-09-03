@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
+import { bearerMatches } from '$lib/server/request-guards';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { llmConfigSummary } from '$lib/server/llm';
 
@@ -13,8 +14,7 @@ export const GET: RequestHandler = async ({ request }) => {
 		);
 	}
 
-	const authHeader = request.headers.get('authorization');
-	if (authHeader !== `Bearer ${cronSecret}`) {
+	if (!bearerMatches(request.headers.get('authorization'), cronSecret)) {
 		return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
 	}
 

@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
+import { bearerMatches } from '$lib/server/request-guards';
 import { refreshInvestmentQuotes } from '$lib/server/investment-quotes';
 import { syncCdiRates } from '$lib/server/investment-cdi';
 import { backfillQuoteHistory } from '$lib/server/investment-history';
@@ -17,8 +18,7 @@ export const GET: RequestHandler = async ({ request }) => {
 		);
 	}
 
-	const authHeader = request.headers.get('authorization');
-	if (authHeader !== `Bearer ${cronSecret}`) {
+	if (!bearerMatches(request.headers.get('authorization'), cronSecret)) {
 		return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
 	}
 
