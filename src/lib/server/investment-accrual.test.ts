@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	accrualSeries,
+	accrualSteps,
 	dailyFactor,
 	impliedCdiPercent,
 	isAccruable
@@ -166,5 +167,55 @@ describe('impliedCdiPercent', () => {
 				rates
 			)
 		).toBeNull();
+	});
+});
+
+// The convention, pinned with rates that differ by day so a one-day shift
+// changes the answer. While the CDI is flat — as it is for long stretches —
+// getting this backwards is invisible, which is exactly why it needs a test.
+describe('accrual dating', () => {
+	const varying = [
+		{ date: '2026-09-01', rate: 1 },
+		{ date: '2026-09-02', rate: 2 },
+		{ date: '2026-09-03', rate: 4 }
+	];
+
+	it('carries a day with the rate published the business day before', () => {
+		const steps = accrualSteps(varying, '2026-09-01', '2026-09-03');
+
+		expect(steps).toEqual([
+			{ date: '2026-09-02', rate: 1 },
+			{ date: '2026-09-03', rate: 2 }
+		]);
+	});
+
+	it('compounds the price with the previous day rate, not the landing one', () => {
+		const series = accrualSeries(
+			{ date: '2026-09-01', price: 100 },
+			{ indexType: 'cdi', percent: 100, spread: null },
+			varying,
+			'2026-09-03'
+		);
+
+		// 100 × 1.01 (rate of 09-01) × 1.02 (rate of 09-02).
+		expect(series[0].price).toBeCloseTo(101, 10);
+		expect(series[1].price).toBeCloseTo(103.02, 10);
+	});
+
+	// The newest published rate remunerates a day that has not arrived yet.
+	it('leaves the last published rate unused', () => {
+		const steps = accrualSteps(varying, '2026-09-01', '2026-09-30');
+
+		expect(steps.at(-1)).toEqual({ date: '2026-09-03', rate: 2 });
+	});
+
+	it('recovers the implied rate under the same dating', () => {
+		const implied = impliedCdiPercent(
+			{ date: '2026-09-01', price: 100 },
+			{ date: '2026-09-03', price: 103.02 },
+			varying
+		);
+
+		expect(implied).toBeCloseTo(100, 6);
 	});
 });
