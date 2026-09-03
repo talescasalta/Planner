@@ -27,9 +27,18 @@ export const POST: RequestHandler = async ({
 		error(429, 'Too many classification requests. Try again in a minute.');
 	}
 
-	const body = (await request.json()) as { transaction_ids: string[] };
+	let body: { transaction_ids?: unknown };
+	try {
+		body = (await request.json()) as { transaction_ids?: unknown };
+	} catch {
+		error(400, 'Invalid JSON body');
+	}
 	const ids = body.transaction_ids;
-	if (!Array.isArray(ids) || ids.length === 0) {
+	if (
+		!Array.isArray(ids) ||
+		ids.length === 0 ||
+		!ids.every((id) => typeof id === 'string')
+	) {
 		error(400, 'Missing transaction_ids');
 	}
 	if (ids.length > MAX_IDS_PER_REQUEST) {
@@ -44,7 +53,7 @@ export const POST: RequestHandler = async ({
 	const results = await classifyTransactions(
 		supabase,
 		householdId,
-		ids,
+		ids as string[],
 		user.id
 	);
 	return json({ processed: results.length, results });

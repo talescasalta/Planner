@@ -4,6 +4,7 @@ import { getUserHouseholdId } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { computeTaxReport, type TaxAssetRow } from '$lib/server/investment-tax';
 import type { EventRow } from '$lib/server/investment-positions';
+import { isIsoDate, isIsoMonth } from '$lib/server/request-guards';
 
 // IR é apurado por CPF: cada usuário vê e calcula apenas a própria apuração
 // (ativos cujo owner_user_id é o seu), ainda que o household compartilhe a
@@ -90,6 +91,28 @@ interface OverrideUpdate {
 	override_date: string | null;
 }
 
+function parseOverrideValues(
+	formData: FormData
+): OverrideUpdate | { message: string } {
+	const quantity = Number(formData.get('quantity'));
+	const totalCost = Number(formData.get('total_cost'));
+	if (!Number.isFinite(quantity) || !Number.isFinite(totalCost)) {
+		return { message: 'Quantidade e custo total são obrigatórios' };
+	}
+	if (quantity < 0 || totalCost < 0) {
+		return { message: 'Quantidade e custo total não podem ser negativos' };
+	}
+	const date = formData.get('date')?.toString().trim() || null;
+	if (date && !isIsoDate(date)) {
+		return { message: 'Data inválida (use AAAA-MM-DD)' };
+	}
+	return {
+		override_quantity: quantity,
+		override_total_cost: totalCost,
+		override_date: date
+	};
+}
+
 function parseOverrideForm(
 	formData: FormData
 ): { assetId: string; update: OverrideUpdate } | { message: string } {
@@ -105,19 +128,29 @@ function parseOverrideForm(
 			}
 		};
 	}
-	const quantity = Number(formData.get('quantity'));
-	const totalCost = Number(formData.get('total_cost'));
-	if (!Number.isFinite(quantity) || !Number.isFinite(totalCost)) {
-		return { message: 'Quantidade e custo total são obrigatórios' };
+	const values = parseOverrideValues(formData);
+	if ('message' in values) return values;
+	return { assetId, update: values };
+}
+
+interface DarfForm {
+	month: string;
+	paid: boolean;
+	amount: number | null;
+}
+
+function parseDarfForm(formData: FormData): DarfForm | { message: string } {
+	const month = formData.get('month')?.toString() ?? '';
+	if (!isIsoMonth(month)) return { message: 'Mês inválido' };
+	const paid = formData.get('paid')?.toString() === 'true';
+	if (!paid) return { month, paid, amount: null };
+	const rawAmount = formData.get('amount')?.toString().trim();
+	if (!rawAmount) return { month, paid, amount: null };
+	const amount = Number(rawAmount);
+	if (!Number.isFinite(amount) || amount < 0) {
+		return { message: 'Valor pago inválido' };
 	}
-	return {
-		assetId,
-		update: {
-			override_quantity: quantity,
-			override_total_cost: totalCost,
-			override_date: formData.get('date')?.toString() || null
-		}
-	};
+	return { month, paid, amount };
 }
 
 export const actions: Actions = {
@@ -131,13 +164,10 @@ export const actions: Actions = {
 				message: 'Usuário não pertence a um grupo'
 			});
 
-		const formData = await request.formData();
-		const month = formData.get('month')?.toString();
-		const paid = formData.get('paid')?.toString() === 'true';
-		const amount = Number(formData.get('amount') ?? '');
-		if (!month || !/^\d{4}-\d{2}$/.test(month)) {
-			return fail(400, { success: false, message: 'Mês inválido' });
-		}
+		const parsed = parseDarfForm(await request.formData());
+		if ('message' in parsed)
+			return fail(400, { success: false, message: parsed.message });
+		const { month, paid, amount } = parsed;
 
 		const { error } = await supabaseAdmin.from('investment_darf_status').upsert(
 			{
@@ -146,11 +176,17 @@ export const actions: Actions = {
 				reference_month: `${month}-01`,
 				paid,
 				paid_at: paid ? new Date().toISOString().slice(0, 10) : null,
-				amount_paid: paid && Number.isFinite(amount) ? amount : null
+				amount_paid: amount
 			},
 			{ onConflict: 'household_id,owner_user_id,reference_month' }
 		);
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error) {
+			console.error('[investments/taxes] darf status upsert failed', error);
+			return fail(500, {
+				success: false,
+				message: 'Falha ao salvar o status.'
+			});
+		}
 		return { success: true };
 	},
 
@@ -174,7 +210,10 @@ export const actions: Actions = {
 			.eq('id', parsed.assetId)
 			.eq('household_id', householdId)
 			.eq('owner_user_id', user.id);
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error) {
+			console.error('[investments/taxes] override update failed', error);
+			return fail(500, { success: false, message: 'Falha ao salvar o custo.' });
+		}
 		return { success: true };
 	}
 };

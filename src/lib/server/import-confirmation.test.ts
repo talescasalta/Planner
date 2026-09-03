@@ -20,6 +20,9 @@ vi.mock('@sveltejs/kit', () => ({
 	redirect: vi.fn()
 }));
 vi.mock('$lib/server/supabase', () => ({ supabaseAdmin: { from: vi.fn() } }));
+vi.mock('$lib/server/rate-limit', () => ({
+	checkPersistentRateLimit: vi.fn(async () => true)
+}));
 vi.mock('$lib/server/household', () => ({
 	getUserHouseholdId: vi.fn(),
 	getHouseholdMembers: vi.fn()
