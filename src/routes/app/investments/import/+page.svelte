@@ -45,9 +45,9 @@
 
 <div class="mx-auto max-w-3xl space-y-6 p-4">
 	<div>
-		<h1 class="text-xl font-semibold text-gray-900">
+		<h2 class="text-sm font-semibold text-gray-900">
 			Importar investimentos (B3)
-		</h1>
+		</h2>
 		<p class="mt-1 text-sm text-gray-600">
 			Envie os arquivos xlsx exportados da
 			<a

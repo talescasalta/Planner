@@ -30,9 +30,9 @@
 
 <div class="mx-auto max-w-5xl space-y-6 p-4">
 	<div>
-		<h1 class="text-xl font-semibold text-gray-900">
+		<h2 class="text-sm font-semibold text-gray-900">
 			IR a recolher — investimentos
-		</h1>
+		</h2>
 		<p class="mt-1 text-sm text-gray-600">
 			Apuração mensal das suas vendas (por CPF) nas cestas FII, ações e ETFs de
 			renda variável. Tesouro, CDB e ETFs de renda fixa têm imposto retido na

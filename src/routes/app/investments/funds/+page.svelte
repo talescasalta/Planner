@@ -59,7 +59,7 @@
 
 <div class="mx-auto max-w-4xl space-y-6 p-4">
 	<div>
-		<h1 class="text-xl font-semibold text-gray-900">Fundos e previdência</h1>
+		<h2 class="text-sm font-semibold text-gray-900">Fundos e previdência</h2>
 		<p class="mt-1 text-sm text-gray-600">
 			Fundos abertos e planos PGBL/VGBL não ficam em custódia na B3, então não
 			vêm nos arquivos de importação. Cadastre pelo CNPJ e o app passa a

@@ -29,9 +29,9 @@
 
 <div class="mx-auto max-w-3xl space-y-4 p-4">
 	<div>
-		<h1 class="text-xl font-semibold text-gray-900">
+		<h2 class="text-sm font-semibold text-gray-900">
 			Assistente de investimentos
-		</h1>
+		</h2>
 		<p class="mt-1 text-sm text-gray-600">
 			Pergunte sobre a sua carteira ou descreva um investimento novo para
 			cadastrar.
@@ -145,13 +145,7 @@
 			placeholder="Pergunte alguma coisa sobre a sua carteira…"
 			class="block w-full rounded border border-gray-300 px-2 py-1 text-sm"
 		></textarea>
-		<div class="mt-2 flex items-center justify-between">
-			<a
-				href={resolve('/app/investments')}
-				class="text-xs text-blue-700 underline"
-			>
-				Voltar ao patrimônio
-			</a>
+		<div class="mt-2 flex items-center justify-end">
 			<button
 				type="submit"
 				disabled={asking}
