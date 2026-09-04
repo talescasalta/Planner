@@ -364,6 +364,22 @@
 					>{total} linhas ({duplicates} duplicatas detectadas)</span
 				>
 			</div>
+
+			{#if form?.source_type === 'credit_card'}
+				<p class="text-sm text-gray-700">
+					Será lançada em <strong>{form?.reference_month}</strong>, o mês em que
+					a fatura fechou
+					{#if form?.reference_month_inferred}
+						<span class="text-gray-500"
+							>— deduzido da compra mais recente do arquivo</span
+						>
+					{/if}
+				</p>
+			{:else}
+				<p class="text-sm text-gray-700">
+					Cada lançamento entra no mês da própria data.
+				</p>
+			{/if}
 			{#if mappingSource !== 'deterministic'}
 				<div
 					class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"

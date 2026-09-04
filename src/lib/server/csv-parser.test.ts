@@ -5,6 +5,7 @@ import {
 	parseAmount,
 	parseCsvBuffer,
 	parseInstallment,
+	invoiceClosingMonth,
 	resolveReferenceMonth,
 	stripInstallmentMarker
 } from './csv-parser';
@@ -268,5 +269,38 @@ describe('parseInstallment', () => {
 		expect(parseInstallment('Posto 24/7')).toBeNull();
 		expect(parseInstallment('Parcela 0/3')).toBeNull();
 		expect(parseInstallment('Parcela 3/2')).toBeNull();
+	});
+});
+
+describe('invoiceClosingMonth', () => {
+	// The newest purchase in an invoice falls on or just before the closing
+	// date, so the file itself says which month it belongs to.
+	it('reads the closing month from the newest purchase', () => {
+		expect(
+			invoiceClosingMonth(
+				'credit_card',
+				[{ date: '2026-07-27' }, { date: '2026-08-26' }],
+				'2026-09'
+			)
+		).toBe('2026-08');
+	});
+
+	it('falls back to the chosen month with no usable date', () => {
+		expect(
+			invoiceClosingMonth(
+				'credit_card',
+				[{ date: 'sem data' }, { date: '' }],
+				'2026-08'
+			)
+		).toBe('2026-08');
+		expect(invoiceClosingMonth('credit_card', [], '2026-08')).toBe('2026-08');
+	});
+
+	// Statement rows take their month from each own date, so there is nothing
+	// to infer for the file as a whole.
+	it('leaves statement sources to the chosen month', () => {
+		expect(
+			invoiceClosingMonth('bank_account', [{ date: '2026-08-26' }], '2026-09')
+		).toBe('2026-09');
 	});
 });

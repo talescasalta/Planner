@@ -4,6 +4,7 @@ import type { Database } from '$lib/types/database';
 import {
 	buildImportDedupKey,
 	detectMapping,
+	invoiceClosingMonth,
 	resolveReferenceMonth,
 	type CsvSourceType,
 	type ParsedRow
@@ -290,6 +291,9 @@ function buildTransactionInserts(
 	sourceType: CsvSourceType,
 	referenceMonth: string
 ) {
+	// Derived here rather than trusted from the form, so the month written is
+	// the one the file supports no matter what the confirm posted.
+	const month = invoiceClosingMonth(sourceType, rows, referenceMonth);
 	return rows.map((row) => ({
 		household_id: householdId,
 		date: row.date,
@@ -298,11 +302,7 @@ function buildTransactionInserts(
 		amount: row.amount,
 		currency: row.currency,
 		source_type: sourceType,
-		reference_month: resolveReferenceMonth(
-			sourceType,
-			row.date,
-			referenceMonth
-		),
+		reference_month: resolveReferenceMonth(sourceType, row.date, month),
 		import_dedup_key: buildImportDedupKey(row),
 		installment_number: row.installment_number ?? null,
 		installment_total: row.installment_total ?? null,
@@ -545,6 +545,12 @@ export const actions: Actions = {
 			duplicate: existingKeys.has(buildImportDedupKey(r))
 		}));
 
+		const closingMonth = invoiceClosingMonth(
+			resolved.sourceType,
+			rows,
+			referenceMonth
+		);
+
 		return {
 			success: true,
 			preview: previewRows,
@@ -552,7 +558,8 @@ export const actions: Actions = {
 			duplicates: rows.filter((r) => existingKeys.has(buildImportDedupKey(r)))
 				.length,
 			filename: resolved.sourceName,
-			reference_month: referenceMonth,
+			reference_month: closingMonth,
+			reference_month_inferred: closingMonth !== referenceMonth,
 			source_type: resolved.sourceType,
 			mapping_source: resolved.mappingSource,
 			mapping_confidence: resolved.confidence,

@@ -302,6 +302,31 @@ export function resolveReferenceMonth(
 	return date.slice(0, 7);
 }
 
+// The closing month of a credit card invoice, read from the invoice rather
+// than typed. The newest purchase in the file falls on or just before the
+// closing date, so the file already says which month it belongs to.
+//
+// Asking the person instead invites the answer the card itself suggests: on
+// the 3rd of September, the invoice that just arrived feels like September
+// even though it closed on 26/08.
+export function invoiceClosingMonth(
+	sourceType: CsvSourceType,
+	rows: Pick<ParsedRow, 'date'>[],
+	fallback: string
+): string {
+	if (sourceType !== 'credit_card') return fallback;
+	const newest = rows.reduce<string | null>(
+		(latest, row) =>
+			ISO_DATE.test(row.date) && (!latest || row.date > latest)
+				? row.date
+				: latest,
+		null
+	);
+	return newest ? newest.slice(0, 7) : fallback;
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 export function buildImportDedupKey(
 	row: Pick<ParsedRow, 'date' | 'clean_description' | 'amount' | 'currency'>
 ): string {

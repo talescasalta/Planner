@@ -303,10 +303,39 @@ describe('reference month by source', () => {
 		expect(insertedMonths(inserted)).toEqual(['2026-06', '2026-07', '2026-08']);
 	});
 
-	it('keeps every credit card row on the chosen closing month', async () => {
+	// The month typed at upload is a guess made on the day the invoice
+	// arrives, which is a month after it closed. The file knows better: its
+	// newest purchase falls on or just before the closing date.
+	it('takes the closing month from the invoice, not from the form', async () => {
+		const { inserted, run } = confirmWithRows(
+			'credit_card',
+			[{ date: '2026-07-27' }, { date: '2026-08-26' }],
+			'2026-09'
+		);
+
+		await run();
+
+		expect(insertedMonths(inserted)).toEqual(['2026-08', '2026-08']);
+	});
+
+	// The invoice stays whole: a purchase made before the previous closing
+	// carries the same label as one made on the closing day itself.
+	it('keeps every credit card row on the same closing month', async () => {
 		const { inserted, run } = confirmWithRows(
 			'credit_card',
 			[{ date: '2026-06-26' }, { date: '2026-07-26' }],
+			'2026-08'
+		);
+
+		await run();
+
+		expect(insertedMonths(inserted)).toEqual(['2026-07', '2026-07']);
+	});
+
+	it('falls back to the chosen month when the invoice has no usable date', async () => {
+		const { inserted, run } = confirmWithRows(
+			'credit_card',
+			[{ date: 'sem data' }, { date: '' }],
 			'2026-08'
 		);
 
