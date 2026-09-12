@@ -223,9 +223,9 @@
 				>
 					{month.unpricedCount}
 					{month.unpricedCount === 1 ? 'ativo ficou' : 'ativos ficaram'} fora da conta
-					por não ter preço público no período — LCA, LCI e CDB não têm cotação publicada,
-					e papéis recém-listados não têm histórico. Eles seguem no patrimônio, apenas
-					não entram nesta rentabilidade.
+					por não ter preço público no período — alguns papéis bancários (LCA, LCI
+					e CDB) não têm cotação publicada, e papéis recém-listados não têm histórico.
+					Eles seguem no patrimônio, apenas não entram nesta rentabilidade.
 				</div>
 			{/if}
 

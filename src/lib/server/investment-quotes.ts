@@ -103,14 +103,19 @@ export function tesouroMatchKey(title: string, maturityYear: string): string {
 // The year in a product name is usually the maturity, but Renda+ names the
 // year the income starts: "Tesouro Renda+ Aposentadoria Extra 2065" matures in
 // 2084, twenty years of payments later. Whenever the position file gave us a
-// maturity, that is what the CSV is keyed by.
+// maturity, that is what the CSV is keyed by. The fallback keeps assets created
+// before maturity metadata was introduced matchable as well.
 export function tesouroKeyFromProductName(
 	name: string,
 	maturityDate?: string | null
 ): string | null {
 	const match = name.toUpperCase().match(/^(TESOURO .*?)\s*(\d{4})$/);
 	if (!match) return null;
-	const year = maturityDate?.slice(0, 4) ?? match[2];
+	const inferredMaturityYear =
+		match[1] === 'TESOURO RENDA+ APOSENTADORIA EXTRA'
+			? String(Number(match[2]) + 19)
+			: match[2];
+	const year = maturityDate?.slice(0, 4) || inferredMaturityYear;
 	return tesouroMatchKey(match[1], year);
 }
 

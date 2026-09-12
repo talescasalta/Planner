@@ -8,7 +8,10 @@ import {
 	monthsBetween,
 	pricesFromYahooChart
 } from './investment-history';
-import { tesouroMatchKey } from './investment-quotes';
+import {
+	tesouroKeyFromProductName,
+	tesouroMatchKey
+} from './investment-quotes';
 import { fundKey } from './investment-funds';
 
 describe('pricesFromYahooChart', () => {
@@ -85,6 +88,18 @@ describe('collectTesouroHistory', () => {
 			'2026-01-01'
 		);
 		expect(history.size).toBe(0);
+	});
+
+	it('matches Renda+ by its real maturity, not its conversion year', () => {
+		const key = tesouroKeyFromProductName(
+			'TESOURO RENDA+ APOSENTADORIA EXTRA 2065'
+		)!;
+		const history = collectTesouroHistory(
+			'Tesouro Renda+ Aposentadoria Extra;15/12/2084;31/07/2026;7,10;7,22;181,00;171,94;171,94',
+			new Set([key]),
+			'2026-06-01'
+		);
+		expect(history.get(key)).toEqual([{ date: '2026-07-31', price: 171.94 }]);
 	});
 });
 
