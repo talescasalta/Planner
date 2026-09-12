@@ -60,12 +60,10 @@ it('writes bounded batches without requesting rows and counts only affected reco
 });
 
 it('stops on a failed batch and reports only confirmed writes', async () => {
-	mocks.upsert
-		.mockResolvedValueOnce({ count: 200 })
-		.mockResolvedValueOnce({
-			status: 504,
-			error: { message: 'Gateway Timeout' }
-		});
+	mocks.upsert.mockResolvedValueOnce({ count: 200 }).mockResolvedValueOnce({
+		status: 504,
+		error: { message: 'Gateway Timeout' }
+	});
 	await expect(writeQuoteBatches(rows, false)).resolves.toEqual({
 		written: 200,
 		error: 'batch 2 (200 rows, HTTP 504): Gateway Timeout'
