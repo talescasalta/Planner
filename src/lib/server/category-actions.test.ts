@@ -108,7 +108,8 @@ describe('category actions', () => {
 					name: 'Viagens',
 					parent_id: null,
 					created_by_user_id: 'user-a',
-					is_default: false
+					is_default: false,
+					financial_treatment: null
 				}
 			]
 		});

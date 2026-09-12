@@ -6,11 +6,17 @@ import {
 	loadCategorySettingsForUser,
 	loadCategoriesForUser
 } from '$lib/server/categories';
+import { isFinancialTreatment } from '$lib/server/financial-treatment';
 
 function cleanName(value: FormDataEntryValue | null): string {
 	return String(value ?? '')
 		.trim()
 		.replace(/\s+/g, ' ');
+}
+
+function readTreatment(value: FormDataEntryValue | null) {
+	const raw = String(value ?? '').trim();
+	return raw && isFinancialTreatment(raw) ? raw : null;
 }
 
 async function categoryUsageCount(categoryId: string) {
@@ -85,6 +91,9 @@ export const actions: Actions = {
 
 		const formData = await request.formData();
 		const name = cleanName(formData.get('name'));
+		const financialTreatment = readTreatment(
+			formData.get('financial_treatment')
+		);
 		if (!name)
 			return fail(400, {
 				success: false,
@@ -111,7 +120,8 @@ export const actions: Actions = {
 			name,
 			parent_id: null,
 			created_by_user_id: user.id,
-			is_default: false
+			is_default: false,
+			financial_treatment: financialTreatment
 		});
 
 		if (error) return fail(500, { success: false, message: error.message });
@@ -167,11 +177,54 @@ export const actions: Actions = {
 			name,
 			parent_id: parentId,
 			created_by_user_id: user.id,
-			is_default: false
+			is_default: false,
+			financial_treatment: readTreatment(formData.get('financial_treatment'))
 		});
 
 		if (error) return fail(500, { success: false, message: error.message });
 		return { success: true, message: 'Subcategoria criada' };
+	},
+
+	update_treatment: async ({
+		request,
+		locals: { supabase, safeGetSession }
+	}) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId)
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
+
+		const formData = await request.formData();
+		const categoryId = cleanName(formData.get('category_id'));
+		const rawTreatment = cleanName(formData.get('financial_treatment'));
+		if (!categoryId || (rawTreatment && !isFinancialTreatment(rawTreatment))) {
+			return fail(400, {
+				success: false,
+				message: 'Tratamento financeiro inválido'
+			});
+		}
+
+		const { data: category } = await supabaseAdmin
+			.from('categories')
+			.select('id')
+			.eq('id', categoryId)
+			.eq('household_id', householdId)
+			.maybeSingle();
+		if (!category)
+			return fail(404, { success: false, message: 'Categoria não encontrada' });
+
+		const { error } = await supabaseAdmin
+			.from('categories')
+			.update({ financial_treatment: rawTreatment || null })
+			.eq('id', categoryId)
+			.eq('household_id', householdId);
+		if (error) return fail(500, { success: false, message: error.message });
+		return { success: true, message: 'Tratamento financeiro atualizado' };
 	},
 
 	delete: async ({ request, locals: { supabase, safeGetSession } }) => {

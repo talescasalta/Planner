@@ -41,3 +41,30 @@ export async function selectAll<T>(
 	}
 	return rows;
 }
+
+/**
+ * Strict counterpart for financial totals. A failed middle page must never be
+ * rendered as a complete history or total, so callers receive an error and
+ * can show a load failure instead of partial data.
+ */
+export async function selectAllStrict<T>(
+	label: string,
+	page: (from: number, to: number) => PromiseLike<PageResult<T>>
+): Promise<T[]> {
+	const rows: T[] = [];
+	for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+		const { data, error } = await page(from, from + SUPABASE_PAGE_SIZE - 1);
+		if (error) {
+			console.error(
+				'[supabase] leitura paginada de ' + label + ' falhou',
+				error
+			);
+			throw new Error(
+				'Não foi possível carregar ' + label + ': ' + error.message
+			);
+		}
+		const batch = data ?? [];
+		rows.push(...batch);
+		if (batch.length < SUPABASE_PAGE_SIZE) return rows;
+	}
+}

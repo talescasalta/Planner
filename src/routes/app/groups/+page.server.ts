@@ -11,6 +11,15 @@ import {
 	isHouseholdAdmin
 } from '$lib/server/access';
 import { findAuthUserByEmail } from '$lib/server/auth-admin';
+import { loadCategoriesForUser } from '$lib/server/categories';
+import { selectAllStrict } from '$lib/server/supabase-paging';
+import {
+	fromCents,
+	financialFlowKind,
+	toCents,
+	type FinancialCategory
+} from '$lib/server/financial-treatment';
+import type { FinancialTreatment } from '$lib/types/app';
 import { fail, redirect } from '@sveltejs/kit';
 
 type SplitMethod = 'income_proportional' | 'equal';
@@ -47,6 +56,13 @@ type GroupTransaction = {
 	paid_by_user_id: string | null;
 	paid_by_display_name: string | null;
 	split_method: SplitMethod;
+	financial_flow_kind:
+		| 'income'
+		| 'expense'
+		| 'contribution'
+		| 'redemption'
+		| 'transfer'
+		| 'excluded';
 };
 
 type GroupActivity = {
@@ -65,9 +81,44 @@ type GroupActivity = {
 
 type HouseholdJoin = { id: string; name: string; created_at: string };
 type GroupSummaryRow = {
+	id: string;
+	date: string;
+	description: string;
+	currency: string | null;
 	amount: number;
 	paid_by_user_id: string | null;
 	split_method: string | null;
+	review_status: string;
+	is_transfer: boolean;
+	financial_treatment_override: FinancialTreatment | null;
+	category?:
+		| {
+				id: string | null;
+				name: string | null;
+				parent_id: string | null;
+				financial_treatment: FinancialTreatment | null;
+		  }
+		| Array<{
+				id: string | null;
+				name: string | null;
+				parent_id: string | null;
+				financial_treatment: FinancialTreatment | null;
+		  }>
+		| null;
+	subcategory?:
+		| {
+				id: string | null;
+				name: string | null;
+				parent_id: string | null;
+				financial_treatment: FinancialTreatment | null;
+		  }
+		| Array<{
+				id: string | null;
+				name: string | null;
+				parent_id: string | null;
+				financial_treatment: FinancialTreatment | null;
+		  }>
+		| null;
 };
 type GroupMemberRow = {
 	user_id: string;
@@ -167,18 +218,32 @@ function formatGroupMembers(
 	}));
 }
 
-function summarizeGroupRows(rows: GroupSummaryRow[]) {
-	const expenses = rows
+function operatingGroupRows(
+	rows: GroupSummaryRow[],
+	categories: ReadonlyMap<string, FinancialCategory>
+) {
+	return rows.filter((row) => {
+		const kind = financialFlowKind(row, categories);
+		return kind === 'expense' || kind === 'income';
+	});
+}
+
+function summarizeGroupRows(
+	rows: GroupSummaryRow[],
+	categories: ReadonlyMap<string, FinancialCategory>
+) {
+	const operatingRows = operatingGroupRows(rows, categories);
+	const expenseCents = operatingRows
 		.filter((row) => Number(row.amount) < 0)
-		.reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
-	const credits = rows
+		.reduce((sum, row) => sum + Math.abs(toCents(row.amount)), 0);
+	const creditCents = operatingRows
 		.filter((row) => Number(row.amount) > 0)
-		.reduce((sum, row) => sum + Number(row.amount), 0);
+		.reduce((sum, row) => sum + toCents(row.amount), 0);
 	return {
-		count: rows.length,
-		expenses,
-		credits,
-		balance: rows.reduce((sum, row) => sum + Number(row.amount), 0)
+		count: operatingRows.length,
+		expenses: fromCents(expenseCents),
+		credits: fromCents(creditCents),
+		balance: fromCents(creditCents - expenseCents)
 	};
 }
 
@@ -195,7 +260,8 @@ function contributionShare(
 
 function calculateContributionState(
 	rows: GroupSummaryRow[],
-	members: GroupMemberRow[]
+	members: GroupMemberRow[],
+	categories: ReadonlyMap<string, FinancialCategory>
 ) {
 	const memberIds = members.map((member) => member.user_id);
 	const incomeByUserId = new Map(
@@ -214,16 +280,16 @@ function calculateContributionState(
 		{ expense: number; credit: number; count: number }
 	>();
 	const owedByUserId = new Map(memberIds.map((userId) => [userId, 0]));
-	for (const row of rows) {
+	for (const row of operatingGroupRows(rows, categories)) {
 		const key = row.paid_by_user_id ?? 'unknown';
 		const bucket = byPayer.get(key) ?? { expense: 0, credit: 0, count: 0 };
-		const amount = Number(row.amount);
-		if (amount < 0) bucket.expense += Math.abs(amount);
-		else bucket.credit += amount;
+		const amountCents = toCents(row.amount);
+		if (amountCents < 0) bucket.expense += Math.abs(amountCents);
+		else bucket.credit += amountCents;
 		bucket.count += 1;
 		byPayer.set(key, bucket);
-		if (amount >= 0 || memberIds.length === 0) continue;
-		const expense = Math.abs(amount);
+		if (amountCents >= 0 || memberIds.length === 0) continue;
+		const expense = Math.abs(amountCents);
 		for (const userId of memberIds) {
 			const share = contributionShare(
 				row,
@@ -234,7 +300,7 @@ function calculateContributionState(
 			);
 			owedByUserId.set(
 				userId,
-				(owedByUserId.get(userId) ?? 0) + expense * share
+				(owedByUserId.get(userId) ?? 0) + Math.round(expense * share)
 			);
 		}
 	}
@@ -247,10 +313,11 @@ function buildContributions(
 	displayNames: Map<string, string | null>,
 	currentUserId: string,
 	currentUserName: string,
-	totalExpenses: number
+	totalExpenses: number,
+	categories: ReadonlyMap<string, FinancialCategory>
 ) {
 	const { byPayer, owedByUserId, incomeByUserId, totalIncome } =
-		calculateContributionState(rows, members);
+		calculateContributionState(rows, members, categories);
 	const contributions: MemberContribution[] = members.map((member) => {
 		const bucket = byPayer.get(member.user_id) ?? {
 			expense: 0,
@@ -258,7 +325,9 @@ function buildContributions(
 			count: 0
 		};
 		const monthlyIncome = incomeByUserId.get(member.user_id) ?? 0;
-		const owedTotal = owedByUserId.get(member.user_id) ?? 0;
+		const expenseTotal = fromCents(bucket.expense);
+		const creditTotal = fromCents(bucket.credit);
+		const owedTotal = fromCents(owedByUserId.get(member.user_id) ?? 0);
 		return {
 			user_id: member.user_id,
 			display_name: memberDisplayName(
@@ -269,12 +338,12 @@ function buildContributions(
 			),
 			monthly_income: monthlyIncome,
 			income_share: totalIncome > 0 ? (monthlyIncome / totalIncome) * 100 : 0,
-			expense_total: bucket.expense,
-			credit_total: bucket.credit,
+			expense_total: expenseTotal,
+			credit_total: creditTotal,
 			owed_total: owedTotal,
-			net_total: bucket.expense - owedTotal,
+			net_total: expenseTotal - owedTotal,
 			count: bucket.count,
-			share: totalExpenses > 0 ? (bucket.expense / totalExpenses) * 100 : 0
+			share: totalExpenses > 0 ? (expenseTotal / totalExpenses) * 100 : 0
 		};
 	});
 	for (const [userId, bucket] of byPayer) {
@@ -288,12 +357,15 @@ function buildContributions(
 			display_name: displayNames.get(userId) ?? 'Ex-membro',
 			monthly_income: 0,
 			income_share: 0,
-			expense_total: bucket.expense,
-			credit_total: bucket.credit,
+			expense_total: fromCents(bucket.expense),
+			credit_total: fromCents(bucket.credit),
 			owed_total: 0,
-			net_total: bucket.expense,
+			net_total: fromCents(bucket.expense),
 			count: bucket.count,
-			share: totalExpenses > 0 ? (bucket.expense / totalExpenses) * 100 : 0
+			share:
+				totalExpenses > 0
+					? (fromCents(bucket.expense) / totalExpenses) * 100
+					: 0
 		});
 	}
 	return contributions;
@@ -301,7 +373,8 @@ function buildContributions(
 
 function mapGroupTransactions(
 	rows: Array<Record<string, unknown>>,
-	displayNames: Map<string, string | null>
+	displayNames: Map<string, string | null>,
+	categories: ReadonlyMap<string, FinancialCategory>
 ): GroupTransaction[] {
 	return rows.map((row) => {
 		const rawCategory = row.category as
@@ -327,7 +400,8 @@ function mapGroupTransactions(
 			paid_by_display_name: payerId
 				? (displayNames.get(payerId) ?? 'Sem nome')
 				: null,
-			split_method: (row.split_method ?? 'income_proportional') as SplitMethod
+			split_method: (row.split_method ?? 'income_proportional') as SplitMethod,
+			financial_flow_kind: financialFlowKind(row as GroupSummaryRow, categories)
 		};
 	});
 }
@@ -342,21 +416,36 @@ async function loadGroupActivity(
 	url: URL
 ): Promise<GroupActivity> {
 	if (sharedProfileIds.length === 0) return emptyGroupActivity();
-	const { data: monthRows } = await filterByReadableAccess(
-		supabaseAdmin
-			.from('transactions')
-			.select(`reference_month, date, ${READABLE_ACCESS_EMBED}`)
-			.eq('household_id', groupId),
-		currentUserId
-	)
-		.in('owner_profile_id', sharedProfileIds)
-		.neq('review_status', 'ignored')
-		.eq('is_transfer', false)
-		.order('reference_month', { ascending: false, nullsFirst: false })
-		.order('date', { ascending: false });
+	const categoryRows = await loadCategoriesForUser(
+		supabaseAdmin,
+		groupId,
+		currentUserId,
+		[],
+		true
+	);
+	const categoryMap = new Map(
+		categoryRows.map((category) => [category.id, category])
+	);
+	const monthRows = await selectAllStrict<{
+		id: string;
+		reference_month: string | null;
+		date: string;
+	}>('meses do acerto do grupo', (from, to) =>
+		filterByReadableAccess(
+			supabaseAdmin
+				.from('transactions')
+				.select(`id, reference_month, date, ${READABLE_ACCESS_EMBED}`)
+				.eq('household_id', groupId),
+			currentUserId
+		)
+			.in('owner_profile_id', sharedProfileIds)
+			.neq('review_status', 'ignored')
+			.order('id', { ascending: true })
+			.range(from, to)
+	);
 	const monthOptions = Array.from(
 		new Set(
-			(monthRows ?? [])
+			monthRows
 				.map((row) => row.reference_month ?? monthFromDate(row.date))
 				.filter(Boolean)
 		)
@@ -367,51 +456,42 @@ async function loadGroupActivity(
 		monthOptions[0] ??
 		'';
 
-	let amountQuery = filterByReadableAccess(
-		supabaseAdmin
-			.from('transactions')
-			.select(`amount, paid_by_user_id, split_method, ${READABLE_ACCESS_EMBED}`)
-			.eq('household_id', groupId),
-		currentUserId
-	)
-		.in('owner_profile_id', sharedProfileIds)
-		.neq('review_status', 'ignored')
-		.eq('is_transfer', false);
-	let transactionQuery = filterByReadableAccess(
-		supabaseAdmin
-			.from('transactions')
-			.select(
-				`
-		id, date, description, amount, currency, paid_by_user_id, split_method,
-		${READABLE_ACCESS_EMBED},
-		category:categories!transactions_category_id_fkey ( name ),
-		subcategory:categories!transactions_subcategory_id_fkey ( name )
-	`
+	const rows = (await selectAllStrict<unknown>(
+		'transações do acerto do grupo',
+		(from, to) => {
+			let query = filterByReadableAccess(
+				supabaseAdmin
+					.from('transactions')
+					.select(
+						`
+							id, date, description, amount, currency, paid_by_user_id, split_method,
+							review_status, is_transfer, financial_treatment_override,
+							${READABLE_ACCESS_EMBED},
+							category:categories!transactions_category_id_fkey ( id, name, parent_id, financial_treatment ),
+							subcategory:categories!transactions_subcategory_id_fkey ( id, name, parent_id, financial_treatment )
+						`
+					)
+					.eq('household_id', groupId),
+				currentUserId
 			)
-			.eq('household_id', groupId),
-		currentUserId
-	)
-		.in('owner_profile_id', sharedProfileIds)
-		.neq('review_status', 'ignored')
-		.eq('is_transfer', false)
-		.order('date', { ascending: false });
-	if (selectedMonth) {
-		amountQuery = amountQuery.eq('reference_month', selectedMonth);
-		transactionQuery = transactionQuery.eq('reference_month', selectedMonth);
-	}
-	const [{ data: amountRows }, { data: transactionRows }] = await Promise.all([
-		amountQuery,
-		transactionQuery
-	]);
-	const rows = (amountRows ?? []) as GroupSummaryRow[];
-	const summary = summarizeGroupRows(rows);
+				.in('owner_profile_id', sharedProfileIds)
+				.neq('review_status', 'ignored');
+			if (selectedMonth) query = query.eq('reference_month', selectedMonth);
+			return query
+				.order('date', { ascending: false })
+				.order('id', { ascending: false })
+				.range(from, to);
+		}
+	)) as GroupSummaryRow[];
+	const summary = summarizeGroupRows(rows, categoryMap);
 	const contributions = buildContributions(
 		rows,
 		members,
 		displayNames,
 		currentUserId,
 		currentUserName,
-		summary.expenses
+		summary.expenses,
+		categoryMap
 	);
 	return {
 		monthOptions,
@@ -420,8 +500,9 @@ async function loadGroupActivity(
 		contributions,
 		settlementTransfers: simplifyTransfers(contributions),
 		transactions: mapGroupTransactions(
-			(transactionRows ?? []) as unknown as Array<Record<string, unknown>>,
-			displayNames
+			rows as unknown as Array<Record<string, unknown>>,
+			displayNames,
+			categoryMap
 		)
 	};
 }
@@ -531,14 +612,26 @@ function validSplitUpdate(
 	);
 }
 
-function isSharedExpense(transaction: {
-	amount: number;
-	owner_profile: { type?: string } | { type?: string }[] | null;
-}) {
+function isSharedExpense(
+	transaction: {
+		amount: number;
+		owner_profile: { type?: string } | { type?: string }[] | null;
+		financial_treatment_override?: FinancialTreatment | null;
+		is_transfer?: boolean;
+		review_status?: string;
+		category?: GroupSummaryRow['category'];
+		subcategory?: GroupSummaryRow['subcategory'];
+	},
+	categories: ReadonlyMap<string, FinancialCategory>
+) {
 	const profile = Array.isArray(transaction.owner_profile)
 		? transaction.owner_profile[0]
 		: transaction.owner_profile;
-	return Number(transaction.amount) < 0 && profile?.type === 'shared';
+	return (
+		Number(transaction.amount) < 0 &&
+		profile?.type === 'shared' &&
+		financialFlowKind(transaction, categories) === 'expense'
+	);
 }
 
 export const load: PageServerLoad = async ({
@@ -670,7 +763,10 @@ export const actions: Actions = {
 		const { data: transaction, error: transactionError } = await supabaseAdmin
 			.from('transactions')
 			.select(
-				'amount, owner_profile:financial_profiles!transactions_owner_profile_id_fkey ( type )'
+				`amount, review_status, is_transfer, financial_treatment_override,
+				owner_profile:financial_profiles!transactions_owner_profile_id_fkey ( type ),
+				category:categories!transactions_category_id_fkey ( id, name, parent_id, financial_treatment ),
+				subcategory:categories!transactions_subcategory_id_fkey ( id, name, parent_id, financial_treatment )`
 			)
 			.eq('id', transactionId)
 			.eq('household_id', groupId)
@@ -681,7 +777,13 @@ export const actions: Actions = {
 		if (!transaction)
 			return fail(404, { success: false, message: 'Transação não encontrada' });
 
-		if (!isSharedExpense(transaction)) {
+		// The transaction query includes the persisted treatment on both
+		// relations. The complete category map is loaded by the group page for
+		// inherited treatments; this action only needs the row-local treatment
+		// to guard the split control and remains compatible with small action
+		// requests that do not load the category selector.
+		const categoryMap = new Map<string, FinancialCategory>();
+		if (!isSharedExpense(transaction, categoryMap)) {
 			return fail(400, {
 				success: false,
 				message: 'A divisão só se aplica a despesas compartilhadas'

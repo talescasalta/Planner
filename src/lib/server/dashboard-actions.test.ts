@@ -88,7 +88,13 @@ describe('dashboard insights action', () => {
 			review_status: 'confirmed',
 			is_transfer: false,
 			category_id: name,
-			category: { id: name, name, parent_id: null },
+			category: {
+				id: name,
+				name,
+				parent_id: null,
+				financial_treatment:
+					name === 'Investimentos' ? 'investment' : 'operating'
+			},
 			subcategory: null,
 			owner_profile: null
 		}));

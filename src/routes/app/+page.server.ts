@@ -10,10 +10,13 @@ import {
 import { getUserHouseholdId } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { loadCategoriesForUser } from '$lib/server/categories';
+import { selectAllStrict } from '$lib/server/supabase-paging';
+import type { FinancialTreatment } from '$lib/types/app';
 import { callLlm } from '$lib/server/llm';
 import {
 	dashboardFlowKind,
-	investmentFlowTotals
+	investmentFlowTotals,
+	summarizeFinancialFlows
 } from '$lib/server/dashboard-flows';
 
 const NO_MONTH = 'Sem mes';
@@ -30,6 +33,7 @@ type TransactionRow = {
 	reference_month: string | null;
 	review_status: string;
 	is_transfer: boolean;
+	financial_treatment_override: FinancialTreatment | null;
 	category_id: string | null;
 	subcategory_id: string | null;
 	owner_profile_id: string | null;
@@ -37,28 +41,56 @@ type TransactionRow = {
 	installment_number: number | null;
 	installment_total: number | null;
 	installment_group_key: string | null;
-	category: {
-		id: string | null;
-		name: string | null;
-		parent_id: string | null;
-	} | null;
-	subcategory: {
-		id: string | null;
-		name: string | null;
-		parent_id: string | null;
-	} | null;
+	category:
+		| {
+				id: string | null;
+				name: string | null;
+				parent_id: string | null;
+				financial_treatment: FinancialTreatment | null;
+		  }
+		| Array<{
+				id: string | null;
+				name: string | null;
+				parent_id: string | null;
+				financial_treatment: FinancialTreatment | null;
+		  }>
+		| null;
+	subcategory:
+		| {
+				id: string | null;
+				name: string | null;
+				parent_id: string | null;
+				financial_treatment: FinancialTreatment | null;
+		  }
+		| Array<{
+				id: string | null;
+				name: string | null;
+				parent_id: string | null;
+				financial_treatment: FinancialTreatment | null;
+		  }>
+		| null;
 	owner_profile: { id: string | null; name: string | null } | null;
 };
 
 type CategoryRef = { id: string; name: string };
 type CategoryMap = Map<
 	string,
-	{ id: string; name: string; parent_id: string | null }
+	{
+		id: string;
+		name: string;
+		parent_id: string | null;
+		financial_treatment: FinancialTreatment | null;
+	}
 >;
 
 function buildCategoryMap(
 	categories:
-		| Array<{ id: string; name: string | null; parent_id: string | null }>
+		| Array<{
+				id: string;
+				name: string | null;
+				parent_id: string | null;
+				financial_treatment?: FinancialTreatment | null;
+		  }>
 		| null
 		| undefined
 ): CategoryMap {
@@ -68,7 +100,8 @@ function buildCategoryMap(
 			{
 				id: category.id,
 				name: category.name ?? '',
-				parent_id: category.parent_id ?? null
+				parent_id: category.parent_id ?? null,
+				financial_treatment: category.financial_treatment ?? null
 			}
 		])
 	);
@@ -78,22 +111,25 @@ function resolveCategory(
 	rawCategory: TransactionRow['category'],
 	categoryMap: CategoryMap
 ) {
-	if (!rawCategory?.id) return { category: null, derivedSubcategory: null };
-	if (!rawCategory.parent_id) {
+	const category = Array.isArray(rawCategory)
+		? (rawCategory[0] ?? null)
+		: rawCategory;
+	if (!category?.id) return { category: null, derivedSubcategory: null };
+	if (!category.parent_id) {
 		return {
 			category: {
-				id: rawCategory.id,
-				name: rawCategory.name ?? 'Sem categoria'
+				id: category.id,
+				name: category.name ?? 'Sem categoria'
 			},
 			derivedSubcategory: null
 		};
 	}
-	const parent = categoryMap.get(rawCategory.parent_id);
+	const parent = categoryMap.get(category.parent_id);
 	if (!parent) {
 		return {
 			category: {
-				id: rawCategory.id,
-				name: rawCategory.name ?? 'Sem categoria'
+				id: category.id,
+				name: category.name ?? 'Sem categoria'
 			},
 			derivedSubcategory: null
 		};
@@ -101,8 +137,8 @@ function resolveCategory(
 	return {
 		category: { id: parent.id, name: parent.name ?? 'Sem categoria' },
 		derivedSubcategory: {
-			id: rawCategory.id,
-			name: rawCategory.name ?? 'Sem subcategoria'
+			id: category.id,
+			name: category.name ?? 'Sem subcategoria'
 		}
 	};
 }
@@ -117,8 +153,9 @@ function resolveTaxonomy(
 		categoryMap
 	);
 	let subcategory: CategoryRef | null = derivedSubcategory;
-	if (rawSub && rawSub.id && rawSub.id !== category?.id) {
-		subcategory = { id: rawSub.id, name: rawSub.name ?? 'Sem subcategoria' };
+	const sub = Array.isArray(rawSub) ? (rawSub[0] ?? null) : rawSub;
+	if (sub && sub.id && sub.id !== category?.id) {
+		subcategory = { id: sub.id, name: sub.name ?? 'Sem subcategoria' };
 	}
 
 	return { category, subcategory };
@@ -140,27 +177,26 @@ function creditValue(amount: number) {
 	return amount > 0 ? amount : 0;
 }
 
-function summarize(rows: TransactionRow[]) {
-	const expenses = rows.reduce(
-		(sum, row) => sum + expenseValue(Number(row.amount)),
-		0
-	);
-	const credits = rows.reduce(
-		(sum, row) => sum + creditValue(Number(row.amount)),
-		0
-	);
-	const balance = rows.reduce((sum, row) => sum + Number(row.amount), 0);
-	const needsReview = rows.filter(
+function summarize(
+	rows: TransactionRow[],
+	categoryMap: CategoryMap = new Map()
+) {
+	const operatingRows = rows.filter((row) => {
+		const kind = dashboardFlowKind(row, categoryMap);
+		return kind === 'income' || kind === 'expense';
+	});
+	const totals = summarizeFinancialFlows(operatingRows, categoryMap);
+	const needsReview = operatingRows.filter(
 		(row) => row.review_status === 'needs_review'
 	).length;
-	const uncategorized = rows.filter(
+	const uncategorized = operatingRows.filter(
 		(row) => !row.category_id && Number(row.amount) < 0
 	).length;
 	return {
-		count: rows.length,
-		expenses,
-		credits,
-		balance,
+		count: totals.count,
+		expenses: totals.expense,
+		credits: totals.income,
+		balance: totals.income - totals.expense,
 		needsReview,
 		uncategorized
 	};
@@ -614,11 +650,7 @@ async function fetchVisibleRows(
 	userId: string,
 	householdId: string
 ): Promise<TransactionRow[]> {
-	const { data } = await filterByReadableAccess(
-		supabaseAdmin
-			.from('transactions')
-			.select(
-				`
+	const select = `
 			${READABLE_ACCESS_EMBED},
 			id,
 			amount,
@@ -629,6 +661,7 @@ async function fetchVisibleRows(
 			reference_month,
 			review_status,
 			is_transfer,
+			financial_treatment_override,
 			category_id,
 			subcategory_id,
 			owner_profile_id,
@@ -636,15 +669,24 @@ async function fetchVisibleRows(
 			installment_number,
 			installment_total,
 			installment_group_key,
-			category:categories!transactions_category_id_fkey ( id, name, parent_id ),
-			subcategory:categories!transactions_subcategory_id_fkey ( id, name, parent_id ),
+			category:categories!transactions_category_id_fkey ( id, name, parent_id, financial_treatment ),
+			subcategory:categories!transactions_subcategory_id_fkey ( id, name, parent_id, financial_treatment ),
 			owner_profile:financial_profiles ( id, name )
-		`
+		`;
+	const rows = await selectAllStrict<unknown>(
+		'dados do dashboard',
+		(from, to) =>
+			filterByReadableAccess(
+				supabaseAdmin
+					.from('transactions')
+					.select(select)
+					.eq('household_id', householdId),
+				userId
 			)
-			.eq('household_id', householdId),
-		userId
-	).order('date', { ascending: false });
-	return (data ?? []) as unknown as TransactionRow[];
+				.order('id', { ascending: true })
+				.range(from, to)
+	);
+	return rows as TransactionRow[];
 }
 
 // Single funnel for everything the dashboard reports: every total, chart and
@@ -683,28 +725,41 @@ function selectDashboardRows(
 				(transaction) => rowMonth(transaction) === selectedMonth
 			)
 		: visibleAllMonths;
-	const previousRows = previousMonth
-		? visibleAllMonths.filter(
-				(transaction) => rowMonth(transaction) === previousMonth
+	const allMonthRows = selectedMonth
+		? transactions.filter(
+				(transaction) =>
+					rowMonth(transaction) === selectedMonth &&
+					dashboardFlowKind(transaction, categoryMap) !== 'excluded'
 			)
-		: [];
+		: transactions.filter(
+				(transaction) =>
+					dashboardFlowKind(transaction, categoryMap) !== 'excluded'
+			);
 	const profileId = url.searchParams.get('profile') ?? '';
 	const categoryId = url.searchParams.get('category') ?? '';
 	const reviewStatus = url.searchParams.get('review_status') ?? '';
-	const filtered = monthRows.filter(
-		(transaction) =>
-			(!profileId || transaction.owner_profile_id === profileId) &&
-			(!categoryId || transaction.category_id === categoryId) &&
-			(!reviewStatus || transaction.review_status === reviewStatus)
-	);
+	const matchesFilters = (transaction: TransactionRow) =>
+		(!profileId || transaction.owner_profile_id === profileId) &&
+		(!categoryId || transaction.category_id === categoryId) &&
+		(!reviewStatus || transaction.review_status === reviewStatus);
+	const filtered = monthRows.filter(matchesFilters);
+	const filteredAll = allMonthRows.filter(matchesFilters);
+	const filteredVisibleAllMonths = visibleAllMonths.filter(matchesFilters);
+	const previousRows = previousMonth
+		? filteredVisibleAllMonths.filter(
+				(transaction) => rowMonth(transaction) === previousMonth
+			)
+		: [];
 	return {
 		visibleAllMonths,
+		filteredVisibleAllMonths,
 		monthOptions,
 		selectedMonth,
 		previousMonth,
 		monthRows,
 		previousRows,
 		filtered,
+		filteredAll,
 		filters: { profileId, categoryId, reviewStatus }
 	};
 }
@@ -786,17 +841,19 @@ export const load: PageServerLoad = async ({
 	const categoriesData = await loadCategoriesForUser(
 		supabaseAdmin,
 		householdId,
-		user.id
+		user.id,
+		[],
+		true
 	);
 	const categoryMap = buildCategoryMap(categoriesData);
 	const {
-		visibleAllMonths,
 		monthOptions,
 		selectedMonth,
 		previousMonth,
-		monthRows,
 		previousRows,
 		filtered,
+		filteredAll,
+		filteredVisibleAllMonths,
 		filters
 	} = selectDashboardRows(transactions, url, categoryMap);
 	const payerNameById = await loadPayerNames(filtered);
@@ -808,13 +865,11 @@ export const load: PageServerLoad = async ({
 		.order('name');
 
 	const hierarchy = buildHierarchy(filtered, categoryMap);
-	// Health/time analyses intentionally ignore the secondary filters: they
-	// describe the household month as a whole, like the monthly trend does.
 	const categoryMonthTotals = buildCategoryMonthTotals(
-		visibleAllMonths,
+		filteredVisibleAllMonths,
 		categoryMap
 	);
-	const savingsHistory = buildSavingsHistory(visibleAllMonths);
+	const savingsHistory = buildSavingsHistory(filteredVisibleAllMonths);
 	const resolvedFiltered = filtered.map((t) => {
 		const { category, subcategory } = resolveTaxonomy(t, categoryMap);
 		return {
@@ -832,24 +887,24 @@ export const load: PageServerLoad = async ({
 		monthOptions,
 		selectedMonth,
 		previousMonth,
-		summary: summarize(filtered),
-		previousSummary: summarize(previousRows),
-		monthlyTrend: buildMonthlyTrend(visibleAllMonths),
+		summary: summarize(filtered, categoryMap),
+		previousSummary: summarize(previousRows, categoryMap),
+		monthlyTrend: buildMonthlyTrend(filteredVisibleAllMonths),
 		expenseHierarchy: hierarchy,
 		totalExpenses: hierarchy.reduce((s, n) => s + n.total, 0),
 		categoryTrend: buildCategoryTrend(categoryMonthTotals),
 		aboveNormal: buildAboveNormal(categoryMonthTotals, selectedMonth),
 		savingsHistory,
-		investmentFlows: investmentFlowTotals(
-			transactions.filter((row) => rowMonth(row) === selectedMonth),
-			categoryMap
-		),
-		fixedVsVariable: buildFixedVsVariable(visibleAllMonths, selectedMonth),
-		installmentForecast: buildInstallmentForecast(
-			visibleAllMonths,
+		investmentFlows: investmentFlowTotals(filteredAll, categoryMap),
+		fixedVsVariable: buildFixedVsVariable(
+			filteredVisibleAllMonths,
 			selectedMonth
 		),
-		projection: buildProjection(monthRows, selectedMonth, savingsHistory),
+		installmentForecast: buildInstallmentForecast(
+			filteredVisibleAllMonths,
+			selectedMonth
+		),
+		projection: buildProjection(filtered, selectedMonth, savingsHistory),
 		byProfile: aggregateBy(filtered, (t) => ({
 			id: t.owner_profile?.id ?? 'unknown',
 			name: t.owner_profile?.name ?? 'Sem atribuição'
@@ -928,7 +983,9 @@ export const actions: Actions = {
 		const categoriesData = await loadCategoriesForUser(
 			supabaseAdmin,
 			householdId,
-			user.id
+			user.id,
+			[],
+			true
 		);
 		const categoryMap = buildCategoryMap(categoriesData);
 		const visible = transactions.filter((row) =>
@@ -947,7 +1004,7 @@ export const actions: Actions = {
 		const aboveNormal = buildAboveNormal(categoryMonthTotals, month);
 		const fixedVsVariable = buildFixedVsVariable(visible, month);
 		const forecast = buildInstallmentForecast(visible, month);
-		const summary = summarize(monthRows);
+		const summary = summarize(monthRows, categoryMap);
 
 		const newMerchants = findNewMerchants(visible, monthRows, month);
 

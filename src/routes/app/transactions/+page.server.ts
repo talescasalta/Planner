@@ -14,6 +14,13 @@ import {
 	loadCategoriesForUser,
 	loadUserCategoryExclusions
 } from '$lib/server/categories';
+import { selectAllStrict } from '$lib/server/supabase-paging';
+import {
+	financialFlowKind,
+	isFinancialTreatment,
+	summarizeFinancialFlows
+} from '$lib/server/financial-treatment';
+import type { FinancialFlowKind, FinancialTreatment } from '$lib/types/app';
 import { fail, redirect } from '@sveltejs/kit';
 
 const PAGE_SIZE = 100;
@@ -33,6 +40,13 @@ const VALID_REVIEW_STATUSES = new Set(['needs_review', 'confirmed', 'ignored']);
 // Lets the dashboard's Receitas and Despesas cards link straight to the rows
 // behind the figure, which is otherwise only reachable by scanning the list.
 const VALID_DIRECTIONS = new Set(['in', 'out']);
+const VALID_FLOWS = new Set<FinancialFlowKind>([
+	'expense',
+	'income',
+	'contribution',
+	'redemption',
+	'transfer'
+]);
 
 type ClassificationSuggestionLike = {
 	category?: unknown;
@@ -40,11 +54,36 @@ type ClassificationSuggestionLike = {
 };
 
 type TransactionWithDisplay = {
-	category?: { name: string | null } | null;
-	subcategory?: { name: string | null } | null;
+	category?: {
+		name: string | null;
+		parent_id?: string | null;
+		financial_treatment?: FinancialTreatment | null;
+	} | null;
+	subcategory?: {
+		name: string | null;
+		parent_id?: string | null;
+		financial_treatment?: FinancialTreatment | null;
+	} | null;
 	category_id?: string | null;
 	subcategory_id?: string | null;
+	financial_treatment_override?: FinancialTreatment | null;
 	classification_suggestion?: ClassificationSuggestionLike | null;
+};
+
+type LoadedTransaction = TransactionWithDisplay & {
+	id: string;
+	amount: number;
+	date: string;
+	created_at: string;
+	reference_month: string | null;
+	review_status: string;
+	is_transfer: boolean;
+	financial_treatment_override?: FinancialTreatment | null;
+	paid_by_user_id: string | null;
+	source_type: string | null;
+	category_id: string | null;
+	subcategory_id: string | null;
+	owner_profile_id: string | null;
 };
 
 function cleanName(value: FormDataEntryValue | null): string {
@@ -62,15 +101,25 @@ function emptyPage() {
 		selectedMonth: '',
 		filters: {
 			sourceType: ALL_FILTERS,
+			profileId: '',
 			categoryId: '',
 			subcategoryId: '',
 			status: ALL_FILTERS,
-			direction: ALL_FILTERS
+			direction: ALL_FILTERS,
+			flow: ALL_FILTERS
 		},
 		page: 0,
 		pageSize: PAGE_SIZE,
 		hasMore: false,
-		summary: { count: 0, expenses: 0, credits: 0, balance: 0 }
+		summary: {
+			count: 0,
+			expenses: 0,
+			credits: 0,
+			balance: 0,
+			contributions: 0,
+			redemptions: 0,
+			transfers: 0
+		}
 	};
 }
 
@@ -88,14 +137,20 @@ function cleanFilter(value: string | null | undefined): string {
 
 function readFilters(url: URL) {
 	const sourceType = cleanFilter(url.searchParams.get('source_type'));
+	const profileId = cleanFilter(url.searchParams.get('profile_id'));
 	const status = cleanFilter(url.searchParams.get('status'));
 	const direction = cleanFilter(url.searchParams.get('direction'));
+	const flow = cleanFilter(url.searchParams.get('flow'));
 	return {
 		sourceType: VALID_SOURCE_TYPES.has(sourceType) ? sourceType : ALL_FILTERS,
+		profileId,
 		categoryId: cleanFilter(url.searchParams.get('category_id')),
 		subcategoryId: cleanFilter(url.searchParams.get('subcategory_id')),
 		status: VALID_REVIEW_STATUSES.has(status) ? status : ALL_FILTERS,
-		direction: VALID_DIRECTIONS.has(direction) ? direction : ALL_FILTERS
+		direction: VALID_DIRECTIONS.has(direction) ? direction : ALL_FILTERS,
+		flow: VALID_FLOWS.has(flow as FinancialFlowKind)
+			? (flow as FinancialFlowKind)
+			: ALL_FILTERS
 	};
 }
 
@@ -108,6 +163,7 @@ const FORWARDED_FILTERS: Array<{
 	absent: string;
 }> = [
 	{ field: 'source_type_filter', param: 'source_type', absent: ALL_FILTERS },
+	{ field: 'profile_id_filter', param: 'profile_id', absent: '' },
 	{ field: 'category_id_filter', param: 'category_id', absent: '' },
 	{
 		field: 'subcategory_id_filter',
@@ -115,7 +171,8 @@ const FORWARDED_FILTERS: Array<{
 		absent: ''
 	},
 	{ field: 'status_filter', param: 'status', absent: ALL_FILTERS },
-	{ field: 'direction_filter', param: 'direction', absent: ALL_FILTERS }
+	{ field: 'direction_filter', param: 'direction', absent: ALL_FILTERS },
+	{ field: 'flow_filter', param: 'flow', absent: ALL_FILTERS }
 ];
 
 function appendFilters(params: URLSearchParams, formData: FormData) {
@@ -125,17 +182,34 @@ function appendFilters(params: URLSearchParams, formData: FormData) {
 	}
 }
 
-function readSingleClassificationForm(formData: FormData) {
+function readSingleCategoryForm(formData: FormData) {
 	const categoryId =
 		cleanFilter(formData.get('category_id')?.toString()) || null;
+	const subcategoryId = categoryId
+		? cleanFilter(formData.get('subcategory_id')?.toString()) || null
+		: null;
+	return { categoryId, subcategoryId };
+}
+
+function readSingleTreatmentForm(formData: FormData) {
+	const rawTreatment = cleanFilter(
+		formData.get('financial_treatment_override')?.toString()
+	);
+	return {
+		hasTreatmentOverride: formData.has('financial_treatment_override'),
+		financialTreatmentOverride: isFinancialTreatment(rawTreatment)
+			? rawTreatment
+			: null
+	};
+}
+
+function readSingleClassificationForm(formData: FormData) {
 	return {
 		transactionId: cleanFilter(formData.get('transaction_id')?.toString()),
-		categoryId,
-		subcategoryId: categoryId
-			? cleanFilter(formData.get('subcategory_id')?.toString()) || null
-			: null,
+		...readSingleCategoryForm(formData),
 		ownerProfileId:
 			cleanFilter(formData.get('owner_profile_id')?.toString()) || null,
+		...readSingleTreatmentForm(formData),
 		month: cleanFilter(formData.get('month')?.toString()),
 		page: cleanFilter(formData.get('page')?.toString())
 	};
@@ -245,14 +319,17 @@ type ExistingClassification = {
 	category_id: string | null;
 	subcategory_id: string | null;
 	owner_profile_id: string | null;
+	financial_treatment_override?: FinancialTreatment | null;
 };
 
 type BulkClassificationSelection = {
 	applyCategory: boolean;
 	applyOwner: boolean;
+	applyTreatment: boolean;
 	categoryId: string | null | undefined;
 	subcategoryId: string | null | undefined;
 	ownerProfileId: string | null | undefined;
+	financialTreatmentOverride: FinancialTreatment | null | undefined;
 };
 
 function bulkCategoryFields(
@@ -276,11 +353,19 @@ function readBulkClassificationSelection(
 ): BulkClassificationSelection | { error: string } {
 	const rawCategory = String(formData.get('category_id') ?? KEEP);
 	const rawOwner = String(formData.get('owner_profile_id') ?? KEEP);
+	const rawTreatment = String(
+		formData.get('financial_treatment_override') ?? KEEP
+	).trim();
 	const applyCategory = rawCategory !== KEEP;
 	const applyOwner = rawOwner !== KEEP;
-	if (!applyCategory && !applyOwner) {
-		return { error: 'Escolha uma categoria ou atribuição para aplicar' };
-	}
+	const applyTreatment = rawTreatment !== KEEP;
+	const error = bulkSelectionError(
+		applyCategory,
+		applyOwner,
+		applyTreatment,
+		rawTreatment
+	);
+	if (error) return { error };
 
 	const { categoryId, subcategoryId } = bulkCategoryFields(
 		formData,
@@ -290,10 +375,42 @@ function readBulkClassificationSelection(
 	return {
 		applyCategory,
 		applyOwner,
+		applyTreatment,
 		categoryId,
 		subcategoryId,
-		ownerProfileId: applyOwner ? rawOwner.trim() || null : undefined
+		ownerProfileId: bulkOwnerValue(applyOwner, rawOwner),
+		financialTreatmentOverride: bulkTreatmentValue(applyTreatment, rawTreatment)
 	};
+}
+
+function bulkSelectionError(
+	applyCategory: boolean,
+	applyOwner: boolean,
+	applyTreatment: boolean,
+	rawTreatment: string
+): string | null {
+	if (!applyCategory && !applyOwner && !applyTreatment)
+		return 'Escolha uma categoria ou atribuição para aplicar';
+	if (
+		applyTreatment &&
+		rawTreatment !== '' &&
+		!isFinancialTreatment(rawTreatment)
+	)
+		return 'Tratamento financeiro inválido';
+	return null;
+}
+
+function bulkOwnerValue(applyOwner: boolean, rawOwner: string) {
+	return applyOwner ? rawOwner.trim() || null : undefined;
+}
+
+function bulkTreatmentValue(
+	applyTreatment: boolean,
+	rawTreatment: string
+): FinancialTreatment | null | undefined {
+	return applyTreatment
+		? ((rawTreatment || null) as FinancialTreatment | null)
+		: undefined;
 }
 
 function nextBulkClassification(
@@ -309,7 +426,10 @@ function nextBulkClassification(
 			: existing.subcategory_id,
 		owner_profile_id: selection.applyOwner
 			? (selection.ownerProfileId ?? null)
-			: existing.owner_profile_id
+			: existing.owner_profile_id,
+		financial_treatment_override: selection.applyTreatment
+			? (selection.financialTreatmentOverride ?? null)
+			: existing.financial_treatment_override
 	};
 }
 
@@ -317,11 +437,43 @@ function hasClassificationChange(
 	current: ExistingClassification,
 	next: ExistingClassification
 ): boolean {
-	return (
-		current.category_id !== next.category_id ||
-		current.subcategory_id !== next.subcategory_id ||
-		current.owner_profile_id !== next.owner_profile_id
-	);
+	return [
+		current.category_id !== next.category_id,
+		current.subcategory_id !== next.subcategory_id,
+		current.owner_profile_id !== next.owner_profile_id,
+		current.financial_treatment_override !== next.financial_treatment_override
+	].some(Boolean);
+}
+
+function singleClassificationPatch(
+	formData: FormData,
+	existing: ExistingClassification
+) {
+	const classification = readSingleClassificationForm(formData);
+	const patch: Record<string, unknown> = {
+		category_id: classification.categoryId,
+		subcategory_id: classification.subcategoryId,
+		owner_profile_id: classification.ownerProfileId,
+		review_status: 'confirmed',
+		updated_at: new Date().toISOString()
+	};
+	if (classification.hasTreatmentOverride) {
+		patch.financial_treatment_override =
+			classification.financialTreatmentOverride;
+	}
+	const next = {
+		category_id: classification.categoryId,
+		subcategory_id: classification.subcategoryId,
+		owner_profile_id: classification.ownerProfileId,
+		financial_treatment_override: classification.hasTreatmentOverride
+			? classification.financialTreatmentOverride
+			: existing.financial_treatment_override
+	};
+	return {
+		classification,
+		patch,
+		changed: hasClassificationChange(existing, next)
+	};
 }
 
 function bulkClassificationPatch(
@@ -338,6 +490,9 @@ function bulkClassificationPatch(
 	}
 	if (selection.applyOwner)
 		patch.owner_profile_id = selection.ownerProfileId ?? null;
+	if (selection.applyTreatment)
+		patch.financial_treatment_override =
+			selection.financialTreatmentOverride ?? null;
 	return patch;
 }
 
@@ -355,6 +510,8 @@ function applyTransactionQueryFilters(
 		query = query.is('source_type', null);
 	else if (filters.sourceType !== ALL_FILTERS)
 		query = query.eq('source_type', filters.sourceType);
+	if (filters.profileId)
+		query = query.eq('owner_profile_id', filters.profileId);
 	if (filters.categoryId) query = query.eq('category_id', filters.categoryId);
 	if (filters.subcategoryId)
 		query = query.eq('subcategory_id', filters.subcategoryId);
@@ -522,84 +679,71 @@ export const load: PageServerLoad = async ({
 		return emptyPage();
 	}
 
-	const { page, from, to } = paginationFromUrl(url);
+	const { page, from } = paginationFromUrl(url);
 	const requestedMonth = url.searchParams.get('month') ?? '';
 	const filters = readFilters(url);
-	const { data: monthRows } = await filterByReadableAccess(
-		supabaseAdmin
-			.from('transactions')
-			.select(`reference_month, date, ${READABLE_ACCESS_EMBED}`)
-			.eq('household_id', householdId),
-		user.id
-	)
-		.order('reference_month', { ascending: false, nullsFirst: false })
-		.order('date', { ascending: false });
+	const monthRows = await selectAllStrict<{
+		id: string;
+		reference_month: string | null;
+		date: string;
+	}>('meses das transações', (from, to) =>
+		filterByReadableAccess(
+			supabaseAdmin
+				.from('transactions')
+				.select(`id, reference_month, date, ${READABLE_ACCESS_EMBED}`)
+				.eq('household_id', householdId),
+			user.id
+		)
+			.order('id', { ascending: true })
+			.range(from, to)
+	);
 
 	const monthOptions = Array.from(
 		new Set(
-			(monthRows ?? [])
+			monthRows
 				.map((row) => row.reference_month ?? monthFromDate(row.date))
 				.filter(Boolean)
 		)
 	).sort((a, b) => b.localeCompare(a));
 	const selectedMonth = selectedMonthFor(requestedMonth, monthOptions);
 
-	const [
-		{ data: transactions, error },
-		{ data: summaryRows },
-		{ data: categories },
-		{ data: profiles },
-		{ data: household },
-		excludedCategoryIds
-	] = await Promise.all([
-		(() => {
+	const allTransactions = await selectAllStrict<LoadedTransaction>(
+		'transações',
+		(pageFrom, pageTo) => {
 			let query = filterByReadableAccess(
 				supabaseAdmin
 					.from('transactions')
 					.select(
 						`
-				*,
-				${READABLE_ACCESS_EMBED},
-				category:categories!transactions_category_id_fkey ( id, name ),
-				subcategory:categories!transactions_subcategory_id_fkey ( id, name ),
-				owner_profile:financial_profiles ( id, name, type )
-			`
+							*,
+							${READABLE_ACCESS_EMBED},
+							category:categories!transactions_category_id_fkey ( id, name, parent_id, financial_treatment ),
+							subcategory:categories!transactions_subcategory_id_fkey ( id, name, parent_id, financial_treatment ),
+							owner_profile:financial_profiles ( id, name, type )
+						`
 					)
 					.eq('household_id', householdId),
 				user.id
 			);
-			// Tie-breakers keep the order deterministic across reloads: Postgres
-			// gives no stable order among rows with the same date, so without
-			// them same-day rows shuffle every time the list refetches (e.g.
-			// after a row auto-save) and can duplicate/vanish across pages.
 			query = applyTransactionQueryFilters(query, selectedMonth, filters)
 				.order('date', { ascending: false })
 				.order('created_at', { ascending: false })
 				.order('id', { ascending: false })
-				.range(from, to);
+				.range(pageFrom, pageTo);
 			return query;
-		})(),
-		(() => {
-			let query = filterByReadableAccess(
-				supabaseAdmin
-					.from('transactions')
-					.select(`amount, ${READABLE_ACCESS_EMBED}`)
-					.eq('household_id', householdId),
-				user.id
-			);
-			// Transfers stay in the list but never in the totals, so this
-			// exclusion is unconditional -- unlike the ignored one, which the
-			// status filter can deliberately override.
-			query = query.eq('is_transfer', false);
-			if (filters.status === ALL_FILTERS)
-				query = query.neq('review_status', 'ignored');
-			query = applyTransactionQueryFilters(query, selectedMonth, filters);
-			return query;
-		})(),
+		}
+	);
+
+	const [
+		{ data: categories },
+		{ data: profiles },
+		{ data: household },
+		excludedCategoryIds
+	] = await Promise.all([
 		supabaseAdmin
 			.from('categories')
 			.select(
-				'id, name, parent_id, created_by_user_id, is_default, created_at, household_id'
+				'id, name, parent_id, created_by_user_id, is_default, financial_treatment, created_at, household_id'
 			)
 			.eq('household_id', householdId)
 			.order('name'),
@@ -617,40 +761,55 @@ export const load: PageServerLoad = async ({
 		loadUserCategoryExclusions(supabaseAdmin, householdId, user.id)
 	]);
 
-	if (error) {
-		console.error('Error loading transactions:', error);
-		return { ...emptyPage(), page, monthOptions, selectedMonth, filters };
-	}
-
-	const all = transactions ?? [];
-	const enriched = (await attachPayerProfiles(all)).map(
-		withClassificationDisplay
+	const categoryRows = (categories ?? []) as unknown as Array<{
+		id: string;
+		parent_id: string | null;
+		financial_treatment: FinancialTreatment | null;
+	}>;
+	const categoryMap = new Map(
+		categoryRows.map((category) => [category.id, category])
 	);
+	const enriched = (await attachPayerProfiles(allTransactions))
+		.map(withClassificationDisplay)
+		.map((transaction) => ({
+			...transaction,
+			financial_flow_kind: financialFlowKind(transaction, categoryMap)
+		}));
+	const filteredByFlow =
+		filters.flow === ALL_FILTERS
+			? enriched
+			: enriched.filter(
+					(transaction) =>
+						financialFlowKind(transaction, categoryMap) === filters.flow
+				);
 	const selectedCategoryIds = new Set(
 		enriched
 			.flatMap((tx) => [tx.category_id, tx.subcategory_id])
 			.filter((id): id is string => !!id)
 	);
-	const hasMore = enriched.length > PAGE_SIZE;
+	const hasMore = filteredByFlow.length > from + PAGE_SIZE;
 	const assignmentProfiles = (profiles ?? [])
 		.filter((p) => p.type === 'shared' || !!p.user_id)
 		.map((p) =>
 			p.type === 'shared' ? { ...p, name: household?.name ?? p.name } : p
 		);
-	const amounts = summaryRows ?? [];
+	const flowTotals = summarizeFinancialFlows(filteredByFlow, categoryMap);
 	const summary = {
-		count: amounts.length,
-		expenses: amounts
-			.filter((row) => Number(row.amount) < 0)
-			.reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0),
-		credits: amounts
-			.filter((row) => Number(row.amount) > 0)
-			.reduce((sum, row) => sum + Number(row.amount), 0),
-		balance: amounts.reduce((sum, row) => sum + Number(row.amount), 0)
+		count: flowTotals.count,
+		expenses: flowTotals.expense,
+		credits: flowTotals.income,
+		balance:
+			flowTotals.income +
+			flowTotals.redemption -
+			flowTotals.expense -
+			flowTotals.contribution,
+		contributions: flowTotals.contribution,
+		redemptions: flowTotals.redemption,
+		transfers: flowTotals.transfer
 	};
 
 	return {
-		transactions: hasMore ? enriched.slice(0, PAGE_SIZE) : enriched,
+		transactions: filteredByFlow.slice(from, from + PAGE_SIZE),
 		categories: filterCategoriesForUser(
 			categories ?? [],
 			user.id,
@@ -677,14 +836,9 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const {
-			transactionId,
-			categoryId,
-			subcategoryId,
-			ownerProfileId,
-			month,
-			page
-		} = readSingleClassificationForm(formData);
+		const transactionId = cleanFilter(
+			formData.get('transaction_id')?.toString()
+		);
 
 		if (!transactionId) {
 			return fail(400, { success: false, message: 'Transação inválida' });
@@ -702,7 +856,9 @@ export const actions: Actions = {
 				getEditableTransactionIds(supabase, user.id, [transactionId]),
 				supabaseAdmin
 					.from('transactions')
-					.select('id, category_id, subcategory_id, owner_profile_id')
+					.select(
+						'id, category_id, subcategory_id, owner_profile_id, financial_treatment_override'
+					)
 					.eq('household_id', householdId)
 					.eq('id', transactionId)
 					.single()
@@ -719,13 +875,17 @@ export const actions: Actions = {
 			});
 		}
 
-		const patch = {
-			category_id: categoryId,
-			subcategory_id: subcategoryId,
-			owner_profile_id: ownerProfileId,
-			review_status: 'confirmed',
-			updated_at: new Date().toISOString()
-		};
+		const {
+			classification: {
+				categoryId,
+				subcategoryId,
+				ownerProfileId,
+				month,
+				page
+			},
+			patch,
+			changed
+		} = singleClassificationPatch(formData, existing);
 
 		const relationError = await validateTransactionRelations(
 			supabase,
@@ -736,11 +896,6 @@ export const actions: Actions = {
 		if (relationError) {
 			return fail(400, { success: false, message: relationError });
 		}
-
-		const changed =
-			existing.category_id !== categoryId ||
-			existing.subcategory_id !== subcategoryId ||
-			existing.owner_profile_id !== ownerProfileId;
 
 		if (changed) {
 			const { error } = await supabaseAdmin
@@ -1091,7 +1246,9 @@ export const actions: Actions = {
 			getEditableTransactionIds(supabase, user.id, transactionIds),
 			supabaseAdmin
 				.from('transactions')
-				.select('id, category_id, subcategory_id, owner_profile_id')
+				.select(
+					'id, category_id, subcategory_id, owner_profile_id, financial_treatment_override'
+				)
 				.eq('household_id', householdId)
 				.in('id', transactionIds)
 		]);

@@ -67,6 +67,23 @@
 					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm px-3 py-2"
 				/>
 			</div>
+			<div>
+				<label
+					for="category-treatment"
+					class="block text-xs font-medium text-gray-700"
+					>Tratamento financeiro</label
+				>
+				<select
+					id="category-treatment"
+					name="financial_treatment"
+					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm px-3 py-2"
+				>
+					<option value="">Automático / operacional</option>
+					<option value="operating">Operacional</option>
+					<option value="investment">Investimento</option>
+					<option value="transfer">Transferência</option>
+				</select>
+			</div>
 			<div class="flex justify-end">
 				<button
 					type="submit"
@@ -161,6 +178,46 @@
 										{subcategory.name}
 										<form
 											method="POST"
+											action="?/update_treatment"
+											use:enhance
+											class="inline-flex"
+										>
+											<input
+												type="hidden"
+												name="category_id"
+												value={subcategory.id}
+											/>
+											<select
+												name="financial_treatment"
+												class="rounded border-gray-300 bg-white px-1 py-0.5 text-[11px]"
+												aria-label="Tratamento de {subcategory.name}"
+												onchange={(event) =>
+													event.currentTarget.form?.requestSubmit()}
+											>
+												<option
+													value=""
+													selected={!subcategory.financial_treatment}
+													>Automático</option
+												>
+												<option
+													value="operating"
+													selected={subcategory.financial_treatment ===
+														'operating'}>Operacional</option
+												>
+												<option
+													value="investment"
+													selected={subcategory.financial_treatment ===
+														'investment'}>Investimento</option
+												>
+												<option
+													value="transfer"
+													selected={subcategory.financial_treatment ===
+														'transfer'}>Transferência</option
+												>
+											</select>
+										</form>
+										<form
+											method="POST"
 											action="?/delete"
 											use:enhance
 											class="inline"
@@ -182,7 +239,43 @@
 								{/if}
 							</div>
 						</td>
-						<td class="px-4 py-3 text-gray-600">{originLabel(category)}</td>
+						<td class="px-4 py-3 text-gray-600">
+							<div>{originLabel(category)}</div>
+							<form
+								method="POST"
+								action="?/update_treatment"
+								use:enhance
+								class="mt-1 inline-flex"
+							>
+								<input type="hidden" name="category_id" value={category.id} />
+								<select
+									name="financial_treatment"
+									class="rounded border-gray-300 bg-white px-1.5 py-1 text-xs"
+									aria-label="Tratamento de {category.name}"
+									onchange={(event) =>
+										event.currentTarget.form?.requestSubmit()}
+								>
+									<option value="" selected={!category.financial_treatment}
+										>Automático</option
+									>
+									<option
+										value="operating"
+										selected={category.financial_treatment === 'operating'}
+										>Operacional</option
+									>
+									<option
+										value="investment"
+										selected={category.financial_treatment === 'investment'}
+										>Investimento</option
+									>
+									<option
+										value="transfer"
+										selected={category.financial_treatment === 'transfer'}
+										>Transferência</option
+									>
+								</select>
+							</form>
+						</td>
 						<td class="px-4 py-3 text-right">
 							<form method="POST" action="?/delete" use:enhance class="inline">
 								<input type="hidden" name="category_id" value={category.id} />
