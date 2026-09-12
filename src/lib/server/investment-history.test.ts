@@ -8,7 +8,10 @@ import {
 	monthsBetween,
 	pricesFromYahooChart
 } from './investment-history';
-import { tesouroKeyFromProductName, tesouroMatchKey } from './investment-quotes';
+import {
+	tesouroKeyFromProductName,
+	tesouroMatchKey
+} from './investment-quotes';
 import { fundKey } from './investment-funds';
 
 describe('pricesFromYahooChart', () => {
@@ -96,9 +99,7 @@ describe('collectTesouroHistory', () => {
 			new Set([key]),
 			'2026-06-01'
 		);
-		expect(history.get(key)).toEqual([
-			{ date: '2026-07-31', price: 171.94 }
-		]);
+		expect(history.get(key)).toEqual([{ date: '2026-07-31', price: 171.94 }]);
 	});
 });
 
