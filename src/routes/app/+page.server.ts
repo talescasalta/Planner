@@ -11,6 +11,10 @@ import { getUserHouseholdId } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { loadCategoriesForUser } from '$lib/server/categories';
 import { callLlm } from '$lib/server/llm';
+import {
+	dashboardFlowKind,
+	investmentFlowTotals
+} from '$lib/server/dashboard-flows';
 
 const NO_MONTH = 'Sem mes';
 const UNCATEGORIZED_ID = '__uncategorized__';
@@ -646,15 +650,28 @@ async function fetchVisibleRows(
 // Single funnel for everything the dashboard reports: every total, chart and
 // trend downstream is built from this list, so excluding transfers here covers
 // them all rather than repeating the check per aggregation.
-function countsTowardTotals(transaction: TransactionRow) {
-	return transaction.review_status !== 'ignored' && !transaction.is_transfer;
+function countsTowardTotals(
+	transaction: TransactionRow,
+	categoryMap: CategoryMap = new Map()
+) {
+	const kind = dashboardFlowKind(transaction, categoryMap);
+	return kind === 'income' || kind === 'expense';
 }
 
-function selectDashboardRows(transactions: TransactionRow[], url: URL) {
-	const visibleAllMonths = transactions.filter(countsTowardTotals);
+function selectDashboardRows(
+	transactions: TransactionRow[],
+	url: URL,
+	categoryMap: CategoryMap
+) {
+	const visibleAllMonths = transactions.filter((row) =>
+		countsTowardTotals(row, categoryMap)
+	);
 	const monthOptions = Array.from(
 		new Set(
-			visibleAllMonths.map(rowMonth).filter((month) => month !== NO_MONTH)
+			transactions
+				.filter((row) => dashboardFlowKind(row, categoryMap) !== 'excluded')
+				.map(rowMonth)
+				.filter((month) => month !== NO_MONTH)
 		)
 	).sort((left, right) => right.localeCompare(left));
 	const selectedMonth = url.searchParams.get('month') || monthOptions[0] || '';
@@ -731,6 +748,7 @@ export const load: PageServerLoad = async ({
 		>,
 		aboveNormal: [] as ReturnType<typeof buildAboveNormal>,
 		savingsHistory: [] as ReturnType<typeof buildSavingsHistory>,
+		investmentFlows: { contributions: 0, redemptions: 0, net: 0 },
 		fixedVsVariable: {
 			fixedTotal: 0,
 			variableTotal: 0,
@@ -765,6 +783,12 @@ export const load: PageServerLoad = async ({
 
 	const transactions = await fetchVisibleRows(supabase, user.id, householdId);
 	if (transactions.length === 0) return empty;
+	const categoriesData = await loadCategoriesForUser(
+		supabaseAdmin,
+		householdId,
+		user.id
+	);
+	const categoryMap = buildCategoryMap(categoriesData);
 	const {
 		visibleAllMonths,
 		monthOptions,
@@ -774,19 +798,14 @@ export const load: PageServerLoad = async ({
 		previousRows,
 		filtered,
 		filters
-	} = selectDashboardRows(transactions, url);
+	} = selectDashboardRows(transactions, url, categoryMap);
 	const payerNameById = await loadPayerNames(filtered);
 
-	const [{ data: profilesData }, categoriesData] = await Promise.all([
-		supabaseAdmin
-			.from('financial_profiles')
-			.select('id, name')
-			.eq('household_id', householdId)
-			.order('name'),
-		loadCategoriesForUser(supabaseAdmin, householdId, user.id)
-	]);
-
-	const categoryMap = buildCategoryMap(categoriesData);
+	const { data: profilesData } = await supabaseAdmin
+		.from('financial_profiles')
+		.select('id, name')
+		.eq('household_id', householdId)
+		.order('name');
 
 	const hierarchy = buildHierarchy(filtered, categoryMap);
 	// Health/time analyses intentionally ignore the secondary filters: they
@@ -821,6 +840,10 @@ export const load: PageServerLoad = async ({
 		categoryTrend: buildCategoryTrend(categoryMonthTotals),
 		aboveNormal: buildAboveNormal(categoryMonthTotals, selectedMonth),
 		savingsHistory,
+		investmentFlows: investmentFlowTotals(
+			transactions.filter((row) => rowMonth(row) === selectedMonth),
+			categoryMap
+		),
 		fixedVsVariable: buildFixedVsVariable(visibleAllMonths, selectedMonth),
 		installmentForecast: buildInstallmentForecast(
 			visibleAllMonths,
@@ -902,7 +925,15 @@ export const actions: Actions = {
 			});
 
 		const transactions = await fetchVisibleRows(supabase, user.id, householdId);
-		const visible = transactions.filter(countsTowardTotals);
+		const categoriesData = await loadCategoriesForUser(
+			supabaseAdmin,
+			householdId,
+			user.id
+		);
+		const categoryMap = buildCategoryMap(categoriesData);
+		const visible = transactions.filter((row) =>
+			countsTowardTotals(row, categoryMap)
+		);
 		const monthRows = visible.filter((t) => rowMonth(t) === month);
 		if (monthRows.length === 0) {
 			return fail(400, {
@@ -910,13 +941,6 @@ export const actions: Actions = {
 				message: 'Sem transações neste mês para analisar.'
 			});
 		}
-
-		const categoriesData = await loadCategoriesForUser(
-			supabaseAdmin,
-			householdId,
-			user.id
-		);
-		const categoryMap = buildCategoryMap(categoriesData);
 
 		const categoryMonthTotals = buildCategoryMonthTotals(visible, categoryMap);
 		const savingsHistory = buildSavingsHistory(visible);
@@ -929,6 +953,10 @@ export const actions: Actions = {
 
 		const facts = {
 			mes: month,
+			investimentos: investmentFlowTotals(
+				transactions.filter((row) => rowMonth(row) === month),
+				categoryMap
+			),
 			despesas_total: Math.round(summary.expenses),
 			receitas_total: Math.round(summary.credits),
 			taxa_poupanca_pct:
@@ -963,6 +991,7 @@ Regras:
 - 3 a 5 insights curtos (1 frase cada), em português do Brasil, tom direto e concreto.
 - Priorize o que é acionável: categorias fora do normal, assinaturas/estabelecimentos novos, ritmo vs meses anteriores, peso dos fixos e das parcelas.
 - Cite valores em R$ arredondados e percentuais quando relevantes.
+- Aportes e resgates são movimentações patrimoniais, já excluídas de receitas e despesas. Aportes líquidos não são poupança adicional e podem vir de reservas antigas.
 - Não invente dados que não estão nos agregados; não dê conselhos genéricos ("gaste menos").`;
 
 		try {

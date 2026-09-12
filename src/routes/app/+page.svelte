@@ -444,7 +444,23 @@
 						? formatPercent(currentSavings.rate)
 						: '—'}
 				</p>
-				<p class="mt-1 text-xs text-gray-500">do que entrou, sobrou no mês</p>
+				<p class="mt-1 text-xs text-gray-500">
+					(receitas − despesas) ÷ receitas; aportes e resgates excluídos
+				</p>
+				<p class="mt-2 text-xs text-gray-600">
+					Poupança do mês: {formatCurrency(
+						(currentSavings?.credits ?? 0) - (currentSavings?.expenses ?? 0)
+					)}
+				</p>
+				<p class="mt-1 text-xs text-gray-600">
+					Aportes líquidos: {formatCurrency(data.investmentFlows.net)}
+					· Aplicações: {formatCurrency(data.investmentFlows.contributions)}
+					· Resgates: {formatCurrency(data.investmentFlows.redemptions)}
+				</p>
+				<p class="mt-1 text-xs text-gray-500">
+					Classifique aplicações e resgates em Investimentos. Rendimentos,
+					impostos e tarifas devem ter subcategorias próprias.
+				</p>
 				{#if savingsHistory.length > 1}
 					<div class="mt-3 flex h-10 items-end gap-1" aria-hidden="true">
 						{#each savingsHistory as h (h.month)}
