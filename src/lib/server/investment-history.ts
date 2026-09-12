@@ -162,6 +162,7 @@ interface HistoryAsset {
 	asset_class: string;
 	ticker: string | null;
 	product_key: string;
+	maturity_date: string | null;
 	cnpj: string | null;
 	cvm_subclass_id: string | null;
 }
@@ -222,7 +223,8 @@ async function tesouroRows(
 	for (const asset of assets) {
 		if (asset.asset_class !== 'tesouro') continue;
 		const key = tesouroKeyFromProductName(
-			asset.product_key.replace(/^TESOURO:/, '')
+			asset.product_key.replace(/^TESOURO:/, ''),
+			asset.maturity_date
 		);
 		if (!key) continue;
 		wanted.set(key, [...(wanted.get(key) ?? []), asset]);
@@ -337,7 +339,7 @@ export async function backfillQuoteHistory(
 	const { data, error } = await supabaseAdmin
 		.from('investment_assets')
 		.select(
-			'id, household_id, asset_class, ticker, product_key, cnpj, cvm_subclass_id'
+			'id, household_id, asset_class, ticker, product_key, maturity_date, cnpj, cvm_subclass_id'
 		);
 	if (error) {
 		summary.errors.push(`assets: ${error.message}`);

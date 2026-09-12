@@ -22,6 +22,18 @@ describe('tesouro matching', () => {
 		expect(tesouroKeyFromProductName('BOVA11')).toBeNull();
 	});
 
+	it('maps Renda+ conversion years to the bond maturity year', () => {
+		expect(
+			tesouroKeyFromProductName('TESOURO RENDA+ APOSENTADORIA EXTRA 2065')
+		).toBe(tesouroMatchKey('Tesouro Renda+ Aposentadoria Extra', '2084'));
+		expect(
+			tesouroKeyFromProductName(
+				'TESOURO RENDA+ APOSENTADORIA EXTRA 2055',
+				'2074-12-15'
+			)
+		).toBe(tesouroMatchKey('Tesouro Renda+ Aposentadoria Extra', '2074'));
+	});
+
 	it('keeps only the freshest PU Venda per wanted bond', () => {
 		const wanted = new Set([tesouroMatchKey('Tesouro IPCA+', '2032')]);
 		const best = new Map<string, { price: number; date: string }>();
