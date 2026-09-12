@@ -37,6 +37,16 @@ export async function fetchCdiRates(
 	const response = await fetcher(url, {
 		headers: { accept: 'application/json' }
 	});
+	// SGS uses 404 for an empty publication window, including weekends.
+	// Other 404 responses still indicate a broken endpoint and must surface.
+	if (response.status === 404) {
+		const body = await response.json().catch(() => null);
+		if (
+			body?.erro?.detail ===
+			'br.gov.bcb.pec.sgs.comum.excecoes.SGSNegocioException: Value(s) not found'
+		)
+			return [];
+	}
 	if (!response.ok) throw new Error(`BCB SGS respondeu ${response.status}`);
 	return parseSgsRows(await response.json());
 }

@@ -51,12 +51,14 @@ export const GET: RequestHandler = async ({ request }) => {
 	if (errors.length > 0) {
 		console.error('[cron/investment-quotes]', errors);
 	}
-	return json({
+	const result = {
 		ok: errors.length === 0,
 		...summary,
 		cdiRatesInserted: cdi.inserted,
 		historyInserted: backfill.inserted,
 		registryRows: registry.upserted,
 		errors
-	});
+	};
+	console.info('[cron/investment-quotes] result', result);
+	return json(result, { status: result.ok ? 200 : 502 });
 };

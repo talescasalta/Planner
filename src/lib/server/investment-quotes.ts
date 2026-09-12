@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '$lib/server/supabase';
+import { writeQuoteBatches } from './investment-quote-write';
 import { collectFundQuoteUpserts } from './investment-funds';
 import { loadCdiRates } from './investment-cdi';
 import { accrualSeries, isAccruable } from './investment-accrual';
@@ -399,15 +400,9 @@ export async function refreshInvestmentQuotes(
 	];
 
 	if (upserts.length > 0) {
-		const { error: upsertError, data: upserted } = await supabaseAdmin
-			.from('investment_quotes')
-			.upsert(upserts, {
-				onConflict: 'asset_id,quote_date',
-				ignoreDuplicates: false
-			})
-			.select('id');
-		if (upsertError) summary.errors.push(`upsert: ${upsertError.message}`);
-		else summary.upserted = upserted?.length ?? 0;
+		const result = await writeQuoteBatches(upserts, false);
+		summary.upserted = result.written;
+		if (result.error) summary.errors.push(`quotes upsert: ${result.error}`);
 	}
 
 	return summary;

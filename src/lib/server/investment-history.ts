@@ -1,5 +1,6 @@
 import { unzipSync } from 'fflate';
 import { supabaseAdmin } from '$lib/server/supabase';
+import { writeQuoteBatches } from './investment-quote-write';
 import {
 	yahooSymbol,
 	tesouroKeyFromProductName,
@@ -354,20 +355,8 @@ export async function backfillQuoteHistory(
 
 	// Never overwrite what is already stored: a snapshot price is the official
 	// B3 mark and outranks a reconstructed one.
-	for (let i = 0; i < rows.length; i += 500) {
-		const chunk = rows.slice(i, i + 500);
-		const { data: inserted, error: upsertError } = await supabaseAdmin
-			.from('investment_quotes')
-			.upsert(chunk, {
-				onConflict: 'asset_id,quote_date',
-				ignoreDuplicates: true
-			})
-			.select('id');
-		if (upsertError) {
-			summary.errors.push(`upsert: ${upsertError.message}`);
-			break;
-		}
-		summary.inserted += inserted?.length ?? 0;
-	}
+	const result = await writeQuoteBatches(rows, true);
+	summary.inserted = result.written;
+	if (result.error) summary.errors.push(`history upsert: ${result.error}`);
 	return summary;
 }
