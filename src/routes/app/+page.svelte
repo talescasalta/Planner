@@ -155,6 +155,16 @@
 		return s ? `/app?${s}` : '/app';
 	}
 
+	function transactionHref(flow?: string) {
+		const qs = new SvelteURLSearchParams();
+		if (selectedMonth) qs.set('month', selectedMonth);
+		if (flow) qs.set('flow', flow);
+		if (filters.profileId) qs.set('profile_id', filters.profileId);
+		if (filters.categoryId) qs.set('category_id', filters.categoryId);
+		if (filters.reviewStatus) qs.set('status', filters.reviewStatus);
+		return `/app/transactions?${qs.toString()}` as `/app/transactions?${string}`;
+	}
+
 	function navigate(
 		params: Partial<{
 			month: string;
@@ -353,9 +363,7 @@
 	{:else}
 		<section class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
 			<a
-				href={resolve(
-					`/app/transactions?month=${encodeURIComponent(selectedMonth)}&direction=out`
-				)}
+				href={resolve(transactionHref('expense'))}
 				class="rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
 			>
 				<div class="flex items-center justify-between">
@@ -380,9 +388,7 @@
 			</a>
 
 			<a
-				href={resolve(
-					`/app/transactions?month=${encodeURIComponent(selectedMonth)}&direction=in`
-				)}
+				href={resolve(transactionHref('income'))}
 				class="rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
 			>
 				<div class="flex items-center justify-between">
@@ -415,9 +421,7 @@
 			</a>
 
 			<a
-				href={resolve(
-					`/app/transactions?month=${encodeURIComponent(selectedMonth)}`
-				)}
+				href={resolve(transactionHref())}
 				class="rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
 			>
 				<div class="flex items-center justify-between">
@@ -453,9 +457,18 @@
 					)}
 				</p>
 				<p class="mt-1 text-xs text-gray-600">
-					Aportes líquidos: {formatCurrency(data.investmentFlows.net)}
-					· Aplicações: {formatCurrency(data.investmentFlows.contributions)}
-					· Resgates: {formatCurrency(data.investmentFlows.redemptions)}
+					<a
+						class="hover:text-indigo-700"
+						href={resolve(transactionHref('contribution'))}
+						>Aportes: {formatCurrency(data.investmentFlows.contributions)}</a
+					>
+					·
+					<a
+						class="hover:text-indigo-700"
+						href={resolve(transactionHref('redemption'))}
+						>Resgates: {formatCurrency(data.investmentFlows.redemptions)}</a
+					>
+					· Líquido: {formatCurrency(data.investmentFlows.net)}
 				</p>
 				<p class="mt-1 text-xs text-gray-500">
 					Classifique aplicações e resgates em Investimentos. Rendimentos,

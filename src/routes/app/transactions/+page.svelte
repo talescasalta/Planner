@@ -26,10 +26,12 @@
 	let filters = $derived(
 		data.filters ?? {
 			sourceType: 'all',
+			profileId: '',
 			categoryId: '',
 			subcategoryId: '',
 			status: 'all',
-			direction: 'all'
+			direction: 'all',
+			flow: 'all'
 		}
 	);
 	let summary = $derived(data.summary);
@@ -77,10 +79,12 @@
 		[
 			selectedMonth,
 			filters.sourceType,
+			filters.profileId,
 			filters.categoryId,
 			filters.subcategoryId,
 			filters.status,
 			filters.direction,
+			filters.flow,
 			data.page
 		].join('|')
 	);
@@ -120,6 +124,7 @@
 	let bulkCategoryId = $state(KEEP);
 	let bulkSubcategoryId = $state('');
 	let bulkOwnerId = $state(KEEP);
+	let bulkTreatment = $state(KEEP);
 	let bulkApplying = $state(false);
 	let bulkCategoryRealId = $derived(
 		bulkCategoryId !== KEEP && bulkCategoryId !== '' ? bulkCategoryId : ''
@@ -129,7 +134,9 @@
 			? categories.filter((c) => c.parent_id === bulkCategoryRealId)
 			: []
 	);
-	let bulkHasChange = $derived(bulkCategoryId !== KEEP || bulkOwnerId !== KEEP);
+	let bulkHasChange = $derived(
+		bulkCategoryId !== KEEP || bulkOwnerId !== KEEP || bulkTreatment !== KEEP
+	);
 
 	let visibleTransactions = $derived.by(() => {
 		const term = searchTerm.trim().toLowerCase();
@@ -218,24 +225,29 @@
 			subcategoryId?: string;
 			status?: string;
 			direction?: string;
+			flow?: string;
 			page?: number;
 		} = {}
 	) {
 		const params = new SvelteURLSearchParams();
 		const month = overrides.month ?? selectedMonth;
 		const sourceType = overrides.sourceType ?? filters.sourceType;
+		const profileId = filters.profileId;
 		const categoryId = overrides.categoryId ?? filters.categoryId;
 		const subcategoryId = overrides.subcategoryId ?? filters.subcategoryId;
 		const status = overrides.status ?? filters.status;
 		const direction = overrides.direction ?? filters.direction;
+		const flow = overrides.flow ?? filters.flow;
 		const page = overrides.page ?? data.page;
 
 		setQueryParam(params, 'month', month);
 		setQueryParam(params, 'source_type', sourceType, 'all');
+		setQueryParam(params, 'profile_id', profileId);
 		setQueryParam(params, 'category_id', categoryId);
 		setQueryParam(params, 'subcategory_id', subcategoryId);
 		setQueryParam(params, 'status', status, 'all');
 		setQueryParam(params, 'direction', direction, 'all');
+		setQueryParam(params, 'flow', flow, 'all');
 		if (page > 0) params.set('page', String(page));
 
 		const query = params.toString();
@@ -245,11 +257,22 @@
 	function hasActiveFilters() {
 		return (
 			(filters.sourceType && filters.sourceType !== 'all') ||
+			!!filters.profileId ||
 			!!filters.categoryId ||
 			!!filters.subcategoryId ||
 			(filters.status && filters.status !== 'all') ||
-			(filters.direction && filters.direction !== 'all')
+			(filters.direction && filters.direction !== 'all') ||
+			(filters.flow && filters.flow !== 'all')
 		);
+	}
+
+	function flowLabel(value: string | null | undefined) {
+		if (value === 'expense') return 'Despesa';
+		if (value === 'income') return 'Receita';
+		if (value === 'contribution') return 'Aporte';
+		if (value === 'redemption') return 'Resgate';
+		if (value === 'transfer') return 'Transferência';
+		return '—';
 	}
 
 	function sourceTypeText(value: string | null | undefined) {
@@ -320,6 +343,7 @@
 		set('category_id', tx.category_id ?? '');
 		set('subcategory_id', tx.subcategory_id ?? '');
 		set('owner_profile_id', tx.owner_profile_id ?? '');
+		set('financial_treatment_override', tx.financial_treatment_override ?? '');
 	}
 
 	function rowEnhance(
@@ -345,6 +369,8 @@
 		const submittedCategoryId = readControl('category_id') || null;
 		const submittedSubcategoryId = readControl('subcategory_id') || null;
 		const submittedOwnerId = readControl('owner_profile_id') || null;
+		const submittedTreatment =
+			readControl('financial_treatment_override') || null;
 		const previousIndex = transactions.findIndex((t) => t.id === tx.id);
 
 		return async ({
@@ -375,6 +401,8 @@
 					category_id: submittedCategoryId,
 					subcategory_id: submittedSubcategoryId,
 					owner_profile_id: submittedOwnerId,
+					financial_treatment_override: submittedTreatment as
+						'operating' | 'investment' | 'transfer' | null,
 					review_status: 'confirmed',
 					classification_display_source: 'saved',
 					category_display_name:
@@ -415,6 +443,7 @@
 				bulkCategoryId = KEEP;
 				bulkSubcategoryId = '';
 				bulkOwnerId = KEEP;
+				bulkTreatment = KEEP;
 			}
 			requestAnimationFrame(() => window.scrollTo({ top: scrollY }));
 		};
@@ -544,7 +573,7 @@
 				</div>
 			</div>
 
-			<div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+			<div class="grid grid-cols-2 md:grid-cols-7 gap-3 text-sm">
 				<div>
 					<p class="text-xs text-gray-500">Transações</p>
 					<p class="font-semibold text-gray-900">{summary.count}</p>
@@ -567,10 +596,28 @@
 						{formatCurrency(summary.balance)}
 					</p>
 				</div>
+				<div>
+					<p class="text-xs text-gray-500">Aportes</p>
+					<p class="font-semibold text-amber-700">
+						{formatCurrency(summary.contributions)}
+					</p>
+				</div>
+				<div>
+					<p class="text-xs text-gray-500">Resgates</p>
+					<p class="font-semibold text-emerald-700">
+						{formatCurrency(summary.redemptions)}
+					</p>
+				</div>
+				<div>
+					<p class="text-xs text-gray-500">Transferências</p>
+					<p class="font-semibold text-sky-700">
+						{formatCurrency(summary.transfers)}
+					</p>
+				</div>
 			</div>
 		</div>
 
-		<div class="grid gap-3 md:grid-cols-5">
+		<div class="grid gap-3 md:grid-cols-6">
 			<div>
 				<label
 					for="source-type-filter"
@@ -694,6 +741,32 @@
 				</select>
 			</div>
 
+			<div>
+				<label
+					for="flow-filter"
+					class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+					>Fluxo classificado</label
+				>
+				<select
+					id="flow-filter"
+					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+					value={filters.flow}
+					onchange={(event) => {
+						window.location.href = transactionsHref({
+							flow: event.currentTarget.value,
+							page: 0
+						});
+					}}
+				>
+					<option value="all">Todos</option>
+					<option value="expense">Despesas</option>
+					<option value="income">Receitas</option>
+					<option value="contribution">Aportes</option>
+					<option value="redemption">Resgates</option>
+					<option value="transfer">Transferências</option>
+				</select>
+			</div>
+
 			<div class="flex items-end">
 				<a
 					href={resolve(
@@ -703,6 +776,7 @@
 							subcategoryId: '',
 							status: 'all',
 							direction: 'all',
+							flow: 'all',
 							page: 0
 						}) as `/app/transactions?${string}`
 					)}
@@ -739,6 +813,11 @@
 				/>
 				<input
 					type="hidden"
+					name="profile_id_filter"
+					value={filters.profileId}
+				/>
+				<input
+					type="hidden"
 					name="category_id_filter"
 					value={filters.categoryId}
 				/>
@@ -753,6 +832,7 @@
 					name="direction_filter"
 					value={filters.direction}
 				/>
+				<input type="hidden" name="flow_filter" value={filters.flow} />
 				<button
 					type="submit"
 					class="px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100"
@@ -784,6 +864,7 @@
 			{/each}
 			<input type="hidden" name="month" value={selectedMonth} />
 			<input type="hidden" name="page" value={data.page} />
+			<input type="hidden" name="profile_id_filter" value={filters.profileId} />
 			<input
 				type="hidden"
 				name="source_type_filter"
@@ -801,6 +882,7 @@
 			/>
 			<input type="hidden" name="status_filter" value={filters.status} />
 			<input type="hidden" name="direction_filter" value={filters.direction} />
+			<input type="hidden" name="flow_filter" value={filters.flow} />
 		</form>
 
 		<div
@@ -873,6 +955,20 @@
 							{#each profiles as p (p.id)}
 								<option value={p.id}>{p.name}</option>
 							{/each}
+						</select>
+					</label>
+					<label class="text-xs font-medium text-gray-600">
+						Tratamento financeiro
+						<select
+							name="financial_treatment_override"
+							bind:value={bulkTreatment}
+							class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
+						>
+							<option value={KEEP}>— manter —</option>
+							<option value="">Automático (herdar)</option>
+							<option value="operating">Operacional</option>
+							<option value="investment">Investimento</option>
+							<option value="transfer">Transferência</option>
 						</select>
 					</label>
 					<button
@@ -1039,6 +1135,11 @@
 									<input type="hidden" name="page" value={data.page} />
 									<input
 										type="hidden"
+										name="profile_id_filter"
+										value={filters.profileId}
+									/>
+									<input
+										type="hidden"
 										name="source_type_filter"
 										value={filters.sourceType}
 									/>
@@ -1056,6 +1157,11 @@
 										type="hidden"
 										name="status_filter"
 										value={filters.status}
+									/>
+									<input
+										type="hidden"
+										name="flow_filter"
+										value={filters.flow}
 									/>
 								</form>
 								<div class="flex flex-col gap-1">
@@ -1130,6 +1236,20 @@
 											{/if}
 										</select>
 									{/if}
+									<select
+										name="financial_treatment_override"
+										form={`tx-form-${tx.id}`}
+										value={tx.financial_treatment_override ?? ''}
+										disabled={savingIds[tx.id]}
+										onchange={submitRowForm}
+										aria-label="Tratamento financeiro"
+										class="block w-40 rounded-md border-gray-300 px-2 py-1 text-xs shadow-sm disabled:bg-gray-100"
+									>
+										<option value="">Automático</option>
+										<option value="operating">Operacional</option>
+										<option value="investment">Investimento</option>
+										<option value="transfer">Transferência</option>
+									</select>
 									{#if suggestionLabel(tx)}
 										<span class="w-40 text-xs text-amber-700"
 											>sugerido: {suggestionLabel(tx)}</span
@@ -1168,6 +1288,13 @@
 								})}
 							</td>
 							<td class="px-4 py-3 whitespace-nowrap text-sm align-top">
+								{#if tx.financial_flow_kind && tx.financial_flow_kind !== 'excluded'}
+									<span
+										class="mb-1 inline-flex rounded bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700"
+									>
+										{flowLabel(tx.financial_flow_kind)}
+									</span>
+								{/if}
 								{#if tx.review_status === 'needs_review'}
 									<div class="flex items-center gap-2">
 										<span

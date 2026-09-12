@@ -1,20 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { dashboardFlowKind, investmentFlowTotals } from './dashboard-flows';
 
-const investments: { id: string; name: string; parent_id: string | null } = {
+type TestCategory = {
+	id: string;
+	name: string;
+	parent_id: string | null;
+	financial_treatment: 'operating' | 'investment' | 'transfer' | null;
+};
+const investments: TestCategory = {
 	id: 'invest',
 	name: 'Investimentos',
-	parent_id: null
+	parent_id: null,
+	financial_treatment: 'investment'
 };
-const fixedIncome = { id: 'fixed', name: 'Renda fixa', parent_id: 'invest' };
-const categories = new Map([
+const fixedIncome: TestCategory = {
+	id: 'fixed',
+	name: 'Renda fixa',
+	parent_id: 'invest',
+	financial_treatment: null
+};
+const categories = new Map<string, TestCategory>([
 	['invest', investments],
 	['fixed', fixedIncome]
 ]);
 function flow(
 	amount: number,
-	category = investments,
-	subcategory: typeof fixedIncome | null = null
+	category: TestCategory = investments,
+	subcategory: TestCategory | null = null
 ) {
 	return {
 		amount,
@@ -40,7 +52,11 @@ describe('dashboard investment flows', () => {
 		for (const name of ['Rendimentos', 'Dividendos', 'Juros']) {
 			expect(
 				dashboardFlowKind(
-					flow(100, investments, { ...fixedIncome, name }),
+					flow(100, investments, {
+						...fixedIncome,
+						name,
+						financial_treatment: 'operating'
+					}),
 					categories
 				)
 			).toBe('income');
@@ -48,13 +64,17 @@ describe('dashboard investment flows', () => {
 		for (const name of ['Impostos', 'IOF', 'Taxas', 'Corretagem']) {
 			expect(
 				dashboardFlowKind(
-					flow(-50, investments, { ...fixedIncome, name }),
+					flow(-50, investments, {
+						...fixedIncome,
+						name,
+						financial_treatment: 'operating'
+					}),
 					categories
 				)
 			).toBe('expense');
 		}
 	});
-	it('ignores discarded rows and ordinary transfers but retains categorized investment transfers', () => {
+	it('ignores discarded rows and preserves legacy transfers as transfers', () => {
 		expect(
 			dashboardFlowKind(
 				{ ...flow(-3000), review_status: 'ignored' },
@@ -63,18 +83,26 @@ describe('dashboard investment flows', () => {
 		).toBe('excluded');
 		expect(
 			dashboardFlowKind({ ...flow(-3000), is_transfer: true }, categories)
-		).toBe('contribution');
+		).toBe('transfer');
 		expect(
 			dashboardFlowKind(
 				{ ...flow(-3000), category: null, is_transfer: true },
 				categories
 			)
-		).toBe('excluded');
+		).toBe('transfer');
 	});
 	it('does not treat a large investment from old reserves as new savings', () => {
 		const rows = [
-			flow(10000, { ...investments, name: 'Salário' }),
-			flow(-6000, { ...investments, name: 'Moradia' }),
+			flow(10000, {
+				...investments,
+				name: 'Salário',
+				financial_treatment: 'operating'
+			}),
+			flow(-6000, {
+				...investments,
+				name: 'Moradia',
+				financial_treatment: 'operating'
+			}),
 			flow(-30000),
 			flow(5000)
 		];

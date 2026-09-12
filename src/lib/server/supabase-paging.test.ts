@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SUPABASE_PAGE_SIZE, selectAll } from './supabase-paging';
+import {
+	SUPABASE_PAGE_SIZE,
+	selectAll,
+	selectAllStrict
+} from './supabase-paging';
 
 // A fake table whose pages behave like PostgREST: inclusive ranges, capped at
 // the page size no matter how much was asked for.
@@ -66,5 +70,23 @@ describe('selectAll', () => {
 		const table = fakeTable(0);
 
 		expect(await selectAll('quotes', table.page)).toEqual([]);
+	});
+
+	it('throws on a failed page so financial totals cannot be partial', async () => {
+		const page = vi
+			.fn()
+			.mockResolvedValueOnce({
+				data: Array.from({ length: SUPABASE_PAGE_SIZE }, (_, i) => ({ id: i })),
+				error: null
+			})
+			.mockResolvedValueOnce({ data: null, error: { message: 'timeout' } });
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		await expect(selectAllStrict('transactions', page)).rejects.toThrow(
+			'Não foi possível carregar transactions: timeout'
+		);
+
+		expect(spy).toHaveBeenCalledOnce();
+		spy.mockRestore();
 	});
 });

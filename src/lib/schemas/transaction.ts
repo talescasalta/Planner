@@ -5,6 +5,11 @@ const optionalUuid = z.preprocess(
 	z.string().uuid().nullable().optional()
 );
 
+const optionalFinancialTreatment = z.preprocess(
+	(value) => (value === '' ? null : value),
+	z.enum(['operating', 'investment', 'transfer']).nullable().optional()
+);
+
 export const transactionSchema = z.object({
 	date: z
 		.string()
@@ -31,7 +36,8 @@ export const transactionSchema = z.object({
 	category_id: optionalUuid,
 	subcategory_id: optionalUuid,
 	classification_method: z.string().default('manual'),
-	review_status: z.string().default('confirmed')
+	review_status: z.string().default('confirmed'),
+	financial_treatment_override: optionalFinancialTreatment
 });
 
 export const transactionUpdateSchema = transactionSchema.partial();

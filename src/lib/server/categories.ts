@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
 import { filterCategoriesForUser } from '$lib/server/gabarito';
+import type { FinancialTreatment } from '$lib/types/app';
 
 export type CategoryRow = {
 	id: string;
@@ -9,6 +10,7 @@ export type CategoryRow = {
 	parent_id: string | null;
 	created_by_user_id: string | null;
 	is_default: boolean;
+	financial_treatment: FinancialTreatment | null;
 	created_at: string;
 };
 
@@ -30,18 +32,21 @@ export async function loadCategoriesForUser(
 	supabase: SupabaseClient<Database>,
 	householdId: string,
 	userId: string,
-	includeCategoryIds: Iterable<string> = []
+	includeCategoryIds: Iterable<string> = [],
+	includeHiddenMetadata = false
 ): Promise<CategoryRow[]> {
 	const [{ data: categories }, excludedIds] = await Promise.all([
 		supabase
 			.from('categories')
 			.select(
-				'id, household_id, name, parent_id, created_by_user_id, is_default, created_at'
+				'id, household_id, name, parent_id, created_by_user_id, is_default, financial_treatment, created_at'
 			)
 			.eq('household_id', householdId)
 			.order('name'),
 		loadUserCategoryExclusions(supabase, householdId, userId)
 	]);
+
+	if (includeHiddenMetadata) return categories ?? [];
 
 	return filterCategoriesForUser(
 		categories ?? [],
@@ -60,7 +65,7 @@ export async function loadCategorySettingsForUser(
 		supabase
 			.from('categories')
 			.select(
-				'id, household_id, name, parent_id, created_by_user_id, is_default, created_at'
+				'id, household_id, name, parent_id, created_by_user_id, is_default, financial_treatment, created_at'
 			)
 			.eq('household_id', householdId)
 			.order('name'),

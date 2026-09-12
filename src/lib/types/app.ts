@@ -7,6 +7,15 @@ export type PatternType =
 	'merchant_contains' | 'description_contains' | 'exact_merchant' | 'regex';
 export type FinancialProfileType = 'individual' | 'shared';
 export type SplitMethod = 'income_proportional' | 'equal';
+
+export type FinancialTreatment = 'operating' | 'investment' | 'transfer';
+export type FinancialFlowKind =
+	| 'income'
+	| 'expense'
+	| 'contribution'
+	| 'redemption'
+	| 'transfer'
+	| 'excluded';
 export type TransactionSourceType =
 	'credit_card' | 'bank_account' | 'vale_alimentacao' | 'vale_refeicao';
 
@@ -78,6 +87,7 @@ export interface Category {
 	parent_id: string | null;
 	created_by_user_id: string | null;
 	is_default: boolean;
+	financial_treatment?: FinancialTreatment | null;
 	created_at: string;
 }
 
@@ -106,6 +116,9 @@ export interface Transaction {
 	review_status: ReviewStatus;
 	/** Money moved between accounts the household owns; kept out of totals. */
 	is_transfer: boolean;
+	/** Explicit row-level treatment; null means inherit taxonomy/legacy rules. */
+	financial_treatment_override?: FinancialTreatment | null;
+	financial_flow_kind?: FinancialFlowKind;
 	classification_suggestion: ClassificationSuggestion | null;
 	created_by_user_id: string;
 	created_at: string;

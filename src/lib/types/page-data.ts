@@ -13,11 +13,14 @@ export interface TransactionsPageData {
 	selectedMonth: string;
 	filters: {
 		sourceType: string;
+		profileId: string;
 		categoryId: string;
 		subcategoryId: string;
 		status: string;
 		/** 'in' (só receitas), 'out' (só despesas) ou 'all'. */
 		direction: string;
+		/** Categorized flow; unlike direction, excludes investment/transfer ambiguity. */
+		flow: string;
 	};
 	page: number;
 	pageSize: number;
@@ -27,6 +30,9 @@ export interface TransactionsPageData {
 		expenses: number;
 		credits: number;
 		balance: number;
+		contributions: number;
+		redemptions: number;
+		transfers: number;
 	};
 }
 

@@ -67,6 +67,15 @@
 		return method === 'equal' ? '50/50' : 'Por renda';
 	}
 
+	function flowLabel(kind: string) {
+		if (kind === 'expense') return 'Despesa';
+		if (kind === 'income') return 'Receita';
+		if (kind === 'contribution') return 'Aporte';
+		if (kind === 'redemption') return 'Resgate';
+		if (kind === 'transfer') return 'Transferência';
+		return 'Ignorado';
+	}
+
 	function formatMonth(month: string) {
 		const [year, monthNumber] = month.split('-').map(Number);
 		if (!year || !monthNumber) return month || 'Sem mês';
@@ -501,7 +510,7 @@
 				</ul>
 			</div>
 
-			{#if group.activity.summary.count > 0}
+			{#if group.activity.transactions.length > 0}
 				{@const txs = visibleTransactions(
 					group.id,
 					group.activity.transactions
@@ -570,6 +579,10 @@
 										>
 										<th
 											class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-gray-500"
+											>Fluxo</th
+										>
+										<th
+											class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-gray-500"
 											>Divisão</th
 										>
 										<th
@@ -620,8 +633,15 @@
 													{tx.subcategory_name}
 												{/if}
 											</td>
+											<td class="px-3 py-2 text-xs text-gray-600">
+												<span
+													class="inline-flex rounded bg-gray-100 px-2 py-0.5 font-medium text-gray-700"
+												>
+													{flowLabel(tx.financial_flow_kind)}
+												</span>
+											</td>
 											<td class="whitespace-nowrap px-3 py-2 text-gray-700">
-												{#if tx.amount < 0}
+												{#if tx.financial_flow_kind === 'expense'}
 													<form
 														method="POST"
 														action="?/update_split_method"

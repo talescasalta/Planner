@@ -247,6 +247,42 @@
 			/>
 		</div>
 
+		<div>
+			<label
+				for="financial_treatment_override"
+				class="block text-sm font-medium text-gray-700"
+				>Tratamento financeiro</label
+			>
+			<select
+				id="financial_treatment_override"
+				name="financial_treatment_override"
+				disabled={!editable}
+				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm px-3 py-2 disabled:bg-gray-100"
+			>
+				<option value="" selected={!tx.financial_treatment_override}
+					>Automático (herdar)</option
+				>
+				<option
+					value="operating"
+					selected={tx.financial_treatment_override === 'operating'}
+					>Operacional</option
+				>
+				<option
+					value="investment"
+					selected={tx.financial_treatment_override === 'investment'}
+					>Investimento</option
+				>
+				<option
+					value="transfer"
+					selected={tx.financial_treatment_override === 'transfer'}
+					>Transferência</option
+				>
+			</select>
+			<p class="mt-1 text-xs text-gray-500">
+				Automático respeita transferência legada, subcategoria e categoria.
+			</p>
+		</div>
+
 		{#if editable}
 			<div class="flex justify-between gap-3 pt-4">
 				<button
