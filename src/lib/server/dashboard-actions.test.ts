@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { actions } from '../../routes/app/+page.server';
+import { actions, load } from '../../routes/app/+page.server';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { getUserHouseholdId } from '$lib/server/household';
 import { loadCategoriesForUser } from '$lib/server/categories';
@@ -32,6 +32,9 @@ class QueryMock {
 		return this;
 	}
 	order() {
+		return this;
+	}
+	range() {
 		return this;
 	}
 	then(resolve: (value: QueryResult) => unknown) {
@@ -70,6 +73,69 @@ beforeEach(() => {
 });
 
 describe('dashboard insights action', () => {
+	it('excludes investments across dashboard metrics and AI facts, retaining their separate totals', async () => {
+		const rows = [
+			{ amount: 10000, name: 'Salário' },
+			{ amount: -6000, name: 'Moradia' },
+			{ amount: -3000, name: 'Investimentos' },
+			{ amount: 500, name: 'Investimentos' }
+		].map(({ amount, name }, index) => ({
+			id: `tx-${index}`,
+			amount,
+			description: name,
+			date: '2026-07-10',
+			reference_month: '2026-07',
+			review_status: 'confirmed',
+			is_transfer: false,
+			category_id: name,
+			category: { id: name, name, parent_id: null },
+			subcategory: null,
+			owner_profile: null
+		}));
+		vi.mocked(supabaseAdmin.from).mockImplementation(
+			(table) =>
+				new QueryMock({ data: table === 'transactions' ? rows : [] }) as never
+		);
+		const result = (await load({
+			...(event(requestForMonth('2026-07')) as object),
+			url: new URL('https://planner.test/app?month=2026-07')
+		} as never)) as {
+			summary: unknown;
+			savingsHistory: unknown;
+			investmentFlows: unknown;
+			totalExpenses: number;
+			fixedVsVariable: { variableTotal: number };
+			monthlyTrend: { expenses: number }[];
+		};
+		expect(result.summary).toMatchObject({
+			credits: 10000,
+			expenses: 6000,
+			balance: 4000
+		});
+		expect(result.savingsHistory).toEqual([
+			{ month: '2026-07', credits: 10000, expenses: 6000, rate: 0.4 }
+		]);
+		expect(result.investmentFlows).toEqual({
+			contributions: 3000,
+			redemptions: 500,
+			net: 2500
+		});
+		expect(result.totalExpenses).toBe(6000);
+		expect(result.fixedVsVariable.variableTotal).toBe(6000);
+		expect(result.monthlyTrend[0].expenses).toBe(6000);
+		vi.mocked(callLlm).mockResolvedValue({
+			choices: [{ message: { content: '{"insights":["Poupança de 40%."]}' } }]
+		} as never);
+		await actions.insights(event(requestForMonth('2026-07')));
+		const facts = JSON.parse(
+			String(vi.mocked(callLlm).mock.calls[0][0].messages[1].content)
+		);
+		expect(facts).toMatchObject({
+			receitas_total: 10000,
+			despesas_total: 6000,
+			taxa_poupanca_pct: 40
+		});
+	});
 	it('rejects unauthenticated insight generation before reading financial data', async () => {
 		const result = await actions.insights(
 			event(requestForMonth('2026-07'), false)
