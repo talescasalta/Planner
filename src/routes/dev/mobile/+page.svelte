@@ -3,9 +3,17 @@
 	import { page } from '$app/state';
 	import AppLayout from '../../app/+layout.svelte';
 	import Sheet from '$lib/components/ui/Sheet.svelte';
-	import { layoutData } from './fixtures';
+	import CategoriesPage from '../../app/categories/+page.svelte';
+	import RulesPage from '../../app/rules/+page.svelte';
+	import InstallmentsPage from '../../app/installments/+page.svelte';
+	import {
+		categoriesData,
+		installmentsData,
+		layoutData,
+		rulesData
+	} from './fixtures';
 
-	const VIEWS = ['layout', 'sheet'];
+	const VIEWS = ['layout', 'sheet', 'categories', 'rules', 'installments'];
 	const NOTICE =
 		'Vitrine só visual (apenas em desenvolvimento): os formulários não devem ser enviados.';
 
@@ -30,7 +38,13 @@
 		</ul>
 	</div>
 
-	{#if view === 'sheet'}
+	{#if view === 'categories'}
+		<CategoriesPage data={categoriesData} />
+	{:else if view === 'rules'}
+		<RulesPage data={rulesData} />
+	{:else if view === 'installments'}
+		<InstallmentsPage data={installmentsData} />
+	{:else if view === 'sheet'}
 		<button
 			type="button"
 			class="min-h-11 rounded bg-indigo-600 px-4 text-sm text-white"

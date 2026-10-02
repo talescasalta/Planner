@@ -851,7 +851,7 @@
 
 			<div class="rounded-lg bg-white p-4 shadow">
 				<h3 class="text-sm font-semibold text-gray-900">Transações recentes</h3>
-				<div class="mt-3 overflow-hidden rounded-md border border-gray-100">
+				<div class="mt-3 overflow-x-auto rounded-md border border-gray-100">
 					<table class="min-w-full divide-y divide-gray-100 text-sm">
 						<tbody class="divide-y divide-gray-100">
 							{#each recentTransactions as transaction (transaction.id)}
