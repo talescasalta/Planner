@@ -363,7 +363,7 @@
 	{:else}
 		<section class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
 			<a
-				href={resolve(transactionHref('expense'))}
+				href={resolve(transactionHref('spending'))}
 				class="rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
 			>
 				<div class="flex items-center justify-between">

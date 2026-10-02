@@ -337,6 +337,26 @@ export function buildImportDedupKey(
 	return `${row.date}|${cleanDescription}|${row.amount.toFixed(2)}|${row.currency || 'BRL'}`;
 }
 
+// Two genuinely identical rows in one statement (two equal rides on the same
+// day) must both survive the unique (household, month, key) index, so repeats
+// get a "|#n" suffix. The first occurrence keeps the bare key, which keeps
+// every key already stored valid and re-importing an overlapping range
+// idempotent.
+export function assignImportDedupKeys<T extends ParsedRow>(
+	rows: T[]
+): Array<T & { dedup_key: string }> {
+	const seen = new Map<string, number>();
+	return rows.map((row) => {
+		const base = buildImportDedupKey(row);
+		const occurrence = (seen.get(base) ?? 0) + 1;
+		seen.set(base, occurrence);
+		return {
+			...row,
+			dedup_key: occurrence === 1 ? base : `${base}|#${occurrence}`
+		};
+	});
+}
+
 // Credit card statements mark installments as "k/n" (installment k of n),
 // often prefixed with "Parcela"/"Parc". We only trust a bare trailing "k/n"
 // when it is at the very end of the description; a "Parcela"/"de" keyword may

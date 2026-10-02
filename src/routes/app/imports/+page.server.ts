@@ -2,13 +2,15 @@ import type { PageServerLoad, Actions } from './$types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
 import {
-	buildImportDedupKey,
+	assignImportDedupKeys,
 	detectMapping,
 	invoiceClosingMonth,
 	resolveReferenceMonth,
 	type CsvSourceType,
 	type ParsedRow
 } from '$lib/server/csv-parser';
+
+type KeyedRow = ParsedRow & { dedup_key: string };
 import { resolveImportMapping } from '$lib/server/import-mapping';
 import { checkPersistentRateLimit } from '$lib/server/rate-limit';
 import {
@@ -246,7 +248,7 @@ import { fail, redirect } from '@sveltejs/kit';
 async function loadExistingKeysForRange(
 	supabase: SupabaseClient<Database>,
 	householdId: string,
-	rows: ParsedRow[]
+	rows: KeyedRow[]
 ): Promise<Set<string>> {
 	if (rows.length === 0) return new Set();
 	let minDate = rows[0].date;
@@ -285,7 +287,7 @@ type InsertedTransaction = {
 };
 
 function buildTransactionInserts(
-	rows: ParsedRow[],
+	rows: KeyedRow[],
 	householdId: string,
 	userId: string,
 	sourceType: CsvSourceType,
@@ -303,7 +305,7 @@ function buildTransactionInserts(
 		currency: row.currency,
 		source_type: sourceType,
 		reference_month: resolveReferenceMonth(sourceType, row.date, month),
-		import_dedup_key: buildImportDedupKey(row),
+		import_dedup_key: row.dedup_key,
 		installment_number: row.installment_number ?? null,
 		installment_total: row.installment_total ?? null,
 		installment_group_key: row.installment_group_key ?? null,
@@ -314,7 +316,7 @@ function buildTransactionInserts(
 }
 
 async function persistImportTransactions(
-	rows: ParsedRow[],
+	rows: KeyedRow[],
 	householdId: string,
 	userId: string,
 	sourceType: CsvSourceType,
@@ -376,7 +378,7 @@ async function verifyImportedTransactions(
 }
 
 async function importAndClassifyRows(
-	rows: ParsedRow[],
+	rows: KeyedRow[],
 	householdId: string,
 	userId: string,
 	sourceType: CsvSourceType,
@@ -518,7 +520,7 @@ export const actions: Actions = {
 					'Envie um arquivo CSV, uma imagem (print) ou cole o conteúdo da fatura.'
 			});
 		}
-		const rows = resolved.rows;
+		const rows = assignImportDedupKeys(resolved.rows);
 		if (rows.length === 0) {
 			return fail(400, {
 				success: false,
@@ -542,7 +544,7 @@ export const actions: Actions = {
 
 		const previewRows = rows.slice(0, 10).map((r) => ({
 			...r,
-			duplicate: existingKeys.has(buildImportDedupKey(r))
+			duplicate: existingKeys.has(r.dedup_key)
 		}));
 
 		const closingMonth = invoiceClosingMonth(
@@ -555,8 +557,7 @@ export const actions: Actions = {
 			success: true,
 			preview: previewRows,
 			total: rows.length,
-			duplicates: rows.filter((r) => existingKeys.has(buildImportDedupKey(r)))
-				.length,
+			duplicates: rows.filter((r) => existingKeys.has(r.dedup_key)).length,
 			filename: resolved.sourceName,
 			reference_month: closingMonth,
 			reference_month_inferred: closingMonth !== referenceMonth,
@@ -589,7 +590,7 @@ export const actions: Actions = {
 					'Envie um arquivo CSV, uma imagem (print) ou cole o conteúdo da fatura.'
 			});
 		}
-		const rows = resolved.rows;
+		const rows = assignImportDedupKeys(resolved.rows);
 		if (rows.length === 0) {
 			return fail(400, {
 				success: false,
@@ -632,9 +633,7 @@ export const actions: Actions = {
 			rows
 		);
 
-		const newRows = rows.filter(
-			(r) => !existingKeys.has(buildImportDedupKey(r))
-		);
+		const newRows = rows.filter((r) => !existingKeys.has(r.dedup_key));
 
 		let insertedCount = 0;
 		if (newRows.length > 0) {

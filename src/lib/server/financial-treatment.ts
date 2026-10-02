@@ -122,6 +122,32 @@ export function financialFlowKind(
 	return amount < 0 ? 'expense' : 'refund';
 }
 
+/**
+ * `spending` is the filter behind the dashboard's Despesas card: expenses and
+ * the refunds netted against them, so the list sums to the card.
+ */
+export const SPENDING_FLOW_FILTER = 'spending';
+
+export type FlowFilter = FinancialFlowKind | typeof SPENDING_FLOW_FILTER;
+
+export function isFlowFilter(value: unknown): value is FlowFilter {
+	return (
+		value === SPENDING_FLOW_FILTER ||
+		(typeof value === 'string' &&
+			(FINANCIAL_FLOW_KINDS as readonly string[]).includes(value))
+	);
+}
+
+export function flowMatchesFilter(
+	kind: FinancialFlowKind,
+	filter: FlowFilter
+): boolean {
+	if (filter === SPENDING_FLOW_FILTER) {
+		return kind === 'expense' || kind === 'refund';
+	}
+	return kind === filter;
+}
+
 export function toCents(value: number | string | null | undefined): number {
 	const amount = Number(value ?? 0);
 	return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
