@@ -8,6 +8,7 @@
 	let { data, height = 240 }: { data: Point[]; height?: number } = $props();
 
 	const WIDTH = 720;
+	const NARROW_WIDTH = 480;
 	const PADDING = { top: 16, right: 12, bottom: 26, left: 64 };
 
 	let plotWidth = $derived(WIDTH - PADDING.left - PADDING.right);
@@ -17,6 +18,11 @@
 	let max = $derived(Math.max(1, ...data.map((point) => point.gross)) * 1.05);
 
 	let hovered = $state<number | null>(null);
+	let clientWidth = $state(WIDTH);
+	// Fewer month labels on narrow screens so they never overlap.
+	let labelStep = $derived(
+		Math.ceil(data.length / (clientWidth < NARROW_WIDTH ? 4 : 8))
+	);
 
 	const x = (index: number) =>
 		PADDING.left +
@@ -62,8 +68,8 @@
 		Ainda não há meses suficientes com preço para desenhar a evolução.
 	</div>
 {:else}
-	<div class="w-full overflow-x-auto">
-		<svg viewBox={`0 0 ${WIDTH} ${height}`} class="w-full min-w-[520px]">
+	<div class="w-full" bind:clientWidth>
+		<svg viewBox={`0 0 ${WIDTH} ${height}`} class="w-full">
 			{#each [0, 0.25, 0.5, 0.75, 1] as tick (tick)}
 				<line
 					x1={PADDING.left}
@@ -101,14 +107,16 @@
 			/>
 
 			{#each data as entry, index (entry.month)}
-				<text
-					x={x(index)}
-					y={height - 8}
-					text-anchor="middle"
-					class="fill-gray-500 text-[10px]"
-				>
-					{shortMonth(entry.month)}
-				</text>
+				{#if index % labelStep === 0}
+					<text
+						x={x(index)}
+						y={height - 8}
+						text-anchor="middle"
+						class="fill-gray-500 text-[10px]"
+					>
+						{shortMonth(entry.month)}
+					</text>
+				{/if}
 				<!-- A wide invisible band per month keeps hovering easy on touch. -->
 				<rect
 					x={x(index) - plotWidth / (2 * Math.max(1, data.length - 1))}
@@ -117,8 +125,9 @@
 					height={plotHeight}
 					fill="transparent"
 					role="presentation"
-					onmouseenter={() => (hovered = index)}
-					onmouseleave={() => (hovered = null)}
+					onpointerenter={() => (hovered = index)}
+					onpointerdown={() => (hovered = index)}
+					onpointerleave={() => (hovered = null)}
 				/>
 				{#if hovered === index}
 					<line

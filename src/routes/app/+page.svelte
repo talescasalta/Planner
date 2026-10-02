@@ -15,7 +15,9 @@
 		X
 	} from 'lucide-svelte';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
+	import CategoryBars from '$lib/components/charts/CategoryBars.svelte';
 	import CategoryTreemap from '$lib/components/charts/CategoryTreemap.svelte';
+	import Sheet from '$lib/components/ui/Sheet.svelte';
 	import type { TreemapSelection } from '$lib/components/charts/CategoryTreemap.svelte';
 	import MonthlyTrendChart from '$lib/components/charts/MonthlyTrendChart.svelte';
 	import CategoryTrendChart from '$lib/components/charts/CategoryTrendChart.svelte';
@@ -42,6 +44,16 @@
 	);
 	let showFilters = $state(false);
 	let selection = $state<TreemapSelection | null>(null);
+	// The selection detail is an aside from lg up and a Sheet below it.
+	const LARGE_QUERY = '(min-width: 1024px)';
+	let isLarge = $state(false);
+	$effect(() => {
+		const query = window.matchMedia(LARGE_QUERY);
+		const sync = () => (isLarge = query.matches);
+		sync();
+		query.addEventListener('change', sync);
+		return () => query.removeEventListener('change', sync);
+	});
 
 	let categoryTrend = $derived(
 		data.categoryTrend ?? { months: [], series: [], points: [] }
@@ -611,7 +623,7 @@
 			<div
 				class={`mt-4 grid gap-4 ${selection ? 'lg:grid-cols-[1fr_360px]' : 'grid-cols-1'}`}
 			>
-				<div>
+				<div class="hidden min-w-0 sm:block">
 					<CategoryTreemap
 						nodes={expenseHierarchy}
 						height={460}
@@ -619,9 +631,16 @@
 						onSelect={(s) => (selection = s)}
 					/>
 				</div>
+				<div class="sm:hidden">
+					<CategoryBars
+						nodes={expenseHierarchy}
+						selected={selection}
+						onSelect={(s) => (selection = s)}
+					/>
+				</div>
 				{#if selection}
 					<aside
-						class="flex h-[460px] flex-col rounded-md border border-gray-200 bg-gray-50"
+						class="hidden h-[460px] flex-col rounded-md border border-gray-200 bg-gray-50 lg:flex"
 					>
 						<div
 							class="flex items-start justify-between border-b border-gray-200 bg-white px-4 py-3"
@@ -652,34 +671,7 @@
 							</button>
 						</div>
 						<div class="flex-1 overflow-y-auto">
-							{#if drillDownTx.length === 0}
-								<p class="p-4 text-xs text-gray-500">
-									Nenhuma transação para este item.
-								</p>
-							{:else}
-								<ul class="divide-y divide-gray-100">
-									{#each drillDownTx as tx (tx.id)}
-										<li>
-											<a
-												href={resolve(`/app/transactions/${tx.id}`)}
-												class="flex items-start justify-between gap-3 px-4 py-2.5 text-sm hover:bg-white"
-											>
-												<div class="min-w-0">
-													<p class="truncate font-medium text-gray-900">
-														{tx.description}
-													</p>
-													<p class="text-[11px] text-gray-500">{tx.date}</p>
-												</div>
-												<span
-													class={`shrink-0 text-sm font-medium ${tx.amount < 0 ? 'text-rose-700' : 'text-emerald-700'}`}
-												>
-													{formatCurrency(tx.amount, tx.currency ?? 'BRL')}
-												</span>
-											</a>
-										</li>
-									{/each}
-								</ul>
-							{/if}
+							{@render selectionList()}
 						</div>
 					</aside>
 				{/if}
@@ -954,3 +946,50 @@
 		</section>
 	{/if}
 </div>
+
+{#snippet selectionList()}
+	{#if drillDownTx.length === 0}
+		<p class="p-4 text-xs text-gray-500">Nenhuma transação para este item.</p>
+	{:else}
+		<ul class="divide-y divide-gray-100">
+			{#each drillDownTx as tx (tx.id)}
+				<li>
+					<a
+						href={resolve(`/app/transactions/${tx.id}`)}
+						class="flex items-start justify-between gap-3 px-4 py-2.5 text-sm hover:bg-white"
+					>
+						<div class="min-w-0">
+							<p class="truncate font-medium text-gray-900">
+								{tx.description}
+							</p>
+							<p class="text-[11px] text-gray-500">{tx.date}</p>
+						</div>
+						<span
+							class={`shrink-0 text-sm font-medium ${tx.amount < 0 ? 'text-rose-700' : 'text-emerald-700'}`}
+						>
+							{formatCurrency(tx.amount, tx.currency ?? 'BRL')}
+						</span>
+					</a>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+{/snippet}
+
+<Sheet
+	open={!!selection && !isLarge}
+	title={selection
+		? selection.subcategoryName === selection.categoryName
+			? selection.categoryName
+			: `${selection.categoryName} · ${selection.subcategoryName}`
+		: ''}
+	onClose={() => (selection = null)}
+>
+	<p class="mb-2 text-xs text-gray-500">
+		{drillDownTx.length}
+		{drillDownTx.length === 1 ? 'transação' : 'transações'} · {formatCurrency(
+			drillDownTotal
+		)}
+	</p>
+	{@render selectionList()}
+</Sheet>
