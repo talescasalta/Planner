@@ -8,8 +8,15 @@
 	import InstallmentsPage from '../../app/installments/+page.svelte';
 	import DashboardPage from '../../app/+page.svelte';
 	import AppliedVsGrossChart from '$lib/components/charts/AppliedVsGrossChart.svelte';
+	import ImportsPage from '../../app/imports/+page.svelte';
+	import NewTransactionPage from '../../app/transactions/new/+page.svelte';
 	import TransactionsPage from '../../app/transactions/+page.svelte';
 	import { appliedVsGrossData, dashboardData } from './dashboard-fixture';
+	import {
+		importsData,
+		importsForm,
+		newTransactionData
+	} from './forms-fixture';
 	import { transactionsData } from './transactions-fixture';
 	import {
 		categoriesData,
@@ -64,6 +71,10 @@
 		<div class="rounded-lg bg-white p-4 shadow">
 			<AppliedVsGrossChart data={appliedVsGrossData} />
 		</div>
+	{:else if view === 'new-transaction'}
+		<NewTransactionPage data={newTransactionData} />
+	{:else if view === 'imports'}
+		<ImportsPage data={importsData} form={importsForm} />
 	{:else if view === 'sheet'}
 		<button
 			type="button"
