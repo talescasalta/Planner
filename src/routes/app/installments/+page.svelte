@@ -72,26 +72,28 @@
 						>{brl.format(Math.abs(month.total))}</span
 					>
 				</header>
-				<table class="min-w-full text-sm">
-					<tbody class="divide-y divide-gray-100">
-						{#each month.items as item (item.groupKey + '-' + item.number)}
-							<tr>
-								<td class="px-4 py-2 text-gray-900">{item.merchant}</td>
-								<td class="px-4 py-2 text-gray-500 whitespace-nowrap">
-									parcela {item.number}/{item.total}
-								</td>
-								<td class="px-4 py-2 text-gray-500"
-									>{item.categoryName ?? '—'}</td
-								>
-								<td
-									class="px-4 py-2 text-right text-gray-900 whitespace-nowrap"
-								>
-									{brl.format(Math.abs(item.amount))}
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+				<div class="overflow-x-auto">
+					<table class="min-w-full text-sm">
+						<tbody class="divide-y divide-gray-100">
+							{#each month.items as item (item.groupKey + '-' + item.number)}
+								<tr>
+									<td class="px-4 py-2 text-gray-900">{item.merchant}</td>
+									<td class="px-4 py-2 text-gray-500 whitespace-nowrap">
+										parcela {item.number}/{item.total}
+									</td>
+									<td class="px-4 py-2 text-gray-500"
+										>{item.categoryName ?? '—'}</td
+									>
+									<td
+										class="px-4 py-2 text-right text-gray-900 whitespace-nowrap"
+									>
+										{brl.format(Math.abs(item.amount))}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
 			</section>
 		{/each}
 	{/if}

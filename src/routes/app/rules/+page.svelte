@@ -6,6 +6,8 @@
 		FinancialProfile
 	} from '$lib/types/app';
 
+	const TOUCH_BUTTON = 'min-h-11 min-w-11 px-3';
+
 	let {
 		data,
 		form
@@ -166,7 +168,7 @@
 		{/if}
 	</form>
 
-	<div class="bg-white rounded-lg shadow overflow-hidden">
+	<div class="hidden overflow-x-auto rounded-lg bg-white shadow sm:block">
 		<table class="min-w-full divide-y divide-gray-200 text-sm">
 			<thead class="bg-gray-50">
 				<tr>
@@ -214,44 +216,77 @@
 						<td class="px-4 py-2">{rule.owner_profile?.name ?? '-'}</td>
 						<td class="px-4 py-2">{rule.confidence}</td>
 						<td class="px-4 py-2">
-							{#if rule.active}
-								<span
-									class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
-									>Sim</span
-								>
-							{:else}
-								<span
-									class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
-									>Não</span
-								>
-							{/if}
+							{@render activeBadge(rule)}
 						</td>
 						<td class="px-4 py-2 text-right space-x-2">
-							<form method="POST" action="?/toggle" use:enhance class="inline">
-								<input type="hidden" name="rule_id" value={rule.id} />
-								<input
-									type="hidden"
-									name="active"
-									value={rule.active ? 'false' : 'true'}
-								/>
-								<button
-									type="submit"
-									class="text-xs text-indigo-600 hover:text-indigo-900"
-									>{rule.active ? 'Desativar' : 'Ativar'}</button
-								>
-							</form>
-							<form method="POST" action="?/delete" use:enhance class="inline">
-								<input type="hidden" name="rule_id" value={rule.id} />
-								<button
-									type="submit"
-									class="text-xs text-red-600 hover:text-red-900"
-									>Excluir</button
-								>
-							</form>
+							{@render ruleActions(rule, false)}
 						</td>
 					</tr>
 				{/each}
 			</tbody>
 		</table>
 	</div>
+
+	<ul class="space-y-3 sm:hidden">
+		{#each rules as rule (rule.id)}
+			<li class="space-y-2 rounded-lg bg-white p-4 shadow">
+				<div class="flex items-start justify-between gap-3">
+					<p class="min-w-0 font-mono text-xs break-all">{rule.pattern}</p>
+					{@render activeBadge(rule)}
+				</div>
+				<dl class="grid grid-cols-2 gap-x-3 gap-y-1 text-sm text-gray-700">
+					<dt class="text-xs text-gray-500">Tipo</dt>
+					<dd>{rule.pattern_type}</dd>
+					<dt class="text-xs text-gray-500">Categoria</dt>
+					<dd>{rule.category?.name ?? '-'}</dd>
+					<dt class="text-xs text-gray-500">Subcategoria</dt>
+					<dd>{rule.subcategory?.name ?? '-'}</dd>
+					<dt class="text-xs text-gray-500">Atribuir a</dt>
+					<dd>{rule.owner_profile?.name ?? '-'}</dd>
+					<dt class="text-xs text-gray-500">Confiança</dt>
+					<dd>{rule.confidence}</dd>
+				</dl>
+				<div class="flex justify-end border-t border-gray-100 pt-2">
+					{@render ruleActions(rule, true)}
+				</div>
+			</li>
+		{/each}
+	</ul>
 </div>
+
+{#snippet activeBadge(rule: ClassificationRule)}
+	{#if rule.active}
+		<span
+			class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
+			>Sim</span
+		>
+	{:else}
+		<span
+			class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
+			>Não</span
+		>
+	{/if}
+{/snippet}
+
+{#snippet ruleActions(rule: ClassificationRule, touch: boolean)}
+	<form method="POST" action="?/toggle" use:enhance class="inline">
+		<input type="hidden" name="rule_id" value={rule.id} />
+		<input type="hidden" name="active" value={rule.active ? 'false' : 'true'} />
+		<button
+			type="submit"
+			class="{touch
+				? TOUCH_BUTTON
+				: ''} text-xs text-indigo-600 hover:text-indigo-900"
+			>{rule.active ? 'Desativar' : 'Ativar'}</button
+		>
+	</form>
+	<form method="POST" action="?/delete" use:enhance class="inline">
+		<input type="hidden" name="rule_id" value={rule.id} />
+		<button
+			type="submit"
+			class="{touch
+				? TOUCH_BUTTON
+				: ''} text-xs text-red-600 hover:text-red-900">Excluir</button
+		>
+	</form>
+{/snippet}

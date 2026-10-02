@@ -4,6 +4,18 @@
 	import type { Category } from '$lib/types/app';
 	import { TREATMENT_OPTIONS } from '$lib/financial-labels';
 
+	type Variant = 'cell' | 'chip' | 'touch';
+	const SELECT_CLASS: Record<Variant, string> = {
+		cell: 'rounded border-gray-300 bg-white px-1.5 py-1 text-xs',
+		chip: 'rounded border-gray-300 bg-white px-1 py-0.5 text-[11px]',
+		touch: 'min-h-11 w-full rounded border-gray-300 bg-white px-2 text-sm'
+	};
+	const DELETE_CLASS: Record<Variant, string> = {
+		cell: 'text-sm text-red-600 hover:text-red-800',
+		chip: 'text-red-600 hover:text-red-800',
+		touch: 'min-h-11 min-w-11 px-2 text-sm text-red-600 hover:text-red-800'
+	};
+
 	let {
 		data,
 		form
@@ -144,7 +156,7 @@
 		</form>
 	</div>
 
-	<div class="bg-white rounded-lg shadow overflow-hidden">
+	<div class="hidden overflow-x-auto rounded-lg bg-white shadow sm:block">
 		<table class="min-w-full divide-y divide-gray-200 text-sm">
 			<thead class="bg-gray-50">
 				<tr>
@@ -177,54 +189,8 @@
 										class="inline-flex items-center gap-2 rounded bg-gray-100 px-2 py-1 text-xs text-gray-700"
 									>
 										{subcategory.name}
-										<form
-											method="POST"
-											action="?/update_treatment"
-											use:enhance
-											class="inline-flex"
-										>
-											<input
-												type="hidden"
-												name="category_id"
-												value={subcategory.id}
-											/>
-											<select
-												name="financial_treatment"
-												class="rounded border-gray-300 bg-white px-1 py-0.5 text-[11px]"
-												aria-label="Tratamento de {subcategory.name}"
-												onchange={(event) =>
-													event.currentTarget.form?.requestSubmit()}
-											>
-												<option
-													value=""
-													selected={!subcategory.financial_treatment}
-													>Automático</option
-												>
-												{#each TREATMENT_OPTIONS as option (option.value)}
-													<option
-														value={option.value}
-														selected={subcategory.financial_treatment ===
-															option.value}>{option.label}</option
-													>
-												{/each}
-											</select>
-										</form>
-										<form
-											method="POST"
-											action="?/delete"
-											use:enhance
-											class="inline"
-										>
-											<input
-												type="hidden"
-												name="category_id"
-												value={subcategory.id}
-											/>
-											<button
-												type="submit"
-												class="text-red-600 hover:text-red-800">Excluir</button
-											>
-										</form>
+										{@render treatmentForm(subcategory, 'chip')}
+										{@render deleteForm(subcategory, 'chip')}
 									</span>
 								{/each}
 								{#if subcategoriesFor(category.id).length === 0}
@@ -234,42 +200,10 @@
 						</td>
 						<td class="px-4 py-3 text-gray-600">
 							<div>{originLabel(category)}</div>
-							<form
-								method="POST"
-								action="?/update_treatment"
-								use:enhance
-								class="mt-1 inline-flex"
-							>
-								<input type="hidden" name="category_id" value={category.id} />
-								<select
-									name="financial_treatment"
-									class="rounded border-gray-300 bg-white px-1.5 py-1 text-xs"
-									aria-label="Tratamento de {category.name}"
-									onchange={(event) =>
-										event.currentTarget.form?.requestSubmit()}
-								>
-									<option value="" selected={!category.financial_treatment}
-										>Automático</option
-									>
-									{#each TREATMENT_OPTIONS as option (option.value)}
-										<option
-											value={option.value}
-											selected={category.financial_treatment === option.value}
-											>{option.label}</option
-										>
-									{/each}
-								</select>
-							</form>
+							{@render treatmentForm(category, 'cell')}
 						</td>
 						<td class="px-4 py-3 text-right">
-							<form method="POST" action="?/delete" use:enhance class="inline">
-								<input type="hidden" name="category_id" value={category.id} />
-								<button
-									type="submit"
-									class="text-sm text-red-600 hover:text-red-800"
-									>Excluir</button
-								>
-							</form>
+							{@render deleteForm(category, 'cell')}
 						</td>
 					</tr>
 				{/each}
@@ -277,8 +211,38 @@
 		</table>
 	</div>
 
+	<ul class="space-y-3 sm:hidden">
+		{#each parentCategories as category (category.id)}
+			<li class="space-y-3 rounded-lg bg-white p-4 shadow">
+				<div class="flex items-start justify-between gap-3">
+					<div class="min-w-0">
+						<p class="font-medium text-gray-900">{category.name}</p>
+						<p class="text-xs text-gray-600">{originLabel(category)}</p>
+					</div>
+					{@render deleteForm(category, 'touch')}
+				</div>
+				{@render treatmentForm(category, 'touch')}
+				{#if subcategoriesFor(category.id).length > 0}
+					<ul class="divide-y divide-gray-100 border-t border-gray-100">
+						{#each subcategoriesFor(category.id) as subcategory (subcategory.id)}
+							<li class="space-y-2 py-3">
+								<div class="flex items-center justify-between gap-3">
+									<span class="text-sm text-gray-800">{subcategory.name}</span>
+									{@render deleteForm(subcategory, 'touch')}
+								</div>
+								{@render treatmentForm(subcategory, 'touch')}
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="text-sm text-gray-400">Sem subcategorias</p>
+				{/if}
+			</li>
+		{/each}
+	</ul>
+
 	{#if hiddenCategories.length > 0}
-		<div class="bg-white rounded-lg shadow overflow-hidden">
+		<div class="bg-white rounded-lg shadow overflow-x-auto">
 			<table class="min-w-full divide-y divide-gray-200 text-sm">
 				<thead class="bg-gray-50">
 					<tr>
@@ -327,3 +291,42 @@
 		</div>
 	{/if}
 </div>
+
+{#snippet treatmentForm(category: Category, variant: Variant)}
+	<form
+		method="POST"
+		action="?/update_treatment"
+		use:enhance
+		class={variant === 'touch'
+			? 'flex'
+			: variant === 'chip'
+				? 'inline-flex'
+				: 'mt-1 inline-flex'}
+	>
+		<input type="hidden" name="category_id" value={category.id} />
+		<select
+			name="financial_treatment"
+			class={SELECT_CLASS[variant]}
+			aria-label="Tratamento de {category.name}"
+			onchange={(event) => event.currentTarget.form?.requestSubmit()}
+		>
+			<option value="" selected={!category.financial_treatment}
+				>Automático</option
+			>
+			{#each TREATMENT_OPTIONS as option (option.value)}
+				<option
+					value={option.value}
+					selected={category.financial_treatment === option.value}
+					>{option.label}</option
+				>
+			{/each}
+		</select>
+	</form>
+{/snippet}
+
+{#snippet deleteForm(category: Category, variant: Variant)}
+	<form method="POST" action="?/delete" use:enhance class="inline">
+		<input type="hidden" name="category_id" value={category.id} />
+		<button type="submit" class={DELETE_CLASS[variant]}>Excluir</button>
+	</form>
+{/snippet}
