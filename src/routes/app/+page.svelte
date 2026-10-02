@@ -211,8 +211,10 @@
 	<title>Visão geral | Planner</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+<div class="flex flex-col gap-6 md:block md:space-y-6">
+	<div
+		class="order-first flex flex-col gap-4 md:order-none lg:flex-row lg:items-end lg:justify-between"
+	>
 		<div>
 			<p class="text-sm font-medium uppercase tracking-wider text-gray-500">
 				Visão geral
@@ -264,7 +266,7 @@
 	{#if showFilters}
 		<form
 			method="GET"
-			class="grid grid-cols-1 gap-3 rounded-lg bg-white p-4 shadow sm:grid-cols-4"
+			class="order-first md:order-none grid grid-cols-1 gap-3 rounded-lg bg-white p-4 shadow sm:grid-cols-4"
 		>
 			<input type="hidden" name="month" value={selectedMonth} />
 			<div>
@@ -373,10 +375,10 @@
 			</div>
 		</section>
 	{:else}
-		<section class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+		<section class="contents md:grid md:grid-cols-2 md:gap-4 xl:grid-cols-4">
 			<a
 				href={resolve(transactionHref('spending'))}
-				class="rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
+				class="order-first md:order-none rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
 			>
 				<div class="flex items-center justify-between">
 					<p class="text-sm font-medium text-gray-500">Despesas</p>
@@ -406,7 +408,7 @@
 
 			<a
 				href={resolve(transactionHref('income'))}
-				class="rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
+				class="order-first md:order-none rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
 			>
 				<div class="flex items-center justify-between">
 					<p class="text-sm font-medium text-gray-500">Receitas</p>
@@ -425,7 +427,7 @@
 
 			<a
 				href={resolve('/app/review')}
-				class="rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
+				class="order-1 md:order-none rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
 			>
 				<div class="flex items-center justify-between">
 					<p class="text-sm font-medium text-gray-500">Pendentes</p>
@@ -439,7 +441,7 @@
 
 			<a
 				href={resolve(transactionHref())}
-				class="rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
+				class="order-1 md:order-none rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
 			>
 				<div class="flex items-center justify-between">
 					<p class="text-sm font-medium text-gray-500">Transações</p>
@@ -452,8 +454,8 @@
 			</a>
 		</section>
 
-		<section class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-			<div class="rounded-lg bg-white p-4 shadow">
+		<section class="contents md:grid md:grid-cols-2 md:gap-4 xl:grid-cols-4">
+			<div class="order-first md:order-none rounded-lg bg-white p-4 shadow">
 				<div class="flex items-center justify-between">
 					<p class="text-sm font-medium text-gray-500">Taxa de poupança</p>
 					<PiggyBank class="h-5 w-5 text-emerald-600" />
@@ -678,7 +680,9 @@
 			</div>
 		</section>
 
-		<section class="grid grid-cols-1 gap-4 xl:grid-cols-3">
+		<section
+			class="order-2 md:order-none grid grid-cols-1 gap-4 xl:grid-cols-3"
+		>
 			<div class="rounded-lg bg-white p-5 shadow xl:col-span-2">
 				<h3 class="text-sm font-semibold text-gray-900">
 					Evolução por categoria
@@ -736,7 +740,9 @@
 			</div>
 		</section>
 
-		<section class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+		<section
+			class="order-2 md:order-none grid grid-cols-1 gap-4 xl:grid-cols-2"
+		>
 			<div class="rounded-lg bg-white p-5 shadow">
 				<h3 class="text-sm font-semibold text-gray-900">
 					Parcelas nos próximos meses
@@ -830,7 +836,9 @@
 			</div>
 		</section>
 
-		<section class="grid grid-cols-1 gap-4 xl:grid-cols-3">
+		<section
+			class="order-2 md:order-none grid grid-cols-1 gap-4 xl:grid-cols-3"
+		>
 			<div class="rounded-lg bg-white p-4 shadow xl:col-span-2">
 				<h3 class="text-sm font-semibold text-gray-900">
 					Receitas vs despesas
@@ -883,7 +891,9 @@
 			</div>
 		</section>
 
-		<section class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+		<section
+			class="order-2 md:order-none grid grid-cols-1 gap-4 xl:grid-cols-2"
+		>
 			<div class="rounded-lg bg-white p-4 shadow">
 				<h3 class="text-sm font-semibold text-gray-900">Por perfil</h3>
 				<div class="mt-3 space-y-3">

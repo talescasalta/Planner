@@ -17,6 +17,10 @@
 	let mappingNotes = $derived(form?.mapping_notes ?? '');
 	let showConfirm = $derived(form?.success === true && total > 0);
 
+	// Below sm the confirmation bar pins above the bottom navigation.
+	const CONFIRM_BAR =
+		'fixed inset-x-0 bottom-16 z-20 flex items-center justify-between gap-3 border-t border-gray-200 bg-white px-4 py-3 shadow-lg sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none';
+
 	const now = new Date();
 	const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
@@ -572,7 +576,7 @@
 				</div>
 			{/if}
 
-			<div class="overflow-x-auto">
+			<div class="hidden overflow-x-auto sm:block">
 				<table class="min-w-full divide-y divide-gray-200">
 					<thead class="bg-gray-50">
 						<tr>
@@ -599,12 +603,7 @@
 							<tr class={row.duplicate ? 'bg-red-50' : ''}>
 								<td class="px-4 py-2 text-sm text-gray-900">{row.date}</td>
 								<td class="px-4 py-2 text-sm text-gray-900">
-									<span class="block font-medium">{row.clean_description}</span>
-									{#if row.clean_description !== row.description.toUpperCase()}
-										<span class="block max-w-xl truncate text-xs text-gray-500"
-											>{row.description}</span
-										>
-									{/if}
+									{@render previewDescription(row)}
 								</td>
 								<td class="px-4 py-2 text-sm text-gray-900 text-right"
 									>{row.amount.toFixed(2)}</td
@@ -621,6 +620,28 @@
 					</tbody>
 				</table>
 			</div>
+
+			<ul class="divide-y divide-gray-100 sm:hidden">
+				{#each preview as row (row)}
+					<li class="space-y-1 py-3 {row.duplicate ? 'bg-red-50' : ''}">
+						<div class="flex items-start justify-between gap-3 text-sm">
+							<span class="text-xs text-gray-500">{row.date}</span>
+							<span class="font-medium text-gray-900"
+								>{row.amount.toFixed(2)}</span
+							>
+						</div>
+						<div class="text-sm text-gray-900">
+							{@render previewDescription(row)}
+						</div>
+						{#if row.duplicate}
+							<span
+								class="inline-flex rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700"
+								>Duplicata</span
+							>
+						{/if}
+					</li>
+				{/each}
+			</ul>
 
 			<form
 				method="POST"
@@ -676,7 +697,7 @@
 						instantes.
 					</p>
 				{/if}
-				<div class="flex items-center justify-between gap-3">
+				<div class={CONFIRM_BAR}>
 					<a
 						href={resolve('/app/imports')}
 						class={`text-sm ${isConfirming ? 'pointer-events-none text-gray-300' : 'text-gray-600 hover:text-gray-900'}`}
@@ -690,7 +711,7 @@
 							!pastedText.trim() &&
 							!form?.preview_token) ||
 							isConfirming}
-						class="inline-flex min-w-44 items-center justify-center gap-2 rounded-md border border-transparent bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+						class="inline-flex min-h-11 min-w-44 items-center justify-center gap-2 rounded-md border border-transparent bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300 sm:min-h-0"
 					>
 						{#if isConfirming}
 							<span
@@ -703,7 +724,17 @@
 						{/if}
 					</button>
 				</div>
+				<div class="h-16 sm:hidden" aria-hidden="true"></div>
 			</form>
 		</div>
 	{/if}
 </div>
+
+{#snippet previewDescription(row: (typeof preview)[number])}
+	<span class="block font-medium">{row.clean_description}</span>
+	{#if row.clean_description !== row.description.toUpperCase()}
+		<span class="block max-w-xl truncate text-xs text-gray-500"
+			>{row.description}</span
+		>
+	{/if}
+{/snippet}
