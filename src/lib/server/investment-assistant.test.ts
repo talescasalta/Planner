@@ -155,7 +155,8 @@ describe('renderContext', () => {
 				returnRate: 0.0201,
 				cdiRate: 0.0094,
 				percentOfCdi: 214,
-				unpricedCount: 1
+				unpricedCount: 1,
+				divergentCount: 0
 			}
 		],
 		pendingDarf: [{ month: '2026-07', amount: 120.5, dueDate: '2026-08-31' }]

@@ -40,6 +40,7 @@ export interface PortfolioContext {
 		cdiRate: number;
 		percentOfCdi: number | null;
 		unpricedCount: number;
+		divergentCount: number;
 	}[];
 	pendingDarf: { month: string; amount: number; dueDate: string }[];
 }
@@ -76,7 +77,11 @@ export function renderContext(context: PortfolioContext): string {
 					month.percentOfCdi === null
 						? 'n/d'
 						: `${month.percentOfCdi.toFixed(0)}% do CDI`
-				}${month.unpricedCount > 0 ? ` — ${month.unpricedCount} ativo(s) sem preço no período` : ''}`
+				}${month.unpricedCount > 0 ? ` — ${month.unpricedCount} ativo(s) sem preço no período` : ''}${
+					month.divergentCount > 0
+						? ` — ${month.divergentCount} ativo(s) com posição divergente da movimentação (mês não medido para eles)`
+						: ''
+				}`
 			);
 		}
 	}

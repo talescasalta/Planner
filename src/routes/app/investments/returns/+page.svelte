@@ -13,7 +13,8 @@
 		pct,
 		percentOfCdi,
 		signedBrl,
-		signedPct
+		signedPct,
+		signedQuantity
 	} from '$lib/investments/format';
 	import type { PageData } from './$types';
 
@@ -30,6 +31,10 @@
 	let onlyMovers = $state(true);
 
 	let month = $derived(data.months[selectedMonth]);
+	// Two different reasons a holding has no rate this month, both meaning the
+	// same thing for every ranking on this page: do not show a number.
+	const unmeasured = (asset: { unpriced: boolean; divergent: boolean }) =>
+		asset.unpriced || asset.divergent;
 	let rows = $derived.by(() => {
 		if (!month) return [];
 		return month.assets.filter((asset) => {
@@ -37,16 +42,16 @@
 			if (ownerFilter === 'meus' && info?.owner !== data.currentUserId)
 				return false;
 			// A holding that neither moved nor could be measured adds nothing.
-			if (onlyMovers && !asset.unpriced && Math.abs(asset.gain) < 0.005)
+			if (onlyMovers && !unmeasured(asset) && Math.abs(asset.gain) < 0.005)
 				return false;
 			return true;
 		});
 	});
 
-	// Largest gains first, then the unpriced ones at the end.
+	// Largest gains first, then the unmeasured ones at the end.
 	let sortedRows = $derived(
 		[...rows].sort((a, b) => {
-			if (a.unpriced !== b.unpriced) return a.unpriced ? 1 : -1;
+			if (unmeasured(a) !== unmeasured(b)) return unmeasured(a) ? 1 : -1;
 			return b.gain - a.gain;
 		})
 	);
@@ -61,7 +66,7 @@
 	// what moved the patrimony the most. A 12% jump on a small holding wins the
 	// first and barely registers in the second.
 	const TOP = 6;
-	let measured = $derived(rows.filter((row) => !row.unpriced));
+	let measured = $derived(rows.filter((row) => !unmeasured(row)));
 	let byVariation = $derived(
 		[...measured]
 			.filter((row) => row.returnRate !== null)
@@ -229,6 +234,23 @@
 				</div>
 			{/if}
 
+			{#if month.divergentCount > 0}
+				<div
+					class="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"
+				>
+					{month.divergentCount}
+					{month.divergentCount === 1 ? 'ativo ficou' : 'ativos ficaram'} fora da
+					conta porque a posição importada da B3 mostra uma quantidade que a movimentação
+					não explica — normalmente uma compra que só existe no arquivo de negociação,
+					cuja liquidação nunca foi importada. Sem esse evento o aporte entraria como
+					lucro, então o período não é medido. Importe a movimentação do mês da compra
+					em
+					<a class="underline" href={resolve('/app/investments/import')}
+						>Importar</a
+					>.
+				</div>
+			{/if}
+
 			<div class="grid gap-4 lg:grid-cols-2">
 				<div class="rounded-lg border border-gray-200 bg-white p-4">
 					<h2 class="text-sm font-semibold text-gray-900">Quem mais variou</h2>
@@ -359,6 +381,12 @@
 											<span class="block text-[10px] text-amber-700"
 												>sem preço no período</span
 											>
+										{:else if row.divergent}
+											<span class="block text-[10px] text-amber-700">
+												posição divergente{row.unexplainedQuantity
+													? ` (${signedQuantity(row.unexplainedQuantity)} sem movimentação)`
+													: ''}
+											</span>
 										{/if}
 									</td>
 									<td class="py-1 pr-2 text-right text-gray-600"
@@ -371,9 +399,9 @@
 										{row.netFlow === 0 ? '—' : signedBrl(row.netFlow)}
 									</td>
 									<td
-										class={`py-1 pr-2 text-right font-medium ${row.unpriced ? 'text-gray-400' : gainClass(row.gain)}`}
+										class={`py-1 pr-2 text-right font-medium ${unmeasured(row) ? 'text-gray-400' : gainClass(row.gain)}`}
 									>
-										{row.unpriced ? '—' : signedBrl(row.gain)}
+										{unmeasured(row) ? '—' : signedBrl(row.gain)}
 									</td>
 									<td
 										class={`py-1 pr-2 text-right ${gainClass(row.returnRate)}`}
@@ -413,6 +441,8 @@
 							<div class="text-right">
 								{#if row.unpriced}
 									<p class="text-xs text-amber-700">sem preço</p>
+								{:else if row.divergent}
+									<p class="text-xs text-amber-700">posição divergente</p>
 								{:else}
 									<p class={`text-sm font-medium ${gainClass(row.gain)}`}>
 										{signedBrl(row.gain)}

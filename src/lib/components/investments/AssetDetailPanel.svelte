@@ -34,6 +34,7 @@
 			returnRate: number | null;
 			percentOfCdi: number | null;
 			unpriced: boolean;
+			divergent: boolean;
 		}[];
 		events: {
 			date: string;
@@ -278,6 +279,10 @@
 										{#if row.unpriced}
 											<td colspan="3" class="py-1 text-right text-amber-700"
 												>sem preço no período</td
+											>
+										{:else if row.divergent}
+											<td colspan="3" class="py-1 text-right text-amber-700"
+												>posição divergente da movimentação</td
 											>
 										{:else}
 											<td
