@@ -75,8 +75,14 @@ async function buildContext(
 				quantity,
 				value,
 				averageCost: averageCost.get(asset.id) ?? null,
-				monthGain: monthly && !monthly.unpriced ? monthly.gain : null,
-				monthReturn: monthly && !monthly.unpriced ? monthly.returnRate : null
+				monthGain:
+					monthly && !monthly.unpriced && !monthly.divergent
+						? monthly.gain
+						: null,
+				monthReturn:
+					monthly && !monthly.unpriced && !monthly.divergent
+						? monthly.returnRate
+						: null
 			};
 		})
 		.filter((position) => position.quantity > 0)
@@ -93,7 +99,8 @@ async function buildContext(
 			returnRate: month.returnRate,
 			cdiRate: month.cdiRate,
 			percentOfCdi: month.percentOfCdi,
-			unpricedCount: month.unpricedCount
+			unpricedCount: month.unpricedCount,
+			divergentCount: month.divergentCount
 		})),
 		pendingDarf: taxReport.months
 			.filter((month) => month.darfAmount > 0 && !paidMonths.has(month.month))

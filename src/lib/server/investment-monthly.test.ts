@@ -172,6 +172,88 @@ describe('assetMonthReturn', () => {
 		expect(result.gain).toBeCloseTo(30);
 	});
 
+	// The NB0211 case: 184 cotas bought on 26/08 exist only in negociação, the
+	// movimentação of the settlement month was never imported, and the position
+	// file of 12/09 restates the holding at 384. Measuring across that jump
+	// booked R$ 9,3 mil of aportes as a 94% month.
+	const restatedSnapshots = [
+		snapshot({
+			snapshot_date: '2026-08-27',
+			quantity: 200,
+			close_price: 50.71,
+			net_value: 10142
+		}),
+		snapshot({
+			snapshot_date: '2026-09-12',
+			quantity: 384,
+			close_price: 51.33,
+			net_value: 19710.72
+		})
+	];
+	const restatedQuotes = [
+		quote('2026-08-31', 50.79),
+		quote('2026-09-12', 51.33)
+	];
+
+	it('refuses to measure a restatement the movimentação does not explain', () => {
+		const result = assetMonthReturn(
+			'a1',
+			monthWindow('2026-09', '2026-09-17'),
+			restatedSnapshots,
+			[
+				event({
+					event_date: '2026-08-26',
+					event_type: 'Compra',
+					quantity: 184,
+					unit_price: 50.64,
+					total_value: 9317.76,
+					source: 'b3_negociacao'
+				})
+			],
+			restatedQuotes,
+			rates
+		);
+		expect(result.divergent).toBe(true);
+		expect(result.unexplainedQuantity).toBeCloseTo(184);
+		expect(result.unpriced).toBe(false);
+		expect(result.gain).toBe(0);
+		expect(result.returnRate).toBeNull();
+		expect(result.percentOfCdi).toBeNull();
+	});
+
+	it('measures normally once the settlement event arrives', () => {
+		const result = assetMonthReturn(
+			'a1',
+			monthWindow('2026-09', '2026-09-17'),
+			restatedSnapshots,
+			[
+				event({
+					event_date: '2026-08-26',
+					event_type: 'Compra',
+					quantity: 184,
+					unit_price: 50.64,
+					total_value: 9317.76,
+					source: 'b3_negociacao'
+				}),
+				event({
+					event_date: '2026-08-28',
+					quantity: 184,
+					unit_price: 50.64,
+					total_value: 9317.76
+				})
+			],
+			restatedQuotes,
+			rates
+		);
+		expect(result.divergent).toBe(false);
+		expect(result.startQuantity).toBe(384);
+		expect(result.endQuantity).toBe(384);
+		// The purchase settled before the window opened, so it is not a flow of
+		// this month: only the price moved, 50.79 → 51.33.
+		expect(result.netFlow).toBe(0);
+		expect(result.returnRate!).toBeCloseTo(0.0106, 4);
+	});
+
 	it('values a holding that has no quote from its snapshot, so it is not lost', () => {
 		// The real LCA case: B3 prints "-" for the price, so only the value
 		// exists. Reporting it as zero would hide R$ 200k from the reader.
@@ -502,6 +584,56 @@ describe('monthReturn', () => {
 		expect(result.returnRate).toBeCloseTo(0.1);
 		expect(result.unpricedValue).toBeCloseTo(5000);
 		expect(result.unpricedCount).toBe(1);
+	});
+
+	it('keeps a divergent holding out of the rate and counts it apart', () => {
+		const snapshots = [
+			snapshot({ asset_id: 'ok' }),
+			snapshot({
+				asset_id: 'gap',
+				snapshot_date: '2026-07-31',
+				quantity: 200,
+				close_price: 50,
+				net_value: 10000
+			}),
+			snapshot({
+				asset_id: 'gap',
+				snapshot_date: '2026-08-20',
+				quantity: 384,
+				close_price: 50,
+				net_value: 19200
+			})
+		];
+		const quotes = [
+			quote('2026-07-31', 10, 'ok'),
+			quote('2026-08-31', 11, 'ok'),
+			quote('2026-07-31', 50, 'gap'),
+			quote('2026-08-31', 50, 'gap')
+		];
+		const result = monthReturn(
+			['ok', 'gap'],
+			'2026-08',
+			'2026-09-01',
+			snapshots,
+			[
+				event({
+					asset_id: 'gap',
+					event_date: '2026-08-19',
+					event_type: 'Compra',
+					quantity: 184,
+					total_value: 9200,
+					source: 'b3_negociacao'
+				})
+			],
+			quotes,
+			[{ date: '2026-08-15', rate: 1 }]
+		);
+		// Without the exclusion the 184 cotas would enter as R$ 9.200 of gain.
+		expect(result.gain).toBeCloseTo(100);
+		expect(result.returnRate).toBeCloseTo(0.1);
+		expect(result.divergentCount).toBe(1);
+		expect(result.divergentValue).toBeCloseTo(19200);
+		expect(result.unpricedCount).toBe(0);
 	});
 
 	it('reports how far the CDI series actually reaches', () => {

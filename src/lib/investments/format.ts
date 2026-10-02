@@ -29,6 +29,16 @@ export function signedBrl(value: number): string {
 	return brlSigned.format(value);
 }
 
+// "+184" / "-184": a quantity gap reads as a movement, not as a total. Cotas
+// can be fractional (fundos, desdobros), so the decimals are kept when they
+// exist and dropped when they do not.
+export function signedQuantity(value: number): string {
+	return value.toLocaleString('pt-BR', {
+		signDisplay: 'exceptZero',
+		maximumFractionDigits: 8
+	});
+}
+
 // "R$ 1,48 mi" for headline cards; below ten thousand the full number is
 // shorter and clearer, so it falls back.
 export function brlCompact(value: number): string {

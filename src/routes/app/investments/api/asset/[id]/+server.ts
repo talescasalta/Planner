@@ -77,7 +77,8 @@ export const GET: RequestHandler = async ({
 						returnRate: own.returnRate,
 						percentOfCdi: own.percentOfCdi,
 						cdiRate: result.cdiRate,
-						unpriced: own.unpriced
+						unpriced: own.unpriced,
+						divergent: own.divergent
 					}
 				: null;
 		})

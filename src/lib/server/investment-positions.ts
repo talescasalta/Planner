@@ -123,6 +123,11 @@ function latestSnapshotFor(
 	return baseline;
 }
 
+// A position file reports the holding as it stood when B3 generated it, before
+// that same day's settlements are written to it: the posição of 27/08 shows
+// NB0211 at 200 cotas while the movimentação of 27/08 credits the 184 that the
+// posição of 12/09 confirms. So a snapshot dated D is the position at the start
+// of D, and events dated D still count on top of it.
 function countsForDerivation(
 	event: EventRow,
 	assetId: string,
@@ -132,7 +137,7 @@ function countsForDerivation(
 	if (event.asset_id !== assetId || event.source === 'b3_negociacao')
 		return false;
 	if (event.event_date > cutoff) return false;
-	return !baseline || event.event_date > baseline.snapshot_date;
+	return !baseline || event.event_date >= baseline.snapshot_date;
 }
 
 // Nothing here can be held short: the B3 export only ever describes what the
@@ -180,7 +185,9 @@ function quantityBefore(
 	for (const event of events) {
 		if (event.asset_id !== assetId || event.source === 'b3_negociacao')
 			continue;
-		if (event.event_date <= cutoff || event.event_date > future.snapshot_date)
+		// Mirror of countsForDerivation: what the snapshot does not yet contain
+		// must not be undone either, so the day of the snapshot is left alone.
+		if (event.event_date <= cutoff || event.event_date >= future.snapshot_date)
 			continue;
 		const delta = quantityDelta(event);
 		if (delta !== null) quantity -= delta;
@@ -308,13 +315,19 @@ export function reconcile(
 	events: EventRow[],
 	toleranceRatio = 1e-9
 ): ReconciliationDiff[] {
+	// The official number is the position at the start of its day (see
+	// countsForDerivation), so the prediction it is compared against stops at
+	// the close of the day before.
+	const eve = new Date(Date.parse(`${snapshotDate}T00:00:00Z`) - 86400000)
+		.toISOString()
+		.slice(0, 10);
 	const diffs: ReconciliationDiff[] = [];
 	for (const official of officialPositions) {
 		const derived = deriveQuantity(
 			official.asset_id,
 			priorSnapshots,
 			events,
-			snapshotDate
+			eve
 		);
 		if (derived.baselineDate === null) continue; // first snapshot: nothing to compare
 		const delta = official.quantity - derived.quantity;
@@ -425,4 +438,44 @@ export function evolutionSeries(
 		points.push({ date: today, totalValue: computedTotal, source: 'computed' });
 	}
 	return points;
+}
+
+// A position file that restates a holding bigger (or smaller) than the
+// movimentação stream predicts means a trade we never saw — typically a
+// purchase that exists only in negociação, whose settlement month was never
+// imported. The quantity then moves with no flow to explain it, and any return
+// measured across that restatement books the missing purchase as profit: 184
+// cotas of NB0211 appearing between two position files turned R$ 9,3 mil of
+// aportes into a 94% month. So the period is declared unmeasurable instead.
+export function restatementGap(
+	assetId: string,
+	snapshots: SnapshotRow[],
+	events: EventRow[],
+	after: string,
+	until: string,
+	toleranceRatio = 1e-9
+): ReconciliationDiff | null {
+	const inWindow = snapshots
+		.filter(
+			(snapshot) =>
+				snapshot.asset_id === assetId &&
+				snapshot.snapshot_date > after &&
+				snapshot.snapshot_date <= until
+		)
+		.sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
+
+	for (const snapshot of inWindow) {
+		const prior = snapshots.filter(
+			(row) => row.snapshot_date < snapshot.snapshot_date
+		);
+		const [diff] = reconcile(
+			[{ asset_id: assetId, quantity: snapshot.quantity }],
+			snapshot.snapshot_date,
+			prior,
+			events,
+			toleranceRatio
+		);
+		if (diff) return diff;
+	}
+	return null;
 }

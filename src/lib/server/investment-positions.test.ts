@@ -6,6 +6,7 @@ import {
 	latestPrice,
 	monthlyPassiveIncome,
 	reconcile,
+	restatementGap,
 	type EventRow,
 	type SnapshotRow
 } from './investment-positions';
@@ -470,5 +471,106 @@ describe('evolutionSeries', () => {
 		expect(points.at(-1)?.source).toBe('computed');
 		// a1: 100 × 12 quote; a2: 10 × 50 implied from its snapshot.
 		expect(points.at(-1)?.totalValue).toBe(100 * 12 + 10 * 50);
+	});
+});
+
+describe('a position file is the start of its day', () => {
+	// B3's posição of 27/08 reported NB0211 at 200 cotas while the movimentação
+	// of the same 27/08 credited the 184 that the posição of 12/09 confirms.
+	const snapshots = [snapshot({ snapshot_date: '2026-08-27', quantity: 200 })];
+	const sameDay = [
+		event({
+			event_date: '2026-08-27',
+			event_type: 'Transferência - Liquidação',
+			quantity: 184,
+			total_value: 9317.76
+		})
+	];
+
+	it('adds what settled on the day of the snapshot', () => {
+		expect(
+			deriveQuantity('a1', snapshots, sameDay, '2026-09-12').quantity
+		).toBe(384);
+	});
+
+	it('does not undo it when walking back to before the snapshot', () => {
+		expect(
+			deriveQuantity('a1', snapshots, sameDay, '2026-07-31').quantity
+		).toBe(200);
+	});
+
+	it('still reconciles the official number against the day before', () => {
+		const prior = [snapshot({ snapshot_date: '2026-07-31', quantity: 200 })];
+		expect(
+			reconcile(
+				[{ asset_id: 'a1', quantity: 200 }],
+				'2026-08-27',
+				prior,
+				sameDay
+			)
+		).toEqual([]);
+	});
+});
+
+describe('restatementGap', () => {
+	const snapshots = [
+		snapshot({ snapshot_date: '2026-08-27', quantity: 200 }),
+		snapshot({ snapshot_date: '2026-09-12', quantity: 384 })
+	];
+	const trade = event({
+		event_date: '2026-08-26',
+		event_type: 'Compra',
+		quantity: 184,
+		total_value: 9317.76,
+		source: 'b3_negociacao'
+	});
+
+	it('catches a position file that grows with no movimentação behind it', () => {
+		const gap = restatementGap(
+			'a1',
+			snapshots,
+			[trade],
+			'2026-08-31',
+			'2026-09-17'
+		);
+		expect(gap?.delta).toBeCloseTo(184);
+		expect(gap?.derivedQuantity).toBe(200);
+		expect(gap?.officialQuantity).toBe(384);
+	});
+
+	it('stays quiet once the settlement event explains the jump', () => {
+		const settlement = event({
+			event_date: '2026-08-28',
+			event_type: 'Transferência - Liquidação',
+			quantity: 184,
+			total_value: 9317.76
+		});
+		expect(
+			restatementGap(
+				'a1',
+				snapshots,
+				[trade, settlement],
+				'2026-08-31',
+				'2026-09-17'
+			)
+		).toBeNull();
+	});
+
+	it('has nothing to compare on the first position file', () => {
+		expect(
+			restatementGap(
+				'a1',
+				[snapshot({ snapshot_date: '2026-09-12', quantity: 384 })],
+				[],
+				'2026-08-31',
+				'2026-09-17'
+			)
+		).toBeNull();
+	});
+
+	it('only looks at restatements inside the window', () => {
+		expect(
+			restatementGap('a1', snapshots, [trade], '2026-09-30', '2026-10-31')
+		).toBeNull();
 	});
 });

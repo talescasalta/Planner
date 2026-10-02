@@ -14,6 +14,7 @@
 import {
 	classifyEvent,
 	deriveQuantity,
+	restatementGap,
 	type EventRow,
 	type QuoteRow,
 	type SnapshotRow
@@ -185,6 +186,12 @@ export interface AssetMonthReturn {
 	// Set when the asset has no usable opening price (bank-issued fixed income
 	// has no public price at all). Value and flows are still reported.
 	unpriced: boolean;
+	// Set when a position file restated the holding by an amount the
+	// movimentação stream does not explain (see restatementGap). The quantity
+	// jumped with no flow behind it, so the month cannot be measured.
+	divergent: boolean;
+	// The unexplained quantity itself, so the UI can say how big the hole is.
+	unexplainedQuantity: number | null;
 }
 
 export interface MonthReturn {
@@ -204,6 +211,10 @@ export interface MonthReturn {
 	// zero — so the count is what tells the reader something is missing.
 	unpricedValue: number;
 	unpricedCount: number;
+	// Holdings left out because a position file restated them without a
+	// matching movimentação — a missing import, not a missing price.
+	divergentValue: number;
+	divergentCount: number;
 	// Last CDI day actually available inside the window. BCB publishes with a
 	// lag, so a running month is measured against a short benchmark — which
 	// flatters the comparison until the series catches up.
@@ -353,14 +364,23 @@ export function assetMonthReturn(
 	// A position opened during the month starts at zero by definition, so it
 	// needs no opening price — only one at the end.
 	const openedThisMonth = startQuantity === 0;
-	const measurable =
+	const priced =
 		endPrice !== null &&
 		(openedThisMonth ||
 			(startPrice !== null && hasPriceNear(assetId, quotes, window.start)));
+	// A restatement the events do not explain moves the quantity with no flow
+	// behind it, which Modified Dietz would read as pure gain.
+	const gap = restatementGap(
+		assetId,
+		snapshots,
+		events,
+		window.start,
+		window.end
+	);
 	const startValue = startPrice === null ? 0 : startQuantity * startPrice;
 	const endValue = endPrice === null ? 0 : endQuantity * endPrice;
 
-	if (!measurable) {
+	if (!priced || gap !== null) {
 		return {
 			assetId,
 			startQuantity,
@@ -371,7 +391,9 @@ export function assetMonthReturn(
 			gain: 0,
 			returnRate: null,
 			percentOfCdi: null,
-			unpriced: true
+			unpriced: !priced,
+			divergent: gap !== null,
+			unexplainedQuantity: gap?.delta ?? null
 		};
 	}
 
@@ -391,7 +413,9 @@ export function assetMonthReturn(
 		gain,
 		returnRate,
 		percentOfCdi: percentOfCdi(returnRate, cdiRate),
-		unpriced: false
+		unpriced: false,
+		divergent: false,
+		unexplainedQuantity: null
 	};
 }
 
@@ -410,14 +434,19 @@ export function monthReturn(
 		assetMonthReturn(assetId, window, snapshots, events, quotes, cdiRate)
 	);
 
-	const priced = assets.filter((asset) => !asset.unpriced);
+	const priced = assets.filter((asset) => !asset.unpriced && !asset.divergent);
 	// Only holdings actually present in the period count as gaps, and the test
 	// is the position rather than the value: an LCA with no price at all still
 	// has quotas, and is exactly the kind of gap worth declaring. An asset long
 	// gone is not something the reader is missing.
-	const unpriced = assets.filter(
-		(asset) =>
-			asset.unpriced && (asset.startQuantity > 0 || asset.endQuantity > 0)
+	const held = (asset: AssetMonthReturn) =>
+		asset.startQuantity > 0 || asset.endQuantity > 0;
+	const unpriced = assets.filter((asset) => asset.unpriced && held(asset));
+	// A holding with no price is already declared as such; the divergence is
+	// only worth its own banner when the price was there and the position was
+	// not.
+	const divergent = assets.filter(
+		(asset) => asset.divergent && !asset.unpriced && held(asset)
 	);
 	const startValue = priced.reduce((sum, a) => sum + a.startValue, 0);
 	const endValue = priced.reduce((sum, a) => sum + a.endValue, 0);
@@ -442,6 +471,8 @@ export function monthReturn(
 		assets: assets.sort((a, b) => b.gain - a.gain),
 		unpricedValue: unpriced.reduce((sum, asset) => sum + asset.endValue, 0),
 		unpricedCount: unpriced.length,
+		divergentValue: divergent.reduce((sum, asset) => sum + asset.endValue, 0),
+		divergentCount: divergent.length,
 		cdiThrough: lastCdiDate(rates, window)
 	};
 }
