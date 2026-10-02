@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { applyRules, loadActiveRules } from './rules';
+import { reconcileB3Credits } from './b3';
 import { callLlm } from '$lib/server/llm';
 import { classificationResultSchema } from '$lib/schemas/classification';
 import {
@@ -23,6 +24,7 @@ type TxRow = {
 	amount: number;
 	date: string;
 	household_id: string;
+	source_type?: string | null;
 };
 
 type TxUpdate = Database['public']['Tables']['transactions']['Update'];
@@ -133,7 +135,7 @@ export async function classifyTransactions(
 	const { data: transactions } = await supabase
 		.from('transactions')
 		.select(
-			'id, description, clean_description, merchant, amount, date, household_id'
+			'id, description, clean_description, merchant, amount, date, household_id, source_type'
 		)
 		.in('id', transactionIds)
 		.eq('household_id', householdId)
@@ -144,7 +146,7 @@ export async function classifyTransactions(
 	const [{ data: categories }, rules, excludedCategoryIds] = await Promise.all([
 		supabase
 			.from('categories')
-			.select('id, name, parent_id, created_by_user_id')
+			.select('id, name, parent_id, created_by_user_id, financial_treatment')
 			.eq('household_id', householdId)
 			.order('name'),
 		loadActiveRules(supabase, householdId, userId),
@@ -156,8 +158,18 @@ export async function classifyTransactions(
 	const updates: Array<{ id: string; patch: TxUpdate }> = [];
 	const uncategorizedTxs: TxRow[] = [];
 
+	// B3 evidence (a deposit equal to the dividends B3 paid) outranks a generic
+	// rule for the same bare "Crédito em conta".
+	const b3Matches = await reconcileB3Credits(
+		supabase,
+		householdId,
+		transactions,
+		categories ?? []
+	);
+
 	for (const tx of transactions) {
-		const classified = deterministicClassification(tx, rules);
+		const classified =
+			b3Matches.get(tx.id) ?? deterministicClassification(tx, rules);
 		if (classified) {
 			updates.push({ id: tx.id, patch: classified.patch });
 			results.push({
@@ -196,7 +208,29 @@ export async function classifyTransactions(
 	}
 
 	await runUpdates(householdId, updates);
+	await applyTreatmentOverrides(householdId, b3Matches);
 	return results;
+}
+
+// The batch RPC does not carry the financial treatment, so the redemption
+// hint from B3 is written on its own once the classification is saved.
+async function applyTreatmentOverrides(
+	householdId: string,
+	matches: Map<string, { treatmentOverride?: 'investment' }>
+): Promise<void> {
+	const ids = [...matches]
+		.filter(([, match]) => match.treatmentOverride)
+		.map(([id]) => id);
+	if (ids.length === 0) return;
+	const { error } = await supabaseAdmin
+		.from('transactions')
+		.update({ financial_treatment_override: 'investment' })
+		.in('id', ids)
+		.eq('household_id', householdId);
+	if (error) {
+		console.error('[classifier] treatment override failed', error);
+		throw error;
+	}
 }
 
 async function classifyChunkWithLlm(

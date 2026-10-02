@@ -15,7 +15,7 @@
 	} from 'lucide-svelte';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import type { TransactionsPageData } from '$lib/types/page-data';
-	import type { Transaction } from '$lib/types/app';
+	import type { ClassificationSuggestion, Transaction } from '$lib/types/app';
 	import { TREATMENT_OPTIONS, flowKindLabel } from '$lib/financial-labels';
 
 	let { data }: { data: TransactionsPageData } = $props();
@@ -300,29 +300,53 @@
 			: [];
 	}
 
-	// Why an import left a row ignored, or marked it for review as one side of a
-	// transfer between the household's own accounts.
+	function duplicateNote(
+		tx: Transaction,
+		suggestion: ClassificationSuggestion
+	): string | null {
+		if (
+			tx.review_status !== 'ignored' ||
+			!('duplicate_description' in suggestion)
+		) {
+			return null;
+		}
+		return `Possível duplicata de "${suggestion.duplicate_description}" (${suggestion.duplicate_date})`;
+	}
+
+	function transferPairNote(
+		tx: Transaction,
+		suggestion: ClassificationSuggestion
+	): string | null {
+		if (
+			tx.review_status !== 'needs_review' ||
+			!('pair_description' in suggestion)
+		) {
+			return null;
+		}
+		const account = suggestion.pair_account
+			? ` em ${suggestion.pair_account}`
+			: '';
+		return `Parece transferência entre contas (par: "${suggestion.pair_description}"${account})`;
+	}
+
+	// Why an import or a classification left a row ignored or in review: a
+	// repeat of another source, one side of a transfer between the household's
+	// own accounts, or the proceeds of an investment redemption.
 	function reviewNote(tx: Transaction): string | null {
 		const suggestion = tx.classification_suggestion;
 		if (!suggestion || !('reason_code' in suggestion)) return null;
-		if (
-			suggestion.reason_code === 'possible_duplicate' &&
-			tx.review_status === 'ignored' &&
-			'duplicate_description' in suggestion
-		) {
-			return `Possível duplicata de "${suggestion.duplicate_description}" (${suggestion.duplicate_date})`;
+		switch (suggestion.reason_code) {
+			case 'possible_duplicate':
+				return duplicateNote(tx, suggestion);
+			case 'transfer_pair':
+				return transferPairNote(tx, suggestion);
+			case 'b3_redemption_nearby':
+				return tx.review_status === 'needs_review'
+					? 'Parece resgate de investimento: há um resgate na B3 nos últimos dias'
+					: null;
+			default:
+				return null;
 		}
-		if (
-			suggestion.reason_code === 'transfer_pair' &&
-			tx.review_status === 'needs_review' &&
-			'pair_description' in suggestion
-		) {
-			const account = suggestion.pair_account
-				? ` em ${suggestion.pair_account}`
-				: '';
-			return `Parece transferência entre contas (par: "${suggestion.pair_description}"${account})`;
-		}
-		return null;
 	}
 
 	function suggestionLabel(tx: Transaction): string | null {
