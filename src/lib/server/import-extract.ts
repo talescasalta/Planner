@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { callLlm, type LlmContentPart } from '$lib/server/llm';
+import {
+	callLlm,
+	type LlmContentPart,
+	type LlmResponse
+} from '$lib/server/llm';
 import {
 	cleanDescription,
 	installmentGroupKey,
@@ -20,6 +24,8 @@ const extractionSchema = z.object({
 			})
 		)
 		.default([]),
+	opening_balance: z.number().nullable().optional(),
+	closing_balance: z.number().nullable().optional(),
 	confidence: z.number().min(0).max(1).default(0),
 	notes: z.string().optional()
 });
@@ -95,10 +101,21 @@ const SOURCE_TYPE_HINTS: Record<CsvSourceType, string> = {
 		'extrato de vale refeição (benefício como Alelo, VR, Sodexo, Caju, Flash)'
 };
 
+export interface ChunkPart {
+	index: number;
+	total: number;
+}
+
 function buildSystemPrompt(
 	sourceType: CsvSourceType,
-	referenceMonth: string
+	referenceMonth: string,
+	part?: ChunkPart
 ): string {
+	const partRule =
+		part && part.total > 1
+			? `
+- This is part ${part.index} of ${part.total} of the same statement, split on line boundaries. Extract only the transactions that appear in this part and never invent rows for the others.`
+			: '';
 	return `You extract financial transactions from Brazilian statements (screenshots or pasted text) for a personal finance app. The user says this is a ${SOURCE_TYPE_HINTS[sourceType]}. Respond with JSON only.
 
 Rules:
@@ -113,10 +130,13 @@ Rules:
 - Skip entries that are struck through or marked as cancelled/scheduled ("Agendamento cancelado", "agendado") — money did not move.
 - confidence: 0 to 1, below 0.6 if the content is not a statement or is unreadable. Cap it at 0.7 when the direction of any transaction relied only on "icone".
 - notes: short optional note in Portuguese about anything ambiguous.
+- opening_balance / closing_balance: only when the statement prints running balances. opening_balance is the balance immediately BEFORE the oldest transaction in this content; closing_balance is the balance immediately AFTER the newest one. Itaú statements list newest first with "SALDO DO DIA" lines, so read the balance carefully by date. Use null when balances are not shown; never guess.${partRule}
 
 Return JSON in this exact shape:
 {
   "transactions": [{ "date": "YYYY-MM-DD", "description": "...", "amount": -12.34, "direction": "out", "direction_cue": "semantica" }],
+  "opening_balance": null,
+  "closing_balance": null,
   "confidence": 0.0,
   "notes": "optional"
 }`;
@@ -161,50 +181,199 @@ function toParsedRows(
 	return rows;
 }
 
+interface ChunkResult extends ExtractionResult {
+	openingBalance?: number | null;
+	closingBalance?: number | null;
+	failed?: boolean;
+}
+
+const TRUNCATED_NOTE =
+	'A resposta da IA foi cortada; confira se faltam lançamentos.';
+const TRUNCATED_UNREADABLE_NOTE =
+	'A resposta da IA foi cortada antes do fim. Envie o extrato em períodos menores.';
+
+function joinNotes(
+	...parts: Array<string | false | null | undefined>
+): string | undefined {
+	return parts.filter(Boolean).join(' · ') || undefined;
+}
+
+function failedChunk(notes: string): ChunkResult {
+	return { rows: [], confidence: 0, notes, failed: true };
+}
+
+function parseModelJson(raw: string): unknown {
+	return JSON.parse(raw.replace(/```json\s*|\s*```/g, '').trim());
+}
+
+// Throws on JSON that cannot be parsed, which runExtraction reports as a
+// generic failure; a reply cut off by the token limit is the exception and
+// gets its own explanation.
+function chunkFromReply(choice: LlmResponse['choices'][number] | undefined) {
+	const truncated = choice?.finish_reason === 'length';
+	let parsed: unknown;
+	try {
+		parsed = parseModelJson(choice?.message?.content ?? '{}');
+	} catch (error) {
+		if (truncated) return failedChunk(TRUNCATED_UNREADABLE_NOTE);
+		throw error;
+	}
+	const validated = extractionSchema.safeParse(parsed);
+	if (!validated.success) {
+		return failedChunk('A IA não retornou transações em formato válido.');
+	}
+	const result: ChunkResult = {
+		rows: toParsedRows(validated.data.transactions),
+		confidence: truncated
+			? Math.min(validated.data.confidence, 0.6)
+			: validated.data.confidence,
+		notes: joinNotes(validated.data.notes, truncated && TRUNCATED_NOTE),
+		openingBalance: validated.data.opening_balance,
+		closingBalance: validated.data.closing_balance
+	};
+	return result;
+}
+
 async function runExtraction(
 	userContent: string | LlmContentPart[],
 	sourceType: CsvSourceType,
-	referenceMonth: string
-): Promise<ExtractionResult> {
+	referenceMonth: string,
+	part?: ChunkPart
+): Promise<ChunkResult> {
 	try {
 		const response = await callLlm({
 			messages: [
 				{
 					role: 'system',
-					content: buildSystemPrompt(sourceType, referenceMonth)
+					content: buildSystemPrompt(sourceType, referenceMonth, part)
 				},
 				{ role: 'user', content: userContent }
 			],
 			temperature: 0,
-			max_tokens: 4000,
+			max_tokens: 8000,
 			json_mode: true
 		});
-		const raw = response.choices[0]?.message?.content ?? '{}';
-		const parsed = JSON.parse(raw.replace(/```json\s*|\s*```/g, '').trim());
-		const validated = extractionSchema.safeParse(parsed);
-		if (!validated.success) {
-			return {
-				rows: [],
-				confidence: 0,
-				notes: 'A IA não retornou transações em formato válido.'
-			};
-		}
-		return {
-			rows: toParsedRows(validated.data.transactions),
-			confidence: validated.data.confidence,
-			notes: validated.data.notes
-		};
+		return chunkFromReply(response.choices[0]);
 	} catch (error) {
 		console.error('[imports] extraction failed', {
 			model: process.env.LLM_MODEL ?? 'default',
 			error: String(error)
 		});
-		return {
-			rows: [],
-			confidence: 0,
-			notes: 'Falha ao interpretar o conteúdo com IA.'
-		};
+		return failedChunk('Falha ao interpretar o conteúdo com IA.');
 	}
+}
+
+// What the statement says it started and ended with must equal what the
+// extracted rows add up to; a gap means the model dropped (or mis-signed) a
+// line. Null when the statement printed no balances, so nothing is checked.
+export function balanceCheck(
+	rows: Array<{ amount: number }>,
+	opening: number | null | undefined,
+	closing: number | null | undefined
+): { difference: number } | null {
+	if (opening == null || closing == null) return null;
+	const cents = rows.reduce(
+		(sum, row) => sum + Math.round(row.amount * 100),
+		0
+	);
+	const difference =
+		(Math.round(opening * 100) + cents - Math.round(closing * 100)) / 100;
+	return { difference };
+}
+
+const BALANCE_TOLERANCE = 0.01;
+const BALANCE_MISMATCH_CONFIDENCE_CAP = 0.6;
+
+function formatReais(value: number): string {
+	return Math.abs(value).toLocaleString('pt-BR', {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2
+	});
+}
+
+function dateRange(rows: ParsedRow[]) {
+	const dates = rows.map((row) => row.date).sort();
+	return { min: dates[0], max: dates[dates.length - 1] };
+}
+
+// The oldest chunk by date carries the opening balance and the newest the
+// closing one, whatever order the statement lists them in (Itaú is newest
+// first).
+function statementBalanceNote(rows: ParsedRow[], chunks: ChunkResult[]) {
+	const withRows = chunks.filter((chunk) => chunk.rows.length > 0);
+	if (withRows.length === 0) return null;
+	const oldest = [...withRows].sort((a, b) =>
+		dateRange(a.rows).min.localeCompare(dateRange(b.rows).min)
+	)[0];
+	const newest = [...withRows].sort((a, b) =>
+		dateRange(b.rows).max.localeCompare(dateRange(a.rows).max)
+	)[0];
+	const check = balanceCheck(
+		rows,
+		oldest.openingBalance,
+		newest.closingBalance
+	);
+	if (!check || Math.abs(check.difference) <= BALANCE_TOLERANCE) return null;
+	return `Saldo não fecha: diferença de R$ ${formatReais(check.difference)} — pode faltar lançamento ou haver um valor com sinal errado.`;
+}
+
+function mergeChunks(chunks: ChunkResult[]): ExtractionResult {
+	const total = chunks.length;
+	const rows = chunks.flatMap((chunk) => chunk.rows);
+	const succeeded = chunks.filter((chunk) => !chunk.failed);
+	const anyFailed = succeeded.length < total;
+	let confidence = succeeded.length
+		? Math.min(...succeeded.map((chunk) => chunk.confidence))
+		: 0;
+	const notes: string[] = [];
+	chunks.forEach((chunk, index) => {
+		if (total > 1 && chunk.failed) {
+			notes.push(`Parte ${index + 1} de ${total} não pôde ser lida.`);
+		} else if (chunk.notes) {
+			notes.push(chunk.notes);
+		}
+	});
+	if (anyFailed && succeeded.length > 0) confidence = Math.min(confidence, 0.6);
+	// With a part missing the sums cannot match; reporting that would only
+	// repeat the failure already noted.
+	if (!anyFailed) {
+		const balanceNote = statementBalanceNote(rows, chunks);
+		if (balanceNote) {
+			notes.push(balanceNote);
+			confidence = Math.min(confidence, BALANCE_MISMATCH_CONFIDENCE_CAP);
+		}
+	}
+	return {
+		rows,
+		confidence,
+		notes: notes.length > 0 ? notes.join(' · ') : undefined
+	};
+}
+
+// Splits on line boundaries so a transaction is never cut in half. A single
+// line longer than the limit (pathological input) is the only thing split
+// mid-line.
+export function chunkStatementText(
+	input: string | string[],
+	maxChars = 8000
+): string[] {
+	const text = (Array.isArray(input) ? input.join('\n') : input).trim();
+	if (!text) return [];
+	const chunks: string[] = [];
+	let current = '';
+	const flush = () => {
+		if (current) chunks.push(current);
+		current = '';
+	};
+	for (const line of text.split('\n')) {
+		for (let start = 0; start === 0 || start < line.length; start += maxChars) {
+			const piece = line.slice(start, start + maxChars);
+			if (current && current.length + 1 + piece.length > maxChars) flush();
+			current = current ? `${current}\n${piece}` : piece;
+		}
+	}
+	flush();
+	return chunks;
 }
 
 export async function extractRowsFromImage(
@@ -214,27 +383,46 @@ export async function extractRowsFromImage(
 	referenceMonth: string
 ): Promise<ExtractionResult> {
 	const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
-	return runExtraction(
-		[
-			{
-				type: 'text',
-				text: 'Extraia as transações desta imagem de fatura/extrato.'
-			},
-			{ type: 'image_url', image_url: { url: dataUrl } }
-		],
-		sourceType,
-		referenceMonth
-	);
+	return mergeChunks([
+		await runExtraction(
+			[
+				{
+					type: 'text',
+					text: 'Extraia as transações desta imagem de fatura/extrato.'
+				},
+				{ type: 'image_url', image_url: { url: dataUrl } }
+			],
+			sourceType,
+			referenceMonth
+		)
+	]);
 }
 
+// Long statements are read in sequential chunks: one reply can only carry so
+// many transactions, and a reply cut off by the token limit used to discard the
+// whole import. A failed chunk is reported by number while the rest is kept.
 export async function extractRowsFromText(
 	text: string,
 	sourceType: CsvSourceType,
 	referenceMonth: string
 ): Promise<ExtractionResult> {
-	return runExtraction(
-		`Extraia as transações deste conteúdo colado de fatura/extrato:\n\n${text.slice(0, 20000)}`,
-		sourceType,
-		referenceMonth
-	);
+	const parts = chunkStatementText(text);
+	const chunks = parts.length > 0 ? parts : [''];
+	const results: ChunkResult[] = [];
+	for (const [index, chunk] of chunks.entries()) {
+		const part = { index: index + 1, total: chunks.length };
+		const intro =
+			chunks.length > 1
+				? `Extraia as transações do trecho ${part.index} de ${part.total} deste conteúdo de fatura/extrato:`
+				: 'Extraia as transações deste conteúdo colado de fatura/extrato:';
+		results.push(
+			await runExtraction(
+				`${intro}\n\n${chunk}`,
+				sourceType,
+				referenceMonth,
+				part
+			)
+		);
+	}
+	return mergeChunks(results);
 }

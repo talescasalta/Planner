@@ -27,6 +27,10 @@ export const LLM_RATE_LIMIT_MESSAGE =
 
 // Free text bound for anything forwarded into a prompt.
 export const MAX_PROMPT_TEXT_CHARS = 20_000;
+// A statement PDF is read in chunks (see chunkStatementText), so it can be far
+// longer than a pasted snippet; this only bounds how many chunks one preview
+// may spend the LLM budget on.
+export const MAX_PDF_TEXT_CHARS = 120_000;
 export const MAX_QUESTION_CHARS = 2_000;
 
 export function clampText(value: string, max: number): string {
