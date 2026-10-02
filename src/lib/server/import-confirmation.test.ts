@@ -110,6 +110,7 @@ class QueryMock {
 function requestWithImport() {
 	const formData = new FormData();
 	formData.set('reference_month', '2026-05');
+	formData.set('account_name', 'Itaú conta');
 	formData.set('pasted_text', 'date,title,amount\n2026-05-01,Mercado,10');
 	return { formData: async () => formData } as never;
 }
@@ -159,6 +160,7 @@ beforeEach(() => {
 function requestWithPdf() {
 	const formData = new FormData();
 	formData.set('reference_month', '2026-08');
+	formData.set('account_name', 'Itaú conta');
 	formData.set('source_type', 'bank_account');
 	formData.set(
 		'file',
@@ -306,6 +308,7 @@ describe('reference month by source', () => {
 		});
 		const formData = new FormData();
 		formData.set('reference_month', referenceMonth);
+		formData.set('account_name', 'Itaú conta');
 		formData.set('source_type', sourceType);
 		formData.set(
 			'file',
@@ -442,6 +445,7 @@ describe('import confirmation', () => {
 				[
 					expect.objectContaining({
 						household_id: 'household-a',
+						source_name: 'Itaú conta',
 						import_dedup_key: 'dedup-a',
 						review_status: 'needs_review',
 						created_by_user_id: 'user-a'
@@ -452,6 +456,10 @@ describe('import confirmation', () => {
 					ignoreDuplicates: true
 				}
 			]
+		});
+		expect(importRecord.calls).toContainEqual({
+			method: 'insert',
+			args: [expect.objectContaining({ account_name: 'Itaú conta' })]
 		});
 		expect(accessInsert.calls).toContainEqual({
 			method: 'insert',
@@ -827,6 +835,7 @@ describe('reviewed preview token', () => {
 			userId: 'user-a',
 			sourceType: 'bank_account',
 			sourceName: 'itau_extrato.pdf',
+			accountName: 'Itaú conta',
 			rows: [reviewedRow]
 		});
 		const upsert = queueSuccessfulWrites();
@@ -842,7 +851,8 @@ describe('reviewed preview token', () => {
 				[
 					expect.objectContaining({
 						description: 'Mercado',
-						source_type: 'bank_account'
+						source_type: 'bank_account',
+						source_name: 'Itaú conta'
 					})
 				],
 				expect.anything()
@@ -858,12 +868,14 @@ describe('reviewed preview token', () => {
 			userId: 'user-b',
 			sourceType: 'bank_account',
 			sourceName: 'outro.pdf',
+			accountName: 'Conta do outro',
 			rows: [{ ...reviewedRow, description: 'Do outro usuário' }]
 		});
 		queueSuccessfulWrites();
 
 		await confirmAs(
 			requestWithToken({
+				account_name: 'Itaú conta',
 				pasted_text: 'date,title,amount\n2026-05-01,Mercado,10'
 			})
 		);
@@ -879,6 +891,7 @@ describe('reviewed preview token', () => {
 			userId: 'user-a',
 			sourceType: 'bank_account',
 			sourceName: 'itau_extrato.pdf',
+			accountName: 'Itaú conta',
 			rows: [reviewedRow]
 		});
 
@@ -886,10 +899,61 @@ describe('reviewed preview token', () => {
 
 		await confirmAs(
 			requestWithToken({
+				account_name: 'Itaú conta',
 				pasted_text: 'date,title,amount\n2026-05-01,Mercado,10'
 			})
 		);
 
 		expect(resolveImportMapping).toHaveBeenCalledOnce();
+	});
+});
+
+describe('import account', () => {
+	function requestWithoutAccount() {
+		const formData = new FormData();
+		formData.set('reference_month', '2026-05');
+		formData.set('pasted_text', 'date,title,amount\n2026-05-01,Mercado,10');
+		return { formData: async () => formData } as never;
+	}
+
+	it('asks for the account before spending any AI budget on the preview', async () => {
+		const result = (await actions.preview({
+			request: requestWithoutAccount(),
+			locals: previewLocals
+		} as never)) as never as { status: number; message: string };
+
+		expect(result.status).toBe(400);
+		expect(result.message).toContain('de qual conta');
+		expect(resolveImportMapping).not.toHaveBeenCalled();
+		expect(extractRowsFromText).not.toHaveBeenCalled();
+	});
+
+	it('hands the normalized account back with the preview', async () => {
+		const formData = new FormData();
+		formData.set('reference_month', '2026-05');
+		formData.set('account_name', '  Nubank   conta ');
+		formData.set('pasted_text', 'date,title,amount\n2026-05-01,Mercado,10');
+
+		const result = (await actions.preview({
+			request: { formData: async () => formData },
+			locals: previewLocals
+		} as never)) as never as { success: boolean; account_name: string };
+
+		expect(result.success).toBe(true);
+		expect(result.account_name).toBe('Nubank conta');
+	});
+
+	it('refuses to confirm an import with no account and writes nothing', async () => {
+		const result = (await actions.confirm({
+			request: requestWithoutAccount(),
+			locals: {
+				supabase: { from: () => new QueryMock({ data: [], error: null }) },
+				safeGetSession: async () => ({ user: { id: 'user-a' } })
+			}
+		} as never)) as never as { status: number; message: string };
+
+		expect(result.status).toBe(400);
+		expect(result.message).toContain('de qual conta');
+		expect(mockedAdminFrom).not.toHaveBeenCalled();
 	});
 });

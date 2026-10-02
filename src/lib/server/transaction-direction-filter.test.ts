@@ -27,6 +27,9 @@ vi.mock('$lib/server/learning', () => ({
 	learnFromTransactionAdjustment: vi.fn()
 }));
 vi.mock('$lib/server/gabarito', () => ({ filterCategoriesForUser: vi.fn() }));
+vi.mock('$lib/server/accounts', () => ({
+	loadAccountNames: vi.fn(async () => [])
+}));
 vi.mock('$lib/server/categories', () => ({
 	loadCategoriesForUser: vi.fn(),
 	loadUserCategoryExclusions: vi.fn()

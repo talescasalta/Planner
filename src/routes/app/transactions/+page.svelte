@@ -22,6 +22,7 @@
 	let transactions = $derived(data.transactions ?? []);
 	let categories = $derived(data.categories ?? []);
 	let profiles = $derived(data.profiles ?? []);
+	let accounts = $derived(data.accounts ?? []);
 	let monthOptions = $derived(data.monthOptions ?? []);
 	let selectedMonth = $derived(data.selectedMonth ?? '');
 	let filters = $derived(
@@ -80,6 +81,7 @@
 		[
 			selectedMonth,
 			filters.sourceType,
+			filters.account,
 			filters.profileId,
 			filters.categoryId,
 			filters.subcategoryId,
@@ -222,6 +224,7 @@
 		overrides: {
 			month?: string;
 			sourceType?: string;
+			account?: string;
 			categoryId?: string;
 			subcategoryId?: string;
 			status?: string;
@@ -231,39 +234,51 @@
 		} = {}
 	) {
 		const params = new SvelteURLSearchParams();
-		const month = overrides.month ?? selectedMonth;
-		const sourceType = overrides.sourceType ?? filters.sourceType;
-		const profileId = filters.profileId;
-		const categoryId = overrides.categoryId ?? filters.categoryId;
-		const subcategoryId = overrides.subcategoryId ?? filters.subcategoryId;
-		const status = overrides.status ?? filters.status;
-		const direction = overrides.direction ?? filters.direction;
-		const flow = overrides.flow ?? filters.flow;
-		const page = overrides.page ?? data.page;
+		// Whatever the caller does not name keeps the current view's value.
+		const view = {
+			month: selectedMonth,
+			sourceType: filters.sourceType,
+			account: filters.account,
+			categoryId: filters.categoryId,
+			subcategoryId: filters.subcategoryId,
+			status: filters.status,
+			direction: filters.direction,
+			flow: filters.flow,
+			page: data.page,
+			...overrides
+		};
 
-		setQueryParam(params, 'month', month);
-		setQueryParam(params, 'source_type', sourceType, 'all');
-		setQueryParam(params, 'profile_id', profileId);
-		setQueryParam(params, 'category_id', categoryId);
-		setQueryParam(params, 'subcategory_id', subcategoryId);
-		setQueryParam(params, 'status', status, 'all');
-		setQueryParam(params, 'direction', direction, 'all');
-		setQueryParam(params, 'flow', flow, 'all');
-		if (page > 0) params.set('page', String(page));
+		setQueryParam(params, 'month', view.month);
+		setQueryParam(params, 'source_type', view.sourceType, 'all');
+		setQueryParam(params, 'account', view.account, 'all');
+		setQueryParam(params, 'profile_id', filters.profileId);
+		setQueryParam(params, 'category_id', view.categoryId);
+		setQueryParam(params, 'subcategory_id', view.subcategoryId);
+		setQueryParam(params, 'status', view.status, 'all');
+		setQueryParam(params, 'direction', view.direction, 'all');
+		setQueryParam(params, 'flow', view.flow, 'all');
+		if (view.page > 0) params.set('page', String(view.page));
 
 		const query = params.toString();
 		return `/app/transactions${query ? `?${query}` : ''}`;
 	}
 
 	function hasActiveFilters() {
+		const selectors = [
+			filters.sourceType,
+			filters.account,
+			filters.status,
+			filters.direction,
+			filters.flow
+		];
+		const pickers = [
+			filters.profileId,
+			filters.categoryId,
+			filters.subcategoryId
+		];
 		return (
-			(filters.sourceType && filters.sourceType !== 'all') ||
-			!!filters.profileId ||
-			!!filters.categoryId ||
-			!!filters.subcategoryId ||
-			(filters.status && filters.status !== 'all') ||
-			(filters.direction && filters.direction !== 'all') ||
-			(filters.flow && filters.flow !== 'all')
+			selectors.some((value) => value && value !== 'all') ||
+			pickers.some(Boolean)
 		);
 	}
 
@@ -615,7 +630,7 @@
 			</div>
 		</div>
 
-		<div class="grid gap-3 md:grid-cols-6">
+		<div class="grid gap-3 md:grid-cols-4 xl:grid-cols-7">
 			<div>
 				<label
 					for="source-type-filter"
@@ -639,6 +654,31 @@
 					<option value="vale_alimentacao">Vale alimentação</option>
 					<option value="vale_refeicao">Vale refeição</option>
 					<option value="unknown">Sem origem definida</option>
+				</select>
+			</div>
+
+			<div>
+				<label
+					for="account-filter"
+					class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+					>Conta</label
+				>
+				<select
+					id="account-filter"
+					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+					value={filters.account}
+					onchange={(event) => {
+						window.location.href = transactionsHref({
+							account: event.currentTarget.value,
+							page: 0
+						});
+					}}
+				>
+					<option value="all">Todas</option>
+					{#each accounts as account (account.name)}
+						<option value={account.name}>{account.name}</option>
+					{/each}
+					<option value="__none__">Sem conta informada</option>
 				</select>
 			</div>
 
@@ -773,6 +813,7 @@
 					href={resolve(
 						transactionsHref({
 							sourceType: 'all',
+							account: 'all',
 							categoryId: '',
 							subcategoryId: '',
 							status: 'all',
@@ -812,6 +853,7 @@
 					name="source_type_filter"
 					value={filters.sourceType}
 				/>
+				<input type="hidden" name="account_filter" value={filters.account} />
 				<input
 					type="hidden"
 					name="profile_id_filter"
@@ -871,6 +913,7 @@
 				name="source_type_filter"
 				value={filters.sourceType}
 			/>
+			<input type="hidden" name="account_filter" value={filters.account} />
 			<input
 				type="hidden"
 				name="category_id_filter"
@@ -1118,6 +1161,11 @@
 								>
 									{sourceTypeText(tx.source_type)}
 								</span>
+								{#if tx.source_name}
+									<span class="mt-1 block text-xs text-gray-500"
+										>{tx.source_name}</span
+									>
+								{/if}
 							</td>
 
 							<td class="px-4 py-3 text-sm align-top">
@@ -1143,6 +1191,11 @@
 										type="hidden"
 										name="source_type_filter"
 										value={filters.sourceType}
+									/>
+									<input
+										type="hidden"
+										name="account_filter"
+										value={filters.account}
 									/>
 									<input
 										type="hidden"

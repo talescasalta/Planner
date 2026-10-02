@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
-	import type { ActionData } from './$types';
+	import { onMount } from 'svelte';
+	import type { ActionData, PageData } from './$types';
 
-	let { form }: { form: ActionData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
+	let accounts = $derived(data.accounts ?? []);
+	let coverage = $derived(data.coverage ?? { months: [], rows: [] });
 	let preview = $derived(form?.preview ?? []);
 	let total = $derived(form?.total ?? 0);
 	let duplicates = $derived(form?.duplicates ?? 0);
@@ -25,6 +28,68 @@
 	type SourceType =
 		'credit_card' | 'bank_account' | 'vale_alimentacao' | 'vale_refeicao';
 	let sourceType: SourceType = $state('credit_card');
+	let accountName = $state('');
+
+	// The account is remembered per source type so the usual one is already
+	// filled in; storage can be missing or blocked, so every access is guarded.
+	const ACCOUNT_STORAGE_PREFIX = 'planner.import.account.';
+
+	function rememberedAccount(type: SourceType): string {
+		try {
+			return localStorage.getItem(ACCOUNT_STORAGE_PREFIX + type) ?? '';
+		} catch {
+			return '';
+		}
+	}
+
+	function rememberAccount(type: SourceType, name: string) {
+		try {
+			if (name.trim())
+				localStorage.setItem(ACCOUNT_STORAGE_PREFIX + type, name);
+		} catch {
+			// Remembering the account is a convenience only.
+		}
+	}
+
+	function suggestedAccount(type: SourceType): string {
+		const known = accounts.filter((account) => account.source_type === type);
+		return rememberedAccount(type) || (known.length === 1 ? known[0].name : '');
+	}
+
+	function chooseSourceType(type: SourceType) {
+		sourceType = type;
+		accountName = suggestedAccount(type);
+	}
+
+	onMount(() => {
+		if (!accountName) accountName = suggestedAccount(sourceType);
+	});
+
+	const MONTH_NAMES = [
+		'jan',
+		'fev',
+		'mar',
+		'abr',
+		'mai',
+		'jun',
+		'jul',
+		'ago',
+		'set',
+		'out',
+		'nov',
+		'dez'
+	];
+
+	function monthLabel(month: string): string {
+		const [year, monthNumber] = month.split('-');
+		return `${MONTH_NAMES[Number(monthNumber) - 1]}/${year.slice(2)}`;
+	}
+
+	function coverageCellClass(state: string): string {
+		if (state === 'ok') return 'bg-emerald-50 text-emerald-800';
+		if (state === 'gap') return 'bg-rose-100 font-semibold text-rose-800';
+		return 'text-gray-300';
+	}
 
 	const sourceOptions: Array<{
 		value: SourceType;
@@ -195,10 +260,68 @@
 		</div>
 	{/if}
 
+	{#if coverage.rows.length > 0}
+		<section
+			class="rounded-lg bg-white p-4 shadow"
+			aria-labelledby="coverage-title"
+		>
+			<h3 id="coverage-title" class="text-sm font-semibold text-gray-900">
+				Cobertura dos extratos
+			</h3>
+			<p class="mt-1 text-xs text-gray-500">
+				Lançamentos por conta e mês. Um mês em vermelho ("0") não tem
+				lançamentos entre meses que têm: pode ser um extrato não importado.
+			</p>
+			<div class="mt-3 overflow-x-auto">
+				<table class="min-w-full text-center text-xs">
+					<thead>
+						<tr>
+							<th
+								scope="col"
+								class="sticky left-0 bg-white py-1 pr-3 text-left font-medium text-gray-500"
+								>Conta</th
+							>
+							{#each coverage.months as month (month)}
+								<th
+									scope="col"
+									class="whitespace-nowrap px-1.5 py-1 font-medium text-gray-500"
+									>{monthLabel(month)}</th
+								>
+							{/each}
+						</tr>
+					</thead>
+					<tbody>
+						{#each coverage.rows as row (row.account)}
+							<tr>
+								<th
+									scope="row"
+									class="sticky left-0 whitespace-nowrap bg-white py-1 pr-3 text-left font-medium text-gray-900"
+									>{row.account}</th
+								>
+								{#each row.cells as cell (cell.month)}
+									<td class="p-0.5">
+										<span
+											class={`block rounded px-1.5 py-1 ${coverageCellClass(cell.state)}`}
+											title={cell.state === 'gap'
+												? `${row.account}: sem lançamentos em ${monthLabel(cell.month)}`
+												: undefined}
+											>{cell.state === 'none' ? '—' : cell.count}</span
+										>
+									</td>
+								{/each}
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	{/if}
+
 	<form
 		method="POST"
 		action="?/preview"
 		use:enhance
+		onsubmit={() => rememberAccount(sourceType, accountName)}
 		enctype="multipart/form-data"
 		class="bg-white p-6 rounded-lg shadow space-y-4"
 	>
@@ -242,7 +365,7 @@
 							name="source_type"
 							value={option.value}
 							checked={sourceType === option.value}
-							onchange={() => (sourceType = option.value)}
+							onchange={() => chooseSourceType(option.value)}
 							class="mt-0.5"
 						/>
 						<span>
@@ -253,6 +376,32 @@
 					</label>
 				{/each}
 			</div>
+		</div>
+
+		<div>
+			<label for="account_name" class="block text-sm font-medium text-gray-700"
+				>Conta</label
+			>
+			<input
+				id="account_name"
+				name="account_name"
+				list="account-options"
+				bind:value={accountName}
+				required
+				maxlength="60"
+				autocomplete="off"
+				placeholder="Ex.: Itaú conta, Nubank cartão"
+				class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2"
+			/>
+			<datalist id="account-options">
+				{#each accounts as account (account.name)}
+					<option value={account.name}></option>
+				{/each}
+			</datalist>
+			<p class="mt-1 text-xs text-gray-500">
+				Use sempre o mesmo nome para a mesma conta: é ele que alimenta a
+				cobertura dos extratos acima.
+			</p>
 		</div>
 
 		<div>
@@ -463,6 +612,11 @@
 					value={form?.source_type ?? sourceType}
 				/>
 				<input type="hidden" name="pasted_text" value={pastedText} />
+				<input
+					type="hidden"
+					name="account_name"
+					value={form?.account_name ?? accountName}
+				/>
 				<input
 					type="hidden"
 					name="preview_token"

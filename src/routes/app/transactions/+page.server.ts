@@ -15,6 +15,7 @@ import {
 	loadUserCategoryExclusions
 } from '$lib/server/categories';
 import { selectAllStrict } from '$lib/server/supabase-paging';
+import { loadAccountNames } from '$lib/server/accounts';
 import {
 	SPENDING_FLOW_FILTER,
 	financialFlowKind,
@@ -33,6 +34,9 @@ const ALL_FILTERS = 'all';
 // Sentinel used by the bulk-apply bar to leave a field untouched.
 const KEEP = '__keep__';
 const UNKNOWN_SOURCE = 'unknown';
+// Account names are free text, so "rows without an account" needs a value no
+// name can plausibly take.
+const NO_ACCOUNT_FILTER = '__none__';
 const VALID_SOURCE_TYPES = new Set([
 	'credit_card',
 	'bank_account',
@@ -106,8 +110,10 @@ function emptyPage() {
 		profiles: [],
 		monthOptions: [],
 		selectedMonth: '',
+		accounts: [],
 		filters: {
 			sourceType: ALL_FILTERS,
+			account: ALL_FILTERS,
 			profileId: '',
 			categoryId: '',
 			subcategoryId: '',
@@ -150,6 +156,7 @@ function readFilters(url: URL) {
 	const flow = cleanFilter(url.searchParams.get('flow'));
 	return {
 		sourceType: VALID_SOURCE_TYPES.has(sourceType) ? sourceType : ALL_FILTERS,
+		account: cleanFilter(url.searchParams.get('account')) || ALL_FILTERS,
 		profileId,
 		categoryId: cleanFilter(url.searchParams.get('category_id')),
 		subcategoryId: cleanFilter(url.searchParams.get('subcategory_id')),
@@ -168,6 +175,7 @@ const FORWARDED_FILTERS: Array<{
 	absent: string;
 }> = [
 	{ field: 'source_type_filter', param: 'source_type', absent: ALL_FILTERS },
+	{ field: 'account_filter', param: 'account', absent: ALL_FILTERS },
 	{ field: 'profile_id_filter', param: 'profile_id', absent: '' },
 	{ field: 'category_id_filter', param: 'category_id', absent: '' },
 	{
@@ -501,6 +509,23 @@ function bulkClassificationPatch(
 	return patch;
 }
 
+// Where a row came from: the kind of source and the named account.
+function applyOriginFilters(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	query: any,
+	filters: ReturnType<typeof readFilters>
+) {
+	if (filters.sourceType === UNKNOWN_SOURCE)
+		query = query.is('source_type', null);
+	else if (filters.sourceType !== ALL_FILTERS)
+		query = query.eq('source_type', filters.sourceType);
+	if (filters.account === NO_ACCOUNT_FILTER)
+		query = query.is('source_name', null);
+	else if (filters.account !== ALL_FILTERS)
+		query = query.eq('source_name', filters.account);
+	return query;
+}
+
 // Supabase's inferred filter-builder type changes with each select shape; keep
 // this small adapter local until the generated Database type is available.
 function applyTransactionQueryFilters(
@@ -511,10 +536,7 @@ function applyTransactionQueryFilters(
 ) {
 	if (selectedMonth && selectedMonth !== ALL_MONTHS)
 		query = query.eq('reference_month', selectedMonth);
-	if (filters.sourceType === UNKNOWN_SOURCE)
-		query = query.is('source_type', null);
-	else if (filters.sourceType !== ALL_FILTERS)
-		query = query.eq('source_type', filters.sourceType);
+	query = applyOriginFilters(query, filters);
 	if (filters.profileId)
 		query = query.eq('owner_profile_id', filters.profileId);
 	if (filters.categoryId) query = query.eq('category_id', filters.categoryId);
@@ -827,6 +849,7 @@ export const load: PageServerLoad = async ({
 			selectedCategoryIds
 		),
 		profiles: assignmentProfiles,
+		accounts: await loadAccountNames(supabase, householdId),
 		monthOptions,
 		selectedMonth,
 		filters,
