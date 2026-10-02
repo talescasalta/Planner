@@ -13,6 +13,7 @@ export interface PreviewPayload {
 	userId: string;
 	sourceType: CsvSourceType;
 	sourceName: string;
+	accountName: string;
 	rows: ParsedRow[];
 	exp: number;
 }
@@ -65,10 +66,14 @@ export function verifyPreview(
 		const payload = JSON.parse(
 			Buffer.from(body, 'base64url').toString('utf8')
 		) as PreviewPayload;
-		if (payload.v !== 1 || payload.exp <= now || !Array.isArray(payload.rows)) {
-			return null;
-		}
-		return payload;
+		// Tokens issued before the account existed lack it; treating them as
+		// invalid sends the confirm step back to extracting the upload.
+		const valid =
+			payload.v === 1 &&
+			payload.exp > now &&
+			Array.isArray(payload.rows) &&
+			typeof payload.accountName === 'string';
+		return valid ? payload : null;
 	} catch {
 		return null;
 	}

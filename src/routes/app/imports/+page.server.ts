@@ -34,6 +34,11 @@ import {
 	verifyPreview,
 	type PreviewPayload
 } from '$lib/server/import-preview-token';
+import {
+	loadAccountNames,
+	loadCoverage,
+	normalizeAccountName
+} from '$lib/server/accounts';
 
 function readSourceType(formData: FormData): CsvSourceType {
 	const raw = formData.get('source_type');
@@ -64,7 +69,7 @@ const PDF_TOO_LONG_NOTE =
 const UNREADABLE_PDF_MESSAGE =
 	'Não foi possível ler o PDF enviado. Verifique se o arquivo não está protegido por senha ou corrompido.';
 
-interface ResolvedImportInput {
+interface ExtractedImportInput {
 	rows: ParsedRow[];
 	sourceType: CsvSourceType;
 	mappingSource: 'deterministic' | 'llm' | 'vision';
@@ -73,11 +78,21 @@ interface ResolvedImportInput {
 	sourceName: string;
 }
 
+interface ResolvedImportInput extends ExtractedImportInput {
+	accountName: string;
+}
+
+const NO_IMPORT_INPUT_MESSAGE =
+	'Envie um arquivo CSV, uma imagem (print) ou cole o conteúdo da fatura.';
+
+const ACCOUNT_REQUIRED_MESSAGE =
+	'Informe de qual conta é este extrato (ex.: Itaú conta, Nubank cartão).';
+
 function pastedImportText(formData: FormData) {
 	return (formData.get('pasted_text')?.toString() ?? '').trim();
 }
 
-function resolvedFromPreview(payload: PreviewPayload): ResolvedImportInput {
+function resolvedFromPreview(payload: PreviewPayload): ExtractedImportInput {
 	return {
 		rows: payload.rows,
 		sourceType: payload.sourceType,
@@ -96,7 +111,7 @@ async function resolveConfirmInput(
 	referenceMonth: string,
 	userId: string,
 	householdId: string
-) {
+): Promise<{ error: string } | { resolved: ResolvedImportInput }> {
 	const previewed = verifyPreview(
 		formData.get('preview_token')?.toString() ?? ''
 	);
@@ -104,12 +119,20 @@ async function resolveConfirmInput(
 		previewed?.userId === userId && previewed.householdId === householdId
 			? previewed
 			: null;
-	return reviewed
+	const extracted = reviewed
 		? resolvedFromPreview(reviewed)
-		: resolveImportInput(formData, referenceMonth);
+		: await resolveImportInput(formData, referenceMonth);
+	if (!extracted) return { error: NO_IMPORT_INPUT_MESSAGE };
+	if (extracted.rows.length === 0) {
+		return { error: emptyImportRowsMessage(extracted) };
+	}
+	const accountName =
+		reviewed?.accountName ?? normalizeAccountName(formData.get('account_name'));
+	if (!accountName) return { error: ACCOUNT_REQUIRED_MESSAGE };
+	return { resolved: { ...extracted, accountName } };
 }
 
-function emptyImportRowsMessage(resolved: ResolvedImportInput) {
+function emptyImportRowsMessage(resolved: ExtractedImportInput) {
 	return resolved.notes || EMPTY_ROWS_MESSAGE;
 }
 
@@ -117,7 +140,7 @@ function pdfImportFailure(
 	sourceType: CsvSourceType,
 	sourceName: string,
 	notes: string
-): ResolvedImportInput {
+): ExtractedImportInput {
 	return {
 		rows: [],
 		sourceType,
@@ -133,7 +156,7 @@ async function resolvePdfImport(
 	sourceType: CsvSourceType,
 	referenceMonth: string,
 	sourceName: string
-): Promise<ResolvedImportInput> {
+): Promise<ExtractedImportInput> {
 	const extracted = await extractTextFromPdf(buffer);
 	if (!extracted) {
 		return pdfImportFailure(sourceType, sourceName, UNREADABLE_PDF_MESSAGE);
@@ -167,7 +190,7 @@ async function resolveImageImport(
 	sourceType: CsvSourceType,
 	referenceMonth: string,
 	fileName: string
-): Promise<ResolvedImportInput> {
+): Promise<ExtractedImportInput> {
 	if (!detectedImageMimeType) {
 		return {
 			rows: [],
@@ -201,7 +224,7 @@ async function resolveFileImport(
 	file: File,
 	sourceType: CsvSourceType,
 	referenceMonth: string
-): Promise<ResolvedImportInput> {
+): Promise<ExtractedImportInput> {
 	const buffer = Buffer.from(await file.arrayBuffer());
 	if (isPdf(buffer)) {
 		return resolvePdfImport(
@@ -237,7 +260,7 @@ async function resolveFileImport(
 async function resolveImportInput(
 	formData: FormData,
 	referenceMonth: string
-): Promise<ResolvedImportInput | null> {
+): Promise<ExtractedImportInput | null> {
 	const sourceType = readSourceType(formData);
 	const file = formData.get('file') as File | null;
 	const pastedText = pastedImportText(formData)?.slice(
@@ -337,7 +360,8 @@ function buildTransactionInserts(
 	householdId: string,
 	userId: string,
 	sourceType: CsvSourceType,
-	referenceMonth: string
+	referenceMonth: string,
+	accountName: string
 ) {
 	// Derived here rather than trusted from the form, so the month written is
 	// the one the file supports no matter what the confirm posted.
@@ -350,6 +374,7 @@ function buildTransactionInserts(
 		amount: row.amount,
 		currency: row.currency,
 		source_type: sourceType,
+		source_name: accountName,
 		reference_month: resolveReferenceMonth(sourceType, row.date, month),
 		import_dedup_key: row.dedup_key,
 		installment_number: row.installment_number ?? null,
@@ -366,7 +391,8 @@ async function persistImportTransactions(
 	householdId: string,
 	userId: string,
 	sourceType: CsvSourceType,
-	referenceMonth: string
+	referenceMonth: string,
+	accountName: string
 ): Promise<
 	{ insertedTransactions: InsertedTransaction[] } | { errorMessage: string }
 > {
@@ -375,7 +401,8 @@ async function persistImportTransactions(
 		householdId,
 		userId,
 		sourceType,
-		referenceMonth
+		referenceMonth,
+		accountName
 	);
 	const { data, error } = await supabaseAdmin
 		.from('transactions')
@@ -429,14 +456,16 @@ async function importAndClassifyRows(
 	userId: string,
 	sourceType: CsvSourceType,
 	referenceMonth: string,
-	importId: string
+	importId: string,
+	accountName: string
 ): Promise<{ insertedCount: number } | { errorMessage: string }> {
 	const persisted = await persistImportTransactions(
 		rows,
 		householdId,
 		userId,
 		sourceType,
-		referenceMonth
+		referenceMonth,
+		accountName
 	);
 	if ('errorMessage' in persisted) {
 		await markImportFailed(
@@ -522,8 +551,19 @@ function missingAccessRows(
 	return rows;
 }
 
-export const load: PageServerLoad = async () => {
-	return {};
+export const load: PageServerLoad = async ({
+	locals: { supabase, safeGetSession }
+}) => {
+	const empty = { accounts: [], coverage: { months: [], rows: [] } };
+	const { user } = await safeGetSession();
+	const householdId = user ? await getUserHouseholdId(supabase, user.id) : null;
+	if (!householdId) return empty;
+	const currentMonth = new Date().toISOString().slice(0, 7);
+	const [accounts, coverage] = await Promise.all([
+		loadAccountNames(supabase, householdId),
+		loadCoverage(supabase, householdId, currentMonth)
+	]);
+	return { accounts, coverage };
 };
 
 export const actions: Actions = {
@@ -549,6 +589,11 @@ export const actions: Actions = {
 			return fail(429, { success: false, message: LLM_RATE_LIMIT_MESSAGE });
 		}
 
+		const accountName = normalizeAccountName(formData.get('account_name'));
+		if (!accountName) {
+			return fail(400, { success: false, message: ACCOUNT_REQUIRED_MESSAGE });
+		}
+
 		let resolved;
 		try {
 			resolved = await resolveImportInput(formData, referenceMonth);
@@ -560,11 +605,7 @@ export const actions: Actions = {
 			throw error;
 		}
 		if (!resolved) {
-			return fail(400, {
-				success: false,
-				message:
-					'Envie um arquivo CSV, uma imagem (print) ou cole o conteúdo da fatura.'
-			});
+			return fail(400, { success: false, message: NO_IMPORT_INPUT_MESSAGE });
 		}
 		const rows = assignImportDedupKeys(resolved.rows);
 		if (rows.length === 0) {
@@ -593,6 +634,7 @@ export const actions: Actions = {
 			userId: user.id,
 			sourceType: resolved.sourceType,
 			sourceName: resolved.sourceName,
+			accountName,
 			rows: resolved.rows
 		});
 
@@ -619,6 +661,7 @@ export const actions: Actions = {
 			mapping_source: resolved.mappingSource,
 			mapping_confidence: resolved.confidence,
 			mapping_notes: resolved.notes,
+			account_name: accountName,
 			preview_token: previewToken
 		};
 	},
@@ -645,26 +688,17 @@ export const actions: Actions = {
 			});
 		}
 
-		const resolved = await resolveConfirmInput(
+		const input = await resolveConfirmInput(
 			formData,
 			referenceMonth,
 			user.id,
 			householdId
 		);
-		if (!resolved) {
-			return fail(400, {
-				success: false,
-				message:
-					'Envie um arquivo CSV, uma imagem (print) ou cole o conteúdo da fatura.'
-			});
+		if ('error' in input) {
+			return fail(400, { success: false, message: input.error });
 		}
+		const { resolved } = input;
 		const rows = assignImportDedupKeys(resolved.rows);
-		if (rows.length === 0) {
-			return fail(400, {
-				success: false,
-				message: emptyImportRowsMessage(resolved)
-			});
-		}
 
 		const { data: importRecord, error: importError } = await supabaseAdmin
 			.from('transaction_imports')
@@ -673,6 +707,7 @@ export const actions: Actions = {
 				created_by_user_id: user.id,
 				source_filename: resolved.sourceName,
 				source_type: resolved.sourceType,
+				account_name: resolved.accountName,
 				status: 'parsed',
 				row_count: rows.length,
 				reference_month: referenceMonth
@@ -703,7 +738,8 @@ export const actions: Actions = {
 				user.id,
 				resolved.sourceType,
 				referenceMonth,
-				importRecord.id
+				importRecord.id,
+				resolved.accountName
 			);
 			if ('errorMessage' in result)
 				return fail(500, { success: false, message: result.errorMessage });

@@ -10,6 +10,7 @@ const payload = {
 	userId: 'user-a',
 	sourceType: 'bank_account' as const,
 	sourceName: 'itau_extrato.pdf',
+	accountName: 'Itaú conta',
 	rows: [
 		{
 			date: '2026-09-01',
@@ -46,6 +47,12 @@ describe('import preview token', () => {
 		expect(verifyPreview(token.slice(0, -1) + last)).toBeNull();
 		expect(verifyPreview('not-a-token')).toBeNull();
 		expect(verifyPreview('')).toBeNull();
+	});
+
+	it('rejects a token issued without an account', () => {
+		const token = signPreview({ ...payload, accountName: undefined as never });
+
+		expect(verifyPreview(token!)).toBeNull();
 	});
 
 	it('expires after thirty minutes', () => {
