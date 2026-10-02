@@ -6,6 +6,8 @@
 	import CategoriesPage from '../../app/categories/+page.svelte';
 	import RulesPage from '../../app/rules/+page.svelte';
 	import InstallmentsPage from '../../app/installments/+page.svelte';
+	import TransactionsPage from '../../app/transactions/+page.svelte';
+	import { transactionsData } from './transactions-fixture';
 	import {
 		categoriesData,
 		installmentsData,
@@ -13,7 +15,14 @@
 		rulesData
 	} from './fixtures';
 
-	const VIEWS = ['layout', 'sheet', 'categories', 'rules', 'installments'];
+	const VIEWS = [
+		'layout',
+		'sheet',
+		'categories',
+		'rules',
+		'installments',
+		'transactions'
+	];
 	const NOTICE =
 		'Vitrine só visual (apenas em desenvolvimento): os formulários não devem ser enviados.';
 
@@ -44,6 +53,8 @@
 		<RulesPage data={rulesData} />
 	{:else if view === 'installments'}
 		<InstallmentsPage data={installmentsData} />
+	{:else if view === 'transactions'}
+		<TransactionsPage data={transactionsData} />
 	{:else if view === 'sheet'}
 		<button
 			type="button"

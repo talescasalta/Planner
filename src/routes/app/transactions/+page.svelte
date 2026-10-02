@@ -6,14 +6,14 @@
 		ArrowLeftRight,
 		ArrowUp,
 		ArrowUpDown,
-		Ban,
-		Check,
 		Plus,
 		Search,
-		Undo2,
+		SlidersHorizontal,
 		X
 	} from 'lucide-svelte';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
+	import Sheet from '$lib/components/ui/Sheet.svelte';
+	import TransactionStatusActions from '$lib/components/transactions/TransactionStatusActions.svelte';
 	import type { TransactionsPageData } from '$lib/types/page-data';
 	import type { ClassificationSuggestion, Transaction } from '$lib/types/app';
 	import { TREATMENT_OPTIONS, flowKindLabel } from '$lib/financial-labels';
@@ -50,11 +50,15 @@
 	let savingIds = $state<Record<string, boolean>>({});
 	// Per-row error message shown when a row's auto-save is rejected by the server.
 	let rowErrors = $state<Record<string, string>>({});
-	let confirmingId = $state<string | null>(null);
 	let statusChangingId = $state<string | null>(null);
 	// Row currently showing the inline "create subcategory" input instead of the select.
 	let creatingSubcategoryForId = $state<string | null>(null);
 
+	// Below sm the bulk bar pins above the bottom navigation while rows are selected.
+	const BULK_BAR_FIXED =
+		'fixed inset-x-0 bottom-16 z-20 max-h-[60vh] overflow-y-auto rounded-none border-x-0 shadow-lg sm:static sm:max-h-none sm:overflow-visible sm:rounded-lg sm:border-x sm:shadow-sm';
+
+	let filtersOpen = $state(false);
 	let searchTerm = $state('');
 	let amountSort = $state<'none' | 'desc' | 'asc'>('none');
 
@@ -263,7 +267,7 @@
 		return `/app/transactions${query ? `?${query}` : ''}`;
 	}
 
-	function hasActiveFilters() {
+	function activeFilterCount() {
 		const selectors = [
 			filters.sourceType,
 			filters.account,
@@ -277,9 +281,18 @@
 			filters.subcategoryId
 		];
 		return (
-			selectors.some((value) => value && value !== 'all') ||
-			pickers.some(Boolean)
+			selectors.filter((value) => value && value !== 'all').length +
+			pickers.filter(Boolean).length
 		);
+	}
+
+	function hasActiveFilters() {
+		return activeFilterCount() > 0;
+	}
+
+	function filtersButtonLabel() {
+		const count = activeFilterCount();
+		return count > 0 ? `Filtros (${count})` : 'Filtros';
 	}
 
 	function sourceTypeText(value: string | null | undefined) {
@@ -505,29 +518,6 @@
 		};
 	}
 
-	function keepScrollOnConfirm(tx: Transaction) {
-		const scrollY = window.scrollY;
-		confirmingId = tx.id;
-		const previousIndex = transactions.findIndex((t) => t.id === tx.id);
-
-		return async ({
-			result,
-			update
-		}: {
-			result: { type: string };
-			update: () => Promise<void>;
-		}) => {
-			await update();
-			if (result.type === 'success') {
-				retainAfterSave(tx, previousIndex, { review_status: 'confirmed' });
-			}
-			requestAnimationFrame(() => {
-				window.scrollTo({ top: scrollY });
-				confirmingId = null;
-			});
-		};
-	}
-
 	function keepScrollOnStatusChange(
 		tx: Transaction,
 		nextStatus: Transaction['review_status']
@@ -679,208 +669,17 @@
 			</div>
 		</div>
 
-		<div class="grid gap-3 md:grid-cols-4 xl:grid-cols-7">
-			<div>
-				<label
-					for="source-type-filter"
-					class="block text-xs font-medium uppercase tracking-wider text-gray-500"
-					>Origem</label
-				>
-				<select
-					id="source-type-filter"
-					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
-					value={filters.sourceType}
-					onchange={(event) => {
-						window.location.href = transactionsHref({
-							sourceType: event.currentTarget.value,
-							page: 0
-						});
-					}}
-				>
-					<option value="all">Todas</option>
-					<option value="credit_card">Fatura de cartão</option>
-					<option value="bank_account">Conta corrente</option>
-					<option value="vale_alimentacao">Vale alimentação</option>
-					<option value="vale_refeicao">Vale refeição</option>
-					<option value="unknown">Sem origem definida</option>
-				</select>
-			</div>
-
-			<div>
-				<label
-					for="account-filter"
-					class="block text-xs font-medium uppercase tracking-wider text-gray-500"
-					>Conta</label
-				>
-				<select
-					id="account-filter"
-					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
-					value={filters.account}
-					onchange={(event) => {
-						window.location.href = transactionsHref({
-							account: event.currentTarget.value,
-							page: 0
-						});
-					}}
-				>
-					<option value="all">Todas</option>
-					{#each accounts as account (account.name)}
-						<option value={account.name}>{account.name}</option>
-					{/each}
-					<option value="__none__">Sem conta informada</option>
-				</select>
-			</div>
-
-			<div>
-				<label
-					for="category-filter"
-					class="block text-xs font-medium uppercase tracking-wider text-gray-500"
-					>Categoria</label
-				>
-				<select
-					id="category-filter"
-					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
-					value={filters.categoryId}
-					onchange={(event) => {
-						window.location.href = transactionsHref({
-							categoryId: event.currentTarget.value,
-							subcategoryId: '',
-							page: 0
-						});
-					}}
-				>
-					<option value="">Todas</option>
-					{#each parentCategories as cat (cat.id)}
-						<option value={cat.id}>{cat.name}</option>
-					{/each}
-				</select>
-			</div>
-
-			<div>
-				<label
-					for="subcategory-filter"
-					class="block text-xs font-medium uppercase tracking-wider text-gray-500"
-					>Subcategoria</label
-				>
-				<select
-					id="subcategory-filter"
-					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm disabled:bg-gray-100"
-					value={filters.subcategoryId}
-					disabled={!filters.categoryId}
-					onchange={(event) => {
-						window.location.href = transactionsHref({
-							subcategoryId: event.currentTarget.value,
-							page: 0
-						});
-					}}
-				>
-					<option value="">Todas</option>
-					{#each filterSubcategories as sub (sub.id)}
-						<option value={sub.id}>{sub.name}</option>
-					{/each}
-				</select>
-			</div>
-
-			<div>
-				<label
-					for="status-filter"
-					class="block text-xs font-medium uppercase tracking-wider text-gray-500"
-					>Status</label
-				>
-				<select
-					id="status-filter"
-					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
-					value={filters.status}
-					onchange={(event) => {
-						window.location.href = transactionsHref({
-							status: event.currentTarget.value,
-							page: 0
-						});
-					}}
-				>
-					<option value="all">Todos</option>
-					<option value="needs_review">Revisar</option>
-					<option value="confirmed">Confirmado</option>
-					<option value="ignored">Ignorado</option>
-				</select>
-			</div>
-
-			<div>
-				<label
-					for="direction-filter"
-					class="block text-xs font-medium uppercase tracking-wider text-gray-500"
-					>Entrada/Saída</label
-				>
-				<select
-					id="direction-filter"
-					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
-					value={filters.direction}
-					onchange={(event) => {
-						window.location.href = transactionsHref({
-							direction: event.currentTarget.value,
-							page: 0
-						});
-					}}
-				>
-					<option value="all">Todas</option>
-					<option value="in">Só receitas</option>
-					<option value="out">Só despesas</option>
-				</select>
-			</div>
-
-			<div>
-				<label
-					for="flow-filter"
-					class="block text-xs font-medium uppercase tracking-wider text-gray-500"
-					>Fluxo classificado</label
-				>
-				<select
-					id="flow-filter"
-					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
-					value={filters.flow}
-					onchange={(event) => {
-						window.location.href = transactionsHref({
-							flow: event.currentTarget.value,
-							page: 0
-						});
-					}}
-				>
-					<option value="all">Todos</option>
-					<option value="spending">Despesas e reembolsos</option>
-					<option value="expense">Despesas</option>
-					<option value="refund">Reembolsos</option>
-					<option value="income">Receitas</option>
-					<option value="contribution">Aportes</option>
-					<option value="redemption">Resgates</option>
-					<option value="investment_income">Proventos</option>
-					<option value="transfer">Transferências</option>
-				</select>
-			</div>
-
-			<div class="flex items-end">
-				<a
-					href={resolve(
-						transactionsHref({
-							sourceType: 'all',
-							account: 'all',
-							categoryId: '',
-							subcategoryId: '',
-							status: 'all',
-							direction: 'all',
-							flow: 'all',
-							page: 0
-						}) as `/app/transactions?${string}`
-					)}
-					class={`inline-flex w-full justify-center rounded-md border px-3 py-2 text-sm font-medium ${
-						hasActiveFilters()
-							? 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-							: 'pointer-events-none border-gray-200 bg-gray-50 text-gray-400'
-					}`}
-				>
-					Limpar filtros
-				</a>
-			</div>
+		<div class="hidden gap-3 sm:grid md:grid-cols-4 xl:grid-cols-7">
+			{@render filterFields('')}
 		</div>
+		<button
+			type="button"
+			class="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:hidden"
+			onclick={() => (filtersOpen = true)}
+		>
+			<SlidersHorizontal class="h-4 w-4" />
+			{filtersButtonLabel()}
+		</button>
 
 		{#if selectedMonth && selectedMonth !== 'all' && summary.count > 0}
 			<form
@@ -979,7 +778,10 @@
 		</form>
 
 		<div
-			class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm lg:flex-row lg:items-end lg:justify-between"
+			class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm lg:flex-row lg:items-end lg:justify-between {selectedForDelete.length >
+			0
+				? BULK_BAR_FIXED
+				: ''}"
 		>
 			<div class="flex items-center gap-3">
 				<p class="text-sm font-medium text-gray-700">
@@ -1002,7 +804,7 @@
 					action="?/bulk_apply_classification"
 					use:enhance={bulkApplyEnhance}
 					data-sveltekit-noscroll
-					class="flex flex-wrap items-end gap-2"
+					class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end"
 				>
 					{#each selectedForDelete as id (id)}
 						<input type="hidden" name="transaction_id" value={id} />
@@ -1013,7 +815,7 @@
 							name="category_id"
 							bind:value={bulkCategoryId}
 							onchange={() => (bulkSubcategoryId = '')}
-							class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
+							class="mt-1 block w-full rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm sm:w-40"
 						>
 							<option value={KEEP}>— manter —</option>
 							<option value="">Sem categoria</option>
@@ -1028,7 +830,7 @@
 							name="subcategory_id"
 							bind:value={bulkSubcategoryId}
 							disabled={!bulkCategoryRealId}
-							class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
+							class="mt-1 block w-full rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm sm:w-40 disabled:bg-gray-100"
 						>
 							<option value="">Sem subcategoria</option>
 							{#each bulkSubcategories as sub (sub.id)}
@@ -1041,7 +843,7 @@
 						<select
 							name="owner_profile_id"
 							bind:value={bulkOwnerId}
-							class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
+							class="mt-1 block w-full rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm sm:w-40"
 						>
 							<option value={KEEP}>— manter —</option>
 							<option value="">Sem atribuição</option>
@@ -1055,7 +857,7 @@
 						<select
 							name="financial_treatment_override"
 							bind:value={bulkTreatment}
-							class="mt-1 block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
+							class="mt-1 block w-full rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm sm:w-40"
 						>
 							<option value={KEEP}>— manter —</option>
 							<option value="">Automático (herdar)</option>
@@ -1067,7 +869,7 @@
 					<button
 						type="submit"
 						disabled={!bulkHasChange || bulkApplying}
-						class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+						class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300 sm:min-h-0"
 					>
 						{bulkApplying
 							? 'Aplicando...'
@@ -1080,13 +882,13 @@
 				type="submit"
 				form="transactions-delete-selected-form"
 				disabled={selectedForDelete.length === 0}
-				class="self-start px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100 disabled:opacity-50 disabled:hover:bg-red-50 lg:self-auto"
+				class="min-h-11 px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100 disabled:opacity-50 disabled:hover:bg-red-50 sm:min-h-0 sm:self-start lg:self-auto"
 			>
 				Excluir selecionadas
 			</button>
 		</div>
 
-		<div class="overflow-x-auto">
+		<div class="hidden overflow-x-auto sm:block">
 			<table
 				class="min-w-full divide-y divide-gray-200 bg-white shadow rounded-lg"
 			>
@@ -1391,142 +1193,109 @@
 								})}
 							</td>
 							<td class="px-4 py-3 whitespace-nowrap text-sm align-top">
-								{#if tx.financial_flow_kind && tx.financial_flow_kind !== 'excluded'}
-									<span
-										class="mb-1 inline-flex rounded bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700"
-									>
-										{flowKindLabel(tx.financial_flow_kind)}
-									</span>
-								{/if}
-								{#if tx.review_status === 'needs_review'}
-									<div class="flex items-center gap-2">
-										<span
-											class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
-											>Revisar</span
-										>
-										<form
-											method="POST"
-											action="?/confirm_single"
-											use:enhance={() => keepScrollOnConfirm(tx)}
-											data-sveltekit-noscroll
-										>
-											<input
-												type="hidden"
-												name="transaction_id"
-												value={tx.id}
-											/>
-											<button
-												type="submit"
-												disabled={confirmingId === tx.id}
-												class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-green-600 text-white shadow-sm hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-green-300"
-												title="Confirmar transação"
-												aria-label="Confirmar transação"
-											>
-												<Check class="h-4 w-4" />
-											</button>
-										</form>
-										<form
-											method="POST"
-											action="?/ignore_single"
-											use:enhance={() =>
-												keepScrollOnStatusChange(tx, 'ignored')}
-											data-sveltekit-noscroll
-										>
-											<input
-												type="hidden"
-												name="transaction_id"
-												value={tx.id}
-											/>
-											<button
-												type="submit"
-												disabled={statusChangingId === tx.id}
-												class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-gray-600 text-white shadow-sm hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-												title="Ignorar transação nos totais"
-												aria-label="Ignorar transação nos totais"
-											>
-												<Ban class="h-4 w-4" />
-											</button>
-										</form>
-									</div>
-								{:else if tx.review_status === 'confirmed'}
-									<div class="flex items-center gap-2">
-										<span
-											class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
-											>Confirmado</span
-										>
-										<form
-											method="POST"
-											action="?/ignore_single"
-											use:enhance={() =>
-												keepScrollOnStatusChange(tx, 'ignored')}
-											data-sveltekit-noscroll
-										>
-											<input
-												type="hidden"
-												name="transaction_id"
-												value={tx.id}
-											/>
-											<button
-												type="submit"
-												disabled={statusChangingId === tx.id}
-												class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-gray-600 text-white shadow-sm hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-												title="Ignorar transação nos totais"
-												aria-label="Ignorar transação nos totais"
-											>
-												<Ban class="h-4 w-4" />
-											</button>
-										</form>
-									</div>
-								{:else if tx.review_status === 'ignored'}
-									<div class="flex items-center gap-2">
-										<span
-											class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
-											>Ignorado</span
-										>
-										<form
-											method="POST"
-											action="?/restore_single"
-											use:enhance={() =>
-												keepScrollOnStatusChange(tx, 'needs_review')}
-											data-sveltekit-noscroll
-										>
-											<input
-												type="hidden"
-												name="transaction_id"
-												value={tx.id}
-											/>
-											<button
-												type="submit"
-												disabled={statusChangingId === tx.id}
-												class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-gray-700 shadow-sm ring-1 ring-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
-												title="Voltar para revisão"
-												aria-label="Voltar para revisão"
-											>
-												<Undo2 class="h-4 w-4" />
-											</button>
-										</form>
-									</div>
-								{:else}
-									<span
-										class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
-										>{tx.review_status}</span
-									>
-								{/if}
-								{#if reviewNote(tx)}
-									<span class="mt-1 block max-w-56 text-xs text-amber-700"
-										>{reviewNote(tx)}</span
-									>
-								{/if}
-								{#if displayedRetainedIds.has(tx.id)}
-									<span class="mt-1 block text-xs text-gray-400"
-										>Fora do filtro atual</span
-									>
-								{/if}
+								{@render flowBadge(tx)}
+								<TransactionStatusActions
+									{tx}
+									busy={statusChangingId === tx.id}
+									enhanceFor={keepScrollOnStatusChange}
+									size="compact"
+								/>
+								{@render txNotes(tx)}
 							</td>
 						</tr>
 					{/each}
 				</tbody>
 			</table>
+		</div>
+
+		<div class="space-y-3 sm:hidden">
+			<div class="flex items-center justify-between gap-3">
+				<label class="flex min-h-11 items-center gap-2 text-sm text-gray-700">
+					<input
+						type="checkbox"
+						aria-label="Selecionar todas as transações visíveis"
+						checked={visibleTransactions.length > 0 &&
+							selectedForDelete.length === visibleTransactions.length}
+						onchange={(event) => setAllVisible(event.currentTarget.checked)}
+					/>
+					Selecionar todas
+				</label>
+				<label class="flex items-center gap-2 text-sm text-gray-700">
+					Ordenar
+					<select
+						bind:value={amountSort}
+						class="rounded-md border-gray-300 px-2 py-2 text-sm shadow-sm"
+					>
+						<option value="none">Data</option>
+						<option value="desc">Maior valor</option>
+						<option value="asc">Menor valor</option>
+					</select>
+				</label>
+			</div>
+			<ul class="space-y-3">
+				{#each visibleTransactions as tx (tx.id)}
+					<li
+						class="space-y-2 rounded-lg bg-white p-3 shadow {savingIds[tx.id]
+							? 'bg-indigo-50/40'
+							: ''} {displayedRetainedIds.has(tx.id) ? 'opacity-60' : ''}"
+					>
+						<div class="flex items-center gap-1 text-xs text-gray-500">
+							<label
+								class="-m-1 flex min-h-11 min-w-11 items-center justify-center"
+							>
+								<input
+									type="checkbox"
+									value={tx.id}
+									bind:group={selectedForDelete}
+									aria-label="Selecionar transação"
+								/>
+							</label>
+							<span>{tx.date}</span>
+							{#if tx.source_name}
+								<span class="truncate">· {tx.source_name}</span>
+							{/if}
+						</div>
+						<div class="flex items-start justify-between gap-3">
+							<a
+								href={resolve(`/app/transactions/${tx.id}`)}
+								class="line-clamp-2 min-w-0 text-sm font-medium text-gray-900"
+								>{tx.description}</a
+							>
+							<span
+								class="shrink-0 text-sm font-semibold {tx.amount < 0
+									? 'text-red-700'
+									: 'text-green-700'}">{formatCurrency(tx.amount)}</span
+							>
+						</div>
+						<p
+							class="text-sm {suggestionLabel(tx)
+								? 'text-amber-700'
+								: 'text-gray-700'}"
+						>
+							{#if suggestionLabel(tx)}
+								sugerido: {suggestionLabel(tx)}
+							{:else if tx.category_display_name}
+								{tx.category_display_name}{tx.subcategory_display_name
+									? ` · ${tx.subcategory_display_name}`
+									: ''}
+							{:else}
+								Sem categoria
+							{/if}
+						</p>
+						{@render flowBadge(tx)}
+						{@render txNotes(tx)}
+						<TransactionStatusActions
+							{tx}
+							busy={statusChangingId === tx.id}
+							enhanceFor={keepScrollOnStatusChange}
+							size="touch"
+						/>
+					</li>
+				{/each}
+			</ul>
+			{#if selectedForDelete.length > 0}
+				<div class="h-64" aria-hidden="true"></div>
+			{/if}
 		</div>
 
 		<div class="flex items-center justify-between text-sm text-gray-600">
@@ -1556,3 +1325,233 @@
 		</div>
 	{/if}
 </div>
+
+{#snippet filterFields(prefix: string)}
+	<div>
+		<label
+			for="{prefix}source-type-filter"
+			class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+			>Origem</label
+		>
+		<select
+			id="{prefix}source-type-filter"
+			class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+			value={filters.sourceType}
+			onchange={(event) => {
+				window.location.href = transactionsHref({
+					sourceType: event.currentTarget.value,
+					page: 0
+				});
+			}}
+		>
+			<option value="all">Todas</option>
+			<option value="credit_card">Fatura de cartão</option>
+			<option value="bank_account">Conta corrente</option>
+			<option value="vale_alimentacao">Vale alimentação</option>
+			<option value="vale_refeicao">Vale refeição</option>
+			<option value="unknown">Sem origem definida</option>
+		</select>
+	</div>
+
+	<div>
+		<label
+			for="{prefix}account-filter"
+			class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+			>Conta</label
+		>
+		<select
+			id="{prefix}account-filter"
+			class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+			value={filters.account}
+			onchange={(event) => {
+				window.location.href = transactionsHref({
+					account: event.currentTarget.value,
+					page: 0
+				});
+			}}
+		>
+			<option value="all">Todas</option>
+			{#each accounts as account (account.name)}
+				<option value={account.name}>{account.name}</option>
+			{/each}
+			<option value="__none__">Sem conta informada</option>
+		</select>
+	</div>
+
+	<div>
+		<label
+			for="{prefix}category-filter"
+			class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+			>Categoria</label
+		>
+		<select
+			id="{prefix}category-filter"
+			class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+			value={filters.categoryId}
+			onchange={(event) => {
+				window.location.href = transactionsHref({
+					categoryId: event.currentTarget.value,
+					subcategoryId: '',
+					page: 0
+				});
+			}}
+		>
+			<option value="">Todas</option>
+			{#each parentCategories as cat (cat.id)}
+				<option value={cat.id}>{cat.name}</option>
+			{/each}
+		</select>
+	</div>
+
+	<div>
+		<label
+			for="{prefix}subcategory-filter"
+			class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+			>Subcategoria</label
+		>
+		<select
+			id="{prefix}subcategory-filter"
+			class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm disabled:bg-gray-100"
+			value={filters.subcategoryId}
+			disabled={!filters.categoryId}
+			onchange={(event) => {
+				window.location.href = transactionsHref({
+					subcategoryId: event.currentTarget.value,
+					page: 0
+				});
+			}}
+		>
+			<option value="">Todas</option>
+			{#each filterSubcategories as sub (sub.id)}
+				<option value={sub.id}>{sub.name}</option>
+			{/each}
+		</select>
+	</div>
+
+	<div>
+		<label
+			for="{prefix}status-filter"
+			class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+			>Status</label
+		>
+		<select
+			id="{prefix}status-filter"
+			class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+			value={filters.status}
+			onchange={(event) => {
+				window.location.href = transactionsHref({
+					status: event.currentTarget.value,
+					page: 0
+				});
+			}}
+		>
+			<option value="all">Todos</option>
+			<option value="needs_review">Revisar</option>
+			<option value="confirmed">Confirmado</option>
+			<option value="ignored">Ignorado</option>
+		</select>
+	</div>
+
+	<div>
+		<label
+			for="{prefix}direction-filter"
+			class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+			>Entrada/Saída</label
+		>
+		<select
+			id="{prefix}direction-filter"
+			class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+			value={filters.direction}
+			onchange={(event) => {
+				window.location.href = transactionsHref({
+					direction: event.currentTarget.value,
+					page: 0
+				});
+			}}
+		>
+			<option value="all">Todas</option>
+			<option value="in">Só receitas</option>
+			<option value="out">Só despesas</option>
+		</select>
+	</div>
+
+	<div>
+		<label
+			for="{prefix}flow-filter"
+			class="block text-xs font-medium uppercase tracking-wider text-gray-500"
+			>Fluxo classificado</label
+		>
+		<select
+			id="{prefix}flow-filter"
+			class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+			value={filters.flow}
+			onchange={(event) => {
+				window.location.href = transactionsHref({
+					flow: event.currentTarget.value,
+					page: 0
+				});
+			}}
+		>
+			<option value="all">Todos</option>
+			<option value="spending">Despesas e reembolsos</option>
+			<option value="expense">Despesas</option>
+			<option value="refund">Reembolsos</option>
+			<option value="income">Receitas</option>
+			<option value="contribution">Aportes</option>
+			<option value="redemption">Resgates</option>
+			<option value="investment_income">Proventos</option>
+			<option value="transfer">Transferências</option>
+		</select>
+	</div>
+
+	<div class="flex items-end">
+		<a
+			href={resolve(
+				transactionsHref({
+					sourceType: 'all',
+					account: 'all',
+					categoryId: '',
+					subcategoryId: '',
+					status: 'all',
+					direction: 'all',
+					flow: 'all',
+					page: 0
+				}) as `/app/transactions?${string}`
+			)}
+			class={`inline-flex w-full justify-center rounded-md border px-3 py-2 text-sm font-medium ${
+				hasActiveFilters()
+					? 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+					: 'pointer-events-none border-gray-200 bg-gray-50 text-gray-400'
+			}`}
+		>
+			Limpar filtros
+		</a>
+	</div>
+{/snippet}
+
+{#snippet flowBadge(tx: Transaction)}
+	{#if tx.financial_flow_kind && tx.financial_flow_kind !== 'excluded'}
+		<span
+			class="mb-1 inline-flex rounded bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700"
+		>
+			{flowKindLabel(tx.financial_flow_kind)}
+		</span>
+	{/if}
+{/snippet}
+
+{#snippet txNotes(tx: Transaction)}
+	{#if reviewNote(tx)}
+		<span class="mt-1 block max-w-56 text-xs text-amber-700"
+			>{reviewNote(tx)}</span
+		>
+	{/if}
+	{#if displayedRetainedIds.has(tx.id)}
+		<span class="mt-1 block text-xs text-gray-400">Fora do filtro atual</span>
+	{/if}
+{/snippet}
+
+<Sheet open={filtersOpen} title="Filtros" onClose={() => (filtersOpen = false)}>
+	<div class="grid gap-3">
+		{@render filterFields('sheet-')}
+	</div>
+</Sheet>
