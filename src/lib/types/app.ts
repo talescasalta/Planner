@@ -57,6 +57,14 @@ export interface IgnoredClassificationSuggestion {
 	duplicate_date?: string;
 }
 
+/** A deposit recognized from the investments the household holds at B3. */
+export interface B3ClassificationSuggestion {
+	type?: 'b3_match';
+	reason_code: 'b3_income_match' | 'b3_redemption_nearby';
+	event_date?: string;
+	events?: number;
+}
+
 /** An import found the other side of a transfer between the household's own accounts. */
 export interface TransferPairClassificationSuggestion {
 	type?: 'transfer_pair';
@@ -70,7 +78,8 @@ export type ClassificationSuggestion =
 	| SuccessfulClassificationSuggestion
 	| ErrorClassificationSuggestion
 	| IgnoredClassificationSuggestion
-	| TransferPairClassificationSuggestion;
+	| TransferPairClassificationSuggestion
+	| B3ClassificationSuggestion;
 
 export interface Profile {
 	id: string;

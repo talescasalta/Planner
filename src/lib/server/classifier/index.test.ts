@@ -11,7 +11,9 @@ import { buildPersonalGabaritoPromptSection } from '$lib/server/learning';
 import { applyRules, loadActiveRules } from './rules';
 import { classifyTransactions } from './index';
 
-vi.mock('$lib/server/supabase', () => ({ supabaseAdmin: { rpc: vi.fn() } }));
+vi.mock('$lib/server/supabase', () => ({
+	supabaseAdmin: { rpc: vi.fn(), from: vi.fn() }
+}));
 vi.mock('$lib/server/categories', () => ({
 	loadUserCategoryExclusions: vi.fn()
 }));
@@ -53,6 +55,26 @@ class QueryMock {
 		return this;
 	}
 
+	gte(...args: unknown[]) {
+		this.calls.push({ method: 'gte', args });
+		return this;
+	}
+
+	lte(...args: unknown[]) {
+		this.calls.push({ method: 'lte', args });
+		return this;
+	}
+
+	range(...args: unknown[]) {
+		this.calls.push({ method: 'range', args });
+		return this;
+	}
+
+	update(...args: unknown[]) {
+		this.calls.push({ method: 'update', args });
+		return this;
+	}
+
 	then(resolve: (value: QueryResult) => unknown) {
 		return Promise.resolve(resolve(this.result));
 	}
@@ -76,6 +98,7 @@ const mockedLoadExclusions = vi.mocked(loadUserCategoryExclusions);
 
 beforeEach(() => {
 	mockedRpc.mockReset();
+	vi.mocked(supabaseAdmin.from).mockReset();
 	mockedCallLlm.mockReset();
 	mockedApplyRules.mockReset();
 	mockedLoadActiveRules.mockReset();
@@ -614,5 +637,229 @@ describe('classifyTransactions', () => {
 		expect(
 			(mockedRpc.mock.calls[0]?.[1] as { updates: unknown[] }).updates
 		).toHaveLength(31);
+	});
+});
+
+describe('B3 deposits', () => {
+	const renda = {
+		id: 'renda',
+		name: 'Renda',
+		parent_id: null,
+		financial_treatment: null
+	};
+	const proventos = {
+		id: 'proventos',
+		name: 'Investimentos',
+		parent_id: 'renda',
+		financial_treatment: 'investment_income'
+	};
+	const deposit = (overrides: Record<string, unknown> = {}) => ({
+		id: 'tx-a',
+		description: 'Crédito em conta',
+		clean_description: null,
+		merchant: null,
+		amount: 1045.3,
+		date: '2026-07-08',
+		household_id: 'household-a',
+		source_type: 'bank_account',
+		...overrides
+	});
+	const julyPayments = [
+		['2026-07-07', 'Rendimento', 86.4],
+		['2026-07-07', 'Rendimento', 292.9],
+		['2026-07-07', 'Rendimento', 198],
+		['2026-07-07', 'Amortização', 468]
+	].map(([event_date, event_type, total_value]) => ({
+		event_date,
+		event_type,
+		direction: 'credit',
+		total_value,
+		source: 'b3_movimentacao'
+	}));
+
+	function run(
+		transaction: Record<string, unknown>,
+		events: unknown[] | null,
+		categories: unknown[] = [renda, proventos]
+	) {
+		const queries = [
+			new QueryMock({ data: [transaction], error: null }),
+			new QueryMock({ data: categories, error: null })
+		];
+		if (events) queries.push(new QueryMock({ data: events, error: null }));
+		return classifyTransactions(
+			supabaseForQueries(queries),
+			'household-a',
+			['tx-a'],
+			'user-a'
+		);
+	}
+
+	it('files a deposit equal to the dividends B3 paid under investment income', async () => {
+		await expect(run(deposit(), julyPayments)).resolves.toEqual([
+			{ id: 'tx-a', method: 'rule', needs_review: false }
+		]);
+
+		expect(mockedRpc).toHaveBeenCalledWith(
+			'apply_transaction_classification_updates',
+			{
+				updates: [
+					expect.objectContaining({
+						category_id: 'renda',
+						subcategory_id: 'proventos',
+						review_status: 'confirmed',
+						classification_confidence: 0.95,
+						classification_suggestion: expect.objectContaining({
+							reason_code: 'b3_income_match',
+							events: 4
+						})
+					})
+				]
+			}
+		);
+		expect(mockedCallLlm).not.toHaveBeenCalled();
+		expect(mockedApplyRules).not.toHaveBeenCalled();
+	});
+
+	it('suggests a redemption, leaves the category open and marks the row as investment', async () => {
+		const written = new QueryMock({ data: null, error: null });
+		vi.mocked(supabaseAdmin.from).mockReturnValue(written as never);
+		const events = [
+			['2026-08-17', 'Juros', 'credit', 2298.04],
+			['2026-08-17', 'Resgate', 'debit', 29594.7]
+		].map(([event_date, event_type, direction, total_value]) => ({
+			event_date,
+			event_type,
+			direction,
+			total_value,
+			source: 'b3_movimentacao'
+		}));
+
+		await expect(
+			run(deposit({ amount: 31536.24, date: '2026-08-19' }), events)
+		).resolves.toEqual([{ id: 'tx-a', method: 'rule', needs_review: true }]);
+
+		expect(mockedRpc).toHaveBeenCalledWith(
+			'apply_transaction_classification_updates',
+			{
+				updates: [
+					expect.objectContaining({
+						category_id: null,
+						review_status: 'needs_review',
+						classification_suggestion: expect.objectContaining({
+							reason_code: 'b3_redemption_nearby'
+						})
+					})
+				]
+			}
+		);
+		expect(supabaseAdmin.from).toHaveBeenCalledWith('transactions');
+		expect(written.calls).toContainEqual({
+			method: 'update',
+			args: [{ financial_treatment_override: 'investment' }]
+		});
+		expect(written.calls).toContainEqual({
+			method: 'in',
+			args: ['id', ['tx-a']]
+		});
+	});
+
+	it('does not write an override when nothing suggested a redemption', async () => {
+		await run(deposit(), julyPayments);
+
+		expect(supabaseAdmin.from).not.toHaveBeenCalled();
+	});
+
+	it('falls back to the usual rules when no payment adds up', async () => {
+		mockedLoadActiveRules.mockResolvedValue([{}] as never);
+		mockedApplyRules.mockReturnValue({
+			category_id: 'category-a',
+			subcategory_id: null,
+			owner_profile_id: null,
+			confidence: 0.9,
+			reason_code: 'rule_description_contains'
+		});
+
+		await expect(run(deposit({ amount: 0.14 }), julyPayments)).resolves.toEqual(
+			[{ id: 'tx-a', method: 'rule', needs_review: false }]
+		);
+
+		expect(mockedRpc).toHaveBeenCalledWith(
+			'apply_transaction_classification_updates',
+			{
+				updates: [expect.objectContaining({ category_id: 'category-a' })]
+			}
+		);
+	});
+
+	it('does not look up B3 events for deposits with a counterparty', async () => {
+		mockedLoadActiveRules.mockResolvedValue([{}] as never);
+		mockedApplyRules.mockReturnValue({
+			category_id: 'salary',
+			subcategory_id: null,
+			owner_profile_id: null,
+			confidence: 0.9,
+			reason_code: 'rule_description_contains'
+		});
+
+		// No third query is queued: asking for events would throw.
+		await expect(
+			run(
+				deposit({
+					description: 'Transferência Recebida - NU ASSET MANAGEMENT LTDA'
+				}),
+				null
+			)
+		).resolves.toEqual([{ id: 'tx-a', method: 'rule', needs_review: false }]);
+	});
+
+	it('keeps classifying when the B3 lookup fails', async () => {
+		const errorSpy = vi
+			.spyOn(console, 'error')
+			.mockImplementation(() => undefined);
+		mockedLoadActiveRules.mockResolvedValue([{}] as never);
+		mockedApplyRules.mockReturnValue({
+			category_id: 'category-a',
+			subcategory_id: null,
+			owner_profile_id: null,
+			confidence: 0.9,
+			reason_code: 'rule_description_contains'
+		});
+		const queries = [
+			new QueryMock({ data: [deposit()], error: null }),
+			new QueryMock({ data: [renda, proventos], error: null }),
+			new QueryMock({ data: null, error: { message: 'events unavailable' } })
+		];
+
+		await expect(
+			classifyTransactions(
+				supabaseForQueries(queries),
+				'household-a',
+				['tx-a'],
+				'user-a'
+			)
+		).resolves.toEqual([{ id: 'tx-a', method: 'rule', needs_review: false }]);
+		expect(errorSpy).toHaveBeenCalled();
+		errorSpy.mockRestore();
+	});
+
+	it('leaves the deposit alone when the household has no investment income category', async () => {
+		mockedLoadActiveRules.mockResolvedValue([{}] as never);
+		mockedApplyRules.mockReturnValue({
+			category_id: 'category-a',
+			subcategory_id: null,
+			owner_profile_id: null,
+			confidence: 0.9,
+			reason_code: 'rule_description_contains'
+		});
+
+		await run(deposit(), julyPayments, [renda]);
+
+		expect(mockedRpc).toHaveBeenCalledWith(
+			'apply_transaction_classification_updates',
+			{
+				updates: [expect.objectContaining({ category_id: 'category-a' })]
+			}
+		);
 	});
 });
