@@ -300,6 +300,31 @@
 			: [];
 	}
 
+	// Why an import left a row ignored, or marked it for review as one side of a
+	// transfer between the household's own accounts.
+	function reviewNote(tx: Transaction): string | null {
+		const suggestion = tx.classification_suggestion;
+		if (!suggestion || !('reason_code' in suggestion)) return null;
+		if (
+			suggestion.reason_code === 'possible_duplicate' &&
+			tx.review_status === 'ignored' &&
+			'duplicate_description' in suggestion
+		) {
+			return `Possível duplicata de "${suggestion.duplicate_description}" (${suggestion.duplicate_date})`;
+		}
+		if (
+			suggestion.reason_code === 'transfer_pair' &&
+			tx.review_status === 'needs_review' &&
+			'pair_description' in suggestion
+		) {
+			const account = suggestion.pair_account
+				? ` em ${suggestion.pair_account}`
+				: '';
+			return `Parece transferência entre contas (par: "${suggestion.pair_description}"${account})`;
+		}
+		return null;
+	}
+
 	function suggestionLabel(tx: Transaction): string | null {
 		if (tx.classification_display_source !== 'suggestion') return null;
 		const category = tx.category_display_name ?? '';
@@ -1461,6 +1486,11 @@
 									<span
 										class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
 										>{tx.review_status}</span
+									>
+								{/if}
+								{#if reviewNote(tx)}
+									<span class="mt-1 block max-w-56 text-xs text-amber-700"
+										>{reviewNote(tx)}</span
 									>
 								{/if}
 								{#if displayedRetainedIds.has(tx.id)}
