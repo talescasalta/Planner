@@ -51,12 +51,26 @@ export interface IgnoredClassificationSuggestion {
 	type?: 'ignored';
 	ignored_reason: string;
 	reason_code?: string;
+	/** Set for rows imported as ignored because another source already had them. */
+	duplicate_of?: string;
+	duplicate_description?: string;
+	duplicate_date?: string;
+}
+
+/** An import found the other side of a transfer between the household's own accounts. */
+export interface TransferPairClassificationSuggestion {
+	type?: 'transfer_pair';
+	reason_code: 'transfer_pair';
+	pair_id: string;
+	pair_description: string;
+	pair_account?: string | null;
 }
 
 export type ClassificationSuggestion =
 	| SuccessfulClassificationSuggestion
 	| ErrorClassificationSuggestion
-	| IgnoredClassificationSuggestion;
+	| IgnoredClassificationSuggestion
+	| TransferPairClassificationSuggestion;
 
 export interface Profile {
 	id: string;

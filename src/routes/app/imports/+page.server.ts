@@ -10,7 +10,11 @@ import {
 	type ParsedRow
 } from '$lib/server/csv-parser';
 
-type KeyedRow = ParsedRow & { dedup_key: string };
+type KeyedRow = ParsedRow & {
+	dedup_key: string;
+	/** The stored transaction this row seems to repeat from another source. */
+	duplicate_of?: ExistingTransaction;
+};
 import { resolveImportMapping } from '$lib/server/import-mapping';
 import { checkPersistentRateLimit } from '$lib/server/rate-limit';
 import {
@@ -39,6 +43,14 @@ import {
 	loadCoverage,
 	normalizeAccountName
 } from '$lib/server/accounts';
+import {
+	isIsoDate,
+	planImport,
+	shiftIsoDate,
+	type ExistingTransaction
+} from '$lib/server/import-duplicates';
+import { suggestTransferPairs } from '$lib/server/transfer-pairs';
+import { selectAllStrict } from '$lib/server/supabase-paging';
 
 function readSourceType(formData: FormData): CsvSourceType {
 	const raw = formData.get('source_type');
@@ -314,28 +326,34 @@ import { supabaseAdmin } from '$lib/server/supabase';
 import { isHouseholdAdmin } from '$lib/server/access';
 import { fail, redirect } from '@sveltejs/kit';
 
-async function loadExistingKeysForRange(
+// The stored rows around the dates of the import: exact repeats are found by
+// their key and rows another source already recorded by amount, account and a
+// date within a day, so the range is widened by one day on each side.
+async function loadExistingForRange(
 	supabase: SupabaseClient<Database>,
 	householdId: string,
 	rows: KeyedRow[]
-): Promise<Set<string>> {
-	if (rows.length === 0) return new Set();
-	let minDate = rows[0].date;
-	let maxDate = rows[0].date;
-	for (const r of rows) {
-		if (r.date < minDate) minDate = r.date;
-		if (r.date > maxDate) maxDate = r.date;
-	}
-	const { data } = await supabase
-		.from('transactions')
-		.select('import_dedup_key')
-		.eq('household_id', householdId)
-		.gte('date', minDate)
-		.lte('date', maxDate);
-	return new Set(
-		(data ?? [])
-			.map((t) => t.import_dedup_key)
-			.filter((key): key is string => !!key)
+): Promise<ExistingTransaction[]> {
+	const dates = rows
+		.map((row) => row.date)
+		.filter(isIsoDate)
+		.sort();
+	if (dates.length === 0) return [];
+	const from = shiftIsoDate(dates[0], -1);
+	const to = shiftIsoDate(dates[dates.length - 1], 1);
+	return selectAllStrict<ExistingTransaction>(
+		'transações já importadas',
+		(start, end) =>
+			supabase
+				.from('transactions')
+				.select(
+					'id, date, amount, description, clean_description, source_name, source_type, import_dedup_key, review_status'
+				)
+				.eq('household_id', householdId)
+				.gte('date', from)
+				.lte('date', to)
+				.order('id', { ascending: true })
+				.range(start, end)
 	);
 }
 
@@ -354,6 +372,30 @@ type InsertedTransaction = {
 	description: string;
 	clean_description: string | null;
 };
+
+// A row another source already recorded is kept, but out of the totals and
+// marked, so nothing is lost and one click brings it back.
+function importStatusFields(row: KeyedRow) {
+	if (!row.duplicate_of) {
+		return {
+			classification_method: 'imported',
+			review_status: 'needs_review',
+			classification_suggestion: null
+		};
+	}
+	return {
+		classification_method: 'system',
+		review_status: 'ignored',
+		classification_suggestion: {
+			type: 'ignored',
+			ignored_reason: 'possible_duplicate',
+			reason_code: 'possible_duplicate',
+			duplicate_of: row.duplicate_of.id,
+			duplicate_description: row.duplicate_of.description,
+			duplicate_date: row.duplicate_of.date
+		}
+	};
+}
 
 function buildTransactionInserts(
 	rows: KeyedRow[],
@@ -380,8 +422,7 @@ function buildTransactionInserts(
 		installment_number: row.installment_number ?? null,
 		installment_total: row.installment_total ?? null,
 		installment_group_key: row.installment_group_key ?? null,
-		classification_method: 'imported',
-		review_status: 'needs_review',
+		...importStatusFields(row),
 		created_by_user_id: userId
 	}));
 }
@@ -504,6 +545,7 @@ async function importAndClassifyRows(
 				'As transações foram importadas, mas a classificação automática falhou. Tente classificar novamente.'
 		};
 	}
+	await suggestTransferPairs(supabaseAdmin, householdId, insertedIds);
 	return { insertedCount: insertedTransactions.length };
 }
 
@@ -623,10 +665,10 @@ export const actions: Actions = {
 			});
 		}
 
-		const existingKeys = await loadExistingKeysForRange(
-			supabase,
-			householdId,
-			rows
+		const plan = planImport(
+			rows,
+			await loadExistingForRange(supabase, householdId, rows),
+			{ accountName, sourceType: resolved.sourceType }
 		);
 
 		const previewToken = signPreview({
@@ -640,7 +682,7 @@ export const actions: Actions = {
 
 		const previewRows = rows.slice(0, 10).map((r) => ({
 			...r,
-			duplicate: existingKeys.has(r.dedup_key)
+			duplicate: plan.keys.has(r.dedup_key)
 		}));
 
 		const closingMonth = invoiceClosingMonth(
@@ -653,7 +695,8 @@ export const actions: Actions = {
 			success: true,
 			preview: previewRows,
 			total: rows.length,
-			duplicates: rows.filter((r) => existingKeys.has(r.dedup_key)).length,
+			duplicates: plan.exactDuplicates,
+			possible_duplicates: plan.possible,
 			filename: resolved.sourceName,
 			reference_month: closingMonth,
 			reference_month_inferred: closingMonth !== referenceMonth,
@@ -722,13 +765,11 @@ export const actions: Actions = {
 			});
 		}
 
-		const existingKeys = await loadExistingKeysForRange(
-			supabase,
-			householdId,
-			rows
-		);
-
-		const newRows = rows.filter((r) => !existingKeys.has(r.dedup_key));
+		const newRows = planImport(
+			rows,
+			await loadExistingForRange(supabase, householdId, rows),
+			{ accountName: resolved.accountName, sourceType: resolved.sourceType }
+		).toInsert;
 
 		let insertedCount = 0;
 		if (newRows.length > 0) {

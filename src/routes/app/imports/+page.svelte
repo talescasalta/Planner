@@ -10,6 +10,7 @@
 	let preview = $derived(form?.preview ?? []);
 	let total = $derived(form?.total ?? 0);
 	let duplicates = $derived(form?.duplicates ?? 0);
+	let possibleDuplicates = $derived(form?.possible_duplicates ?? []);
 	let filename = $derived(form?.filename ?? '');
 	let mappingSource = $derived(form?.mapping_source ?? 'deterministic');
 	let mappingConfidence = $derived(form?.mapping_confidence ?? 1);
@@ -540,6 +541,34 @@
 					{#if mappingNotes}
 						<span class="block text-amber-800">{mappingNotes}</span>
 					{/if}
+				</div>
+			{/if}
+
+			{#if possibleDuplicates.length > 0}
+				<div
+					class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+				>
+					<p class="font-medium">
+						{possibleDuplicates.length}
+						{possibleDuplicates.length === 1
+							? 'lançamento parece já existir'
+							: 'lançamentos parecem já existir'} por outra fonte
+					</p>
+					<p class="mt-1 text-amber-800">
+						Mesmo valor, conta e data (até um dia de diferença), com texto
+						diferente. Serão importados como <strong>ignorados</strong>: não
+						contam nos totais e você pode reativá-los em Transações.
+					</p>
+					<ul class="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs">
+						{#each possibleDuplicates as item (`${item.date}|${item.description}|${item.amount}`)}
+							<li>
+								{item.date} · {item.description}
+								<span class="text-amber-700"
+									>(já existe: {item.existing_description}, {item.existing_date})</span
+								>
+							</li>
+						{/each}
+					</ul>
 				</div>
 			{/if}
 

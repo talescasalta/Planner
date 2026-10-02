@@ -12,6 +12,7 @@ import {
 	isPdf
 } from '$lib/server/import-extract';
 import { verifyPreview } from '$lib/server/import-preview-token';
+import { suggestTransferPairs } from '$lib/server/transfer-pairs';
 
 vi.mock('@sveltejs/kit', () => ({
 	fail: (status: number, data: Record<string, unknown>) => ({
@@ -45,6 +46,11 @@ vi.mock('$lib/server/import-preview-token', async (importOriginal) => ({
 		typeof import('$lib/server/import-preview-token')
 	>()),
 	verifyPreview: vi.fn()
+}));
+// Pair suggestions read through the same admin client the confirm test
+// queues its own queries on, so they are exercised on their own.
+vi.mock('$lib/server/transfer-pairs', () => ({
+	suggestTransferPairs: vi.fn(async () => 0)
 }));
 vi.mock('$lib/server/import-extract', () => ({
 	detectImageMimeType: vi.fn(),
@@ -102,6 +108,14 @@ class QueryMock {
 		this.calls.push({ method: 'in', args });
 		return this;
 	}
+	order(...args: unknown[]) {
+		this.calls.push({ method: 'order', args });
+		return this;
+	}
+	range(...args: unknown[]) {
+		this.calls.push({ method: 'range', args });
+		return this;
+	}
 	then(resolve: (value: QueryResult) => unknown) {
 		return Promise.resolve(resolve(this.result));
 	}
@@ -127,6 +141,7 @@ beforeEach(() => {
 	vi.mocked(detectMapping).mockReset();
 	vi.mocked(classifyTransactions).mockReset();
 	vi.mocked(verifyPreview).mockReset();
+	vi.mocked(suggestTransferPairs).mockClear();
 	vi.mocked(verifyPreview).mockReturnValue(null);
 	vi.mocked(getUserHouseholdId).mockResolvedValue('household-a');
 	vi.mocked(getHouseholdMembers).mockResolvedValue(['user-a']);
@@ -955,5 +970,136 @@ describe('import account', () => {
 		expect(result.status).toBe(400);
 		expect(result.message).toContain('de qual conta');
 		expect(mockedAdminFrom).not.toHaveBeenCalled();
+	});
+});
+
+describe('cross-source duplicates', () => {
+	// The Pix as the statement PDF wrote it, already stored from a screenshot.
+	const storedElsewhere = {
+		id: 'e1',
+		date: '2026-05-01',
+		amount: -10,
+		description: 'PIX MERCADO 01/05',
+		clean_description: 'PIX MERCADO',
+		source_name: 'Itaú conta',
+		source_type: 'bank_account',
+		import_dedup_key: 'other-source-key',
+		review_status: 'confirmed'
+	};
+
+	function queueWrites() {
+		const queries = [
+			new QueryMock({ data: { id: 'import-a' }, error: null }),
+			new QueryMock({
+				data: [
+					{
+						id: 'tx-a',
+						amount: -10,
+						date: '2026-05-01',
+						description: 'Mercado',
+						clean_description: 'MERCADO'
+					}
+				],
+				error: null
+			}),
+			new QueryMock({ data: null, error: null }),
+			new QueryMock({ data: null, count: 1, error: null }),
+			new QueryMock({ data: null, error: null })
+		];
+		const upsert = queries[1];
+		mockedAdminFrom.mockImplementation(() => {
+			const query = queries.shift();
+			if (!query) throw new Error('Unexpected admin query');
+			return query as never;
+		});
+		return upsert;
+	}
+
+	const sessionLocals = (existing: unknown[]) => ({
+		supabase: {
+			from: () => new QueryMock({ data: existing, error: null })
+		},
+		safeGetSession: async () => ({ user: { id: 'user-a' } })
+	});
+
+	it('imports a row another source already recorded as ignored, with the reason', async () => {
+		const upsert = queueWrites();
+
+		await actions.confirm({
+			request: requestWithImport(),
+			locals: sessionLocals([storedElsewhere])
+		} as never);
+
+		const inserted = (
+			upsert.calls.find((call) => call.method === 'upsert')?.args[0] as Array<
+				Record<string, unknown>
+			>
+		)[0];
+		expect(inserted).toMatchObject({
+			review_status: 'ignored',
+			classification_method: 'system',
+			classification_suggestion: {
+				type: 'ignored',
+				ignored_reason: 'possible_duplicate',
+				duplicate_of: 'e1',
+				duplicate_description: 'PIX MERCADO 01/05'
+			}
+		});
+	});
+
+	it('imports a row with nothing similar stored as a normal row to review', async () => {
+		const upsert = queueWrites();
+
+		await actions.confirm({
+			request: requestWithImport(),
+			locals: sessionLocals([])
+		} as never);
+
+		const inserted = (
+			upsert.calls.find((call) => call.method === 'upsert')?.args[0] as Array<
+				Record<string, unknown>
+			>
+		)[0];
+		expect(inserted).toMatchObject({
+			review_status: 'needs_review',
+			classification_method: 'imported',
+			classification_suggestion: null
+		});
+	});
+
+	it('suggests transfers between the own accounts once the rows are written', async () => {
+		queueWrites();
+
+		await actions.confirm({
+			request: requestWithImport(),
+			locals: sessionLocals([])
+		} as never);
+
+		expect(suggestTransferPairs).toHaveBeenCalledWith(
+			supabaseAdmin,
+			'household-a',
+			['tx-a']
+		);
+	});
+
+	it('lists the possible duplicates in the preview without hiding them', async () => {
+		const result = (await actions.preview({
+			request: requestWithImport(),
+			locals: sessionLocals([storedElsewhere])
+		} as never)) as never as {
+			duplicates: number;
+			possible_duplicates: Array<{
+				description: string;
+				existing_description: string;
+			}>;
+		};
+
+		expect(result.duplicates).toBe(0);
+		expect(result.possible_duplicates).toEqual([
+			expect.objectContaining({
+				description: 'Mercado',
+				existing_description: 'PIX MERCADO 01/05'
+			})
+		]);
 	});
 });

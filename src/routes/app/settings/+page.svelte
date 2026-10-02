@@ -1,7 +1,12 @@
 <script lang="ts">
-	let { data } = $props();
+	import { enhance } from '$app/forms';
+
+	let { data, form } = $props();
 	let user = $derived(data.user);
 	let profile = $derived(data.profile);
+	let ownNames = $derived((data.ownNames ?? []).join('\n'));
+	let saving = $state(false);
+	const NAMES_PLACEHOLDER = 'Maria Souza\nMaria S';
 </script>
 
 <div class="max-w-2xl mx-auto space-y-6">
@@ -20,6 +25,61 @@
 			</p>
 		</div>
 	</div>
+
+	<form
+		method="POST"
+		action="?/update_own_names"
+		use:enhance={() => {
+			saving = true;
+			return async ({ update }) => {
+				await update({ reset: false });
+				saving = false;
+			};
+		}}
+		class="bg-white p-6 rounded-lg shadow space-y-3"
+	>
+		<h3 class="text-sm font-semibold text-gray-900">
+			Nomes nas suas transferências
+		</h3>
+		<p class="text-sm text-gray-600">
+			Como o nome da sua casa aparece nos extratos, um por linha. Ao importar,
+			um Pix com um desses nomes e o mesmo valor, de sinal oposto, em outra
+			conta sua é sugerido como transferência entre contas.
+		</p>
+		<div>
+			<label for="own_names" class="block text-sm font-medium text-gray-700"
+				>Nomes (um por linha)</label
+			>
+			<textarea
+				id="own_names"
+				name="own_names"
+				rows="4"
+				placeholder={NAMES_PLACEHOLDER}
+				class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+				>{ownNames}</textarea
+			>
+			<p class="mt-1 text-xs text-gray-500">
+				Inclua a forma abreviada que o banco usa: o Nubank mostra o nome
+				completo e o Itaú corta ("Tales C"). Deixe vazio para não sugerir
+				transferências.
+			</p>
+		</div>
+		{#if form?.message}
+			<p
+				class={`text-sm ${form.success ? 'text-green-700' : 'text-red-700'}`}
+				role="status"
+			>
+				{form.message}
+			</p>
+		{/if}
+		<button
+			type="submit"
+			disabled={saving}
+			class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+		>
+			{saving ? 'Salvando...' : 'Salvar nomes'}
+		</button>
+	</form>
 
 	<div class="bg-white p-6 rounded-lg shadow space-y-4">
 		<h3 class="text-sm font-semibold text-gray-900">Grupos</h3>
