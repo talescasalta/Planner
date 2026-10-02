@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import type { TransactionDetailPageData } from '$lib/types/page-data';
 	import type { ActionData } from './$types';
+	import { TREATMENT_OPTIONS } from '$lib/financial-labels';
 
 	let { data, form }: { data: TransactionDetailPageData; form: ActionData } =
 		$props();
@@ -262,21 +263,13 @@
 				<option value="" selected={!tx.financial_treatment_override}
 					>Automático (herdar)</option
 				>
-				<option
-					value="operating"
-					selected={tx.financial_treatment_override === 'operating'}
-					>Operacional</option
-				>
-				<option
-					value="investment"
-					selected={tx.financial_treatment_override === 'investment'}
-					>Investimento</option
-				>
-				<option
-					value="transfer"
-					selected={tx.financial_treatment_override === 'transfer'}
-					>Transferência</option
-				>
+				{#each TREATMENT_OPTIONS as option (option.value)}
+					<option
+						value={option.value}
+						selected={tx.financial_treatment_override === option.value}
+						>{option.label}</option
+					>
+				{/each}
 			</select>
 			<p class="mt-1 text-xs text-gray-500">
 				Automático respeita transferência legada, subcategoria e categoria.

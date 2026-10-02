@@ -74,9 +74,17 @@ beforeEach(() => {
 
 describe('dashboard insights action', () => {
 	it('excludes investments across dashboard metrics and AI facts, retaining their separate totals', async () => {
+		const treatments: Record<string, string> = {
+			Salário: 'income',
+			Moradia: 'operating',
+			Investimentos: 'investment',
+			Dividendos: 'investment_income'
+		};
 		const rows = [
 			{ amount: 10000, name: 'Salário' },
 			{ amount: -6000, name: 'Moradia' },
+			{ amount: 1000, name: 'Moradia' },
+			{ amount: 2000, name: 'Dividendos' },
 			{ amount: -3000, name: 'Investimentos' },
 			{ amount: 500, name: 'Investimentos' }
 		].map(({ amount, name }, index) => ({
@@ -92,8 +100,7 @@ describe('dashboard insights action', () => {
 				id: name,
 				name,
 				parent_id: null,
-				financial_treatment:
-					name === 'Investimentos' ? 'investment' : 'operating'
+				financial_treatment: treatments[name]
 			},
 			subcategory: null,
 			owner_profile: null
@@ -113,33 +120,38 @@ describe('dashboard insights action', () => {
 			fixedVsVariable: { variableTotal: number };
 			monthlyTrend: { expenses: number }[];
 		};
+		// The refund nets against Moradia; dividends never reach income.
 		expect(result.summary).toMatchObject({
 			credits: 10000,
-			expenses: 6000,
-			balance: 4000
+			expenses: 5000,
+			refunds: 1000,
+			balance: 5000
 		});
 		expect(result.savingsHistory).toEqual([
-			{ month: '2026-07', credits: 10000, expenses: 6000, rate: 0.4 }
+			{ month: '2026-07', credits: 10000, expenses: 5000, rate: 0.5 }
 		]);
 		expect(result.investmentFlows).toEqual({
 			contributions: 3000,
 			redemptions: 500,
-			net: 2500
+			investmentIncome: 2000,
+			net: 2500,
+			newCapital: 500
 		});
-		expect(result.totalExpenses).toBe(6000);
+		expect(result.totalExpenses).toBe(5000);
 		expect(result.fixedVsVariable.variableTotal).toBe(6000);
-		expect(result.monthlyTrend[0].expenses).toBe(6000);
+		expect(result.monthlyTrend[0].expenses).toBe(5000);
 		vi.mocked(callLlm).mockResolvedValue({
-			choices: [{ message: { content: '{"insights":["Poupança de 40%."]}' } }]
+			choices: [{ message: { content: '{"insights":["Poupança de 50%."]}' } }]
 		} as never);
 		await actions.insights(event(requestForMonth('2026-07')));
 		const facts = JSON.parse(
 			String(vi.mocked(callLlm).mock.calls[0][0].messages[1].content)
 		);
 		expect(facts).toMatchObject({
-			receitas_total: 10000,
-			despesas_total: 6000,
-			taxa_poupanca_pct: 40
+			renda_do_trabalho_total: 10000,
+			despesas_liquidas_total: 5000,
+			reembolsos_descontados: 1000,
+			taxa_poupanca_pct: 50
 		});
 	});
 	it('rejects unauthenticated insight generation before reading financial data', async () => {

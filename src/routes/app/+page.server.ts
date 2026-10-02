@@ -16,7 +16,8 @@ import { callLlm } from '$lib/server/llm';
 import {
 	dashboardFlowKind,
 	investmentFlowTotals,
-	summarizeFinancialFlows
+	summarizeFinancialFlows,
+	type FlowKind
 } from '$lib/server/dashboard-flows';
 
 const NO_MONTH = 'Sem mes';
@@ -70,6 +71,7 @@ type TransactionRow = {
 		  }>
 		| null;
 	owner_profile: { id: string | null; name: string | null } | null;
+	flow: FlowKind;
 };
 
 type CategoryRef = { id: string; name: string };
@@ -169,22 +171,28 @@ function rowMonth(row: Pick<TransactionRow, 'reference_month' | 'date'>) {
 	return row.reference_month || monthFromDate(row.date);
 }
 
-function expenseValue(amount: number) {
-	return amount < 0 ? Math.abs(amount) : 0;
+type FlowRow = Pick<TransactionRow, 'amount' | 'flow'>;
+
+// Refunds come back negative so every aggregate nets them against the spending
+// they reimburse instead of counting them as income.
+function expenseValue(row: FlowRow) {
+	const amount = Number(row.amount);
+	if (row.flow === 'expense') return Math.abs(amount);
+	if (row.flow === 'refund') return -amount;
+	return 0;
 }
 
-function creditValue(amount: number) {
-	return amount > 0 ? amount : 0;
+// Only earned income: refunds, dividends and transfers are not what the
+// household lives on.
+function creditValue(row: FlowRow) {
+	return row.flow === 'income' ? Number(row.amount) : 0;
 }
 
 function summarize(
 	rows: TransactionRow[],
 	categoryMap: CategoryMap = new Map()
 ) {
-	const operatingRows = rows.filter((row) => {
-		const kind = dashboardFlowKind(row, categoryMap);
-		return kind === 'income' || kind === 'expense';
-	});
+	const operatingRows = rows.filter(countsTowardTotals);
 	const totals = summarizeFinancialFlows(operatingRows, categoryMap);
 	const needsReview = operatingRows.filter(
 		(row) => row.review_status === 'needs_review'
@@ -192,11 +200,13 @@ function summarize(
 	const uncategorized = operatingRows.filter(
 		(row) => !row.category_id && Number(row.amount) < 0
 	).length;
+	const expenses = totals.expense - totals.refund;
 	return {
 		count: totals.count,
-		expenses: totals.expense,
+		expenses,
+		refunds: totals.refund,
 		credits: totals.income,
-		balance: totals.income - totals.expense,
+		balance: totals.income - expenses,
 		needsReview,
 		uncategorized
 	};
@@ -233,9 +243,8 @@ function hierarchyChild(node: HierarchyNode, id: string, name: string) {
 function buildHierarchy(rows: TransactionRow[], categoryMap: CategoryMap) {
 	const map = new Map<string, HierarchyNode>();
 	for (const tx of rows) {
-		const amount = Number(tx.amount);
-		if (!(amount < 0)) continue;
-		const expense = Math.abs(amount);
+		const expense = expenseValue(tx);
+		if (expense === 0) continue;
 		const { category, subcategory } = resolveTaxonomy(tx, categoryMap);
 		const catId = category?.id ?? UNCATEGORIZED_ID;
 		const catName = category?.name ?? 'Sem categoria';
@@ -246,10 +255,15 @@ function buildHierarchy(rows: TransactionRow[], categoryMap: CategoryMap) {
 		const child = hierarchyChild(node, subId, subName);
 		child.total += expense;
 	}
+	// A refund landing in a month without the matching expense can leave a
+	// category net-negative; it has no share of spending to draw.
 	return Array.from(map.values())
+		.filter((n) => n.total > 0)
 		.map((n) => ({
 			...n,
-			children: n.children.sort((a, b) => b.total - a.total)
+			children: n.children
+				.filter((child) => child.total > 0)
+				.sort((a, b) => b.total - a.total)
 		}))
 		.sort((a, b) => b.total - a.total);
 }
@@ -260,7 +274,7 @@ function aggregateBy(
 ) {
 	const map = new Map<string, { id: string; name: string; total: number }>();
 	for (const row of rows) {
-		const expense = expenseValue(Number(row.amount));
+		const expense = expenseValue(row);
 		if (expense === 0) continue;
 		const { id, name } = keyFor(row);
 		const existing = map.get(id);
@@ -282,9 +296,8 @@ function buildMonthlyTrend(rows: TransactionRow[]) {
 		const month = rowMonth(row);
 		if (month === NO_MONTH) continue;
 		const bucket = map.get(month) ?? { expenses: 0, credits: 0 };
-		const amount = Number(row.amount);
-		bucket.expenses += expenseValue(amount);
-		bucket.credits += creditValue(amount);
+		bucket.expenses += expenseValue(row);
+		bucket.credits += creditValue(row);
 		map.set(month, bucket);
 	}
 	return Array.from(map, ([month, value]) => ({
@@ -316,8 +329,8 @@ function buildCategoryMonthTotals(
 		Map<string, { id: string; name: string; total: number }>
 	>();
 	for (const tx of rows) {
-		const amount = Number(tx.amount);
-		if (!(amount < 0)) continue;
+		const expense = expenseValue(tx);
+		if (expense === 0) continue;
 		const month = rowMonth(tx);
 		if (month === NO_MONTH) continue;
 		const { category } = resolveTaxonomy(tx, categoryMap);
@@ -325,7 +338,7 @@ function buildCategoryMonthTotals(
 		const name = category?.name ?? 'Sem categoria';
 		const bucket = byMonth.get(month) ?? new Map();
 		const entry = bucket.get(id) ?? { id, name, total: 0 };
-		entry.total += Math.abs(amount);
+		entry.total += expense;
 		bucket.set(id, entry);
 		byMonth.set(month, bucket);
 	}
@@ -454,9 +467,8 @@ function buildSavingsHistory(rows: TransactionRow[]) {
 		const month = rowMonth(row);
 		if (month === NO_MONTH) continue;
 		const bucket = map.get(month) ?? { expenses: 0, credits: 0 };
-		const amount = Number(row.amount);
-		bucket.expenses += expenseValue(amount);
-		bucket.credits += creditValue(amount);
+		bucket.expenses += expenseValue(row);
+		bucket.credits += creditValue(row);
 		map.set(month, bucket);
 	}
 	return Array.from(map, ([month, v]) => ({
@@ -624,7 +636,7 @@ function buildProjection(
 	if (dayOfMonth < 3) return null;
 	const spent = monthRows
 		.filter((row) => row.date?.startsWith(currentMonth))
-		.reduce((sum, row) => sum + expenseValue(Number(row.amount)), 0);
+		.reduce((sum, row) => sum + expenseValue(row), 0);
 	if (spent === 0) return null;
 	const projected = (spent / dayOfMonth) * daysInMonth;
 	const previous = savingsHistory
@@ -649,7 +661,7 @@ async function fetchVisibleRows(
 	supabase: SupabaseClient<Database>,
 	userId: string,
 	householdId: string
-): Promise<TransactionRow[]> {
+): Promise<Omit<TransactionRow, 'flow'>[]> {
 	const select = `
 			${READABLE_ACCESS_EMBED},
 			id,
@@ -686,32 +698,50 @@ async function fetchVisibleRows(
 				.order('id', { ascending: true })
 				.range(from, to)
 	);
-	return rows as TransactionRow[];
+	return rows as Omit<TransactionRow, 'flow'>[];
+}
+
+// Resolves each row's flow kind once, against the full category tree, so every
+// aggregate below reads `row.flow` instead of guessing from the amount's sign.
+async function loadDashboardRows(
+	supabase: SupabaseClient<Database>,
+	userId: string,
+	householdId: string
+) {
+	const rows = await fetchVisibleRows(supabase, userId, householdId);
+	const categoriesData = await loadCategoriesForUser(
+		supabaseAdmin,
+		householdId,
+		userId,
+		[],
+		true
+	);
+	const categoryMap = buildCategoryMap(categoriesData);
+	const transactions: TransactionRow[] = rows.map((row) => ({
+		...row,
+		flow: dashboardFlowKind(row, categoryMap)
+	}));
+	return { transactions, categoriesData, categoryMap };
 }
 
 // Single funnel for everything the dashboard reports: every total, chart and
-// trend downstream is built from this list, so excluding transfers here covers
-// them all rather than repeating the check per aggregation.
-function countsTowardTotals(
-	transaction: TransactionRow,
-	categoryMap: CategoryMap = new Map()
-) {
-	const kind = dashboardFlowKind(transaction, categoryMap);
-	return kind === 'income' || kind === 'expense';
+// trend downstream is built from this list, so excluding transfers and
+// investment flows here covers them all rather than repeating the check per
+// aggregation.
+function countsTowardTotals(transaction: TransactionRow) {
+	return (
+		transaction.flow === 'income' ||
+		transaction.flow === 'expense' ||
+		transaction.flow === 'refund'
+	);
 }
 
-function selectDashboardRows(
-	transactions: TransactionRow[],
-	url: URL,
-	categoryMap: CategoryMap
-) {
-	const visibleAllMonths = transactions.filter((row) =>
-		countsTowardTotals(row, categoryMap)
-	);
+function selectDashboardRows(transactions: TransactionRow[], url: URL) {
+	const visibleAllMonths = transactions.filter(countsTowardTotals);
 	const monthOptions = Array.from(
 		new Set(
 			transactions
-				.filter((row) => dashboardFlowKind(row, categoryMap) !== 'excluded')
+				.filter((row) => row.flow !== 'excluded')
 				.map(rowMonth)
 				.filter((month) => month !== NO_MONTH)
 		)
@@ -729,12 +759,9 @@ function selectDashboardRows(
 		? transactions.filter(
 				(transaction) =>
 					rowMonth(transaction) === selectedMonth &&
-					dashboardFlowKind(transaction, categoryMap) !== 'excluded'
+					transaction.flow !== 'excluded'
 			)
-		: transactions.filter(
-				(transaction) =>
-					dashboardFlowKind(transaction, categoryMap) !== 'excluded'
-			);
+		: transactions.filter((transaction) => transaction.flow !== 'excluded');
 	const profileId = url.searchParams.get('profile') ?? '';
 	const categoryId = url.searchParams.get('category') ?? '';
 	const reviewStatus = url.searchParams.get('review_status') ?? '';
@@ -803,7 +830,13 @@ export const load: PageServerLoad = async ({
 		>,
 		aboveNormal: [] as ReturnType<typeof buildAboveNormal>,
 		savingsHistory: [] as ReturnType<typeof buildSavingsHistory>,
-		investmentFlows: { contributions: 0, redemptions: 0, net: 0 },
+		investmentFlows: {
+			contributions: 0,
+			redemptions: 0,
+			investmentIncome: 0,
+			net: 0,
+			newCapital: 0
+		},
 		fixedVsVariable: {
 			fixedTotal: 0,
 			variableTotal: 0,
@@ -836,16 +869,12 @@ export const load: PageServerLoad = async ({
 	const householdId = await getUserHouseholdId(supabase, user.id);
 	if (!householdId) return empty;
 
-	const transactions = await fetchVisibleRows(supabase, user.id, householdId);
-	if (transactions.length === 0) return empty;
-	const categoriesData = await loadCategoriesForUser(
-		supabaseAdmin,
-		householdId,
+	const { transactions, categoriesData, categoryMap } = await loadDashboardRows(
+		supabase,
 		user.id,
-		[],
-		true
+		householdId
 	);
-	const categoryMap = buildCategoryMap(categoriesData);
+	if (transactions.length === 0) return empty;
 	const {
 		monthOptions,
 		selectedMonth,
@@ -855,7 +884,7 @@ export const load: PageServerLoad = async ({
 		filteredAll,
 		filteredVisibleAllMonths,
 		filters
-	} = selectDashboardRows(transactions, url, categoryMap);
+	} = selectDashboardRows(transactions, url);
 	const payerNameById = await loadPayerNames(filtered);
 
 	const { data: profilesData } = await supabaseAdmin
@@ -979,18 +1008,12 @@ export const actions: Actions = {
 				message: 'Usuário não pertence a um grupo'
 			});
 
-		const transactions = await fetchVisibleRows(supabase, user.id, householdId);
-		const categoriesData = await loadCategoriesForUser(
-			supabaseAdmin,
-			householdId,
+		const { transactions, categoryMap } = await loadDashboardRows(
+			supabase,
 			user.id,
-			[],
-			true
+			householdId
 		);
-		const categoryMap = buildCategoryMap(categoriesData);
-		const visible = transactions.filter((row) =>
-			countsTowardTotals(row, categoryMap)
-		);
+		const visible = transactions.filter(countsTowardTotals);
 		const monthRows = visible.filter((t) => rowMonth(t) === month);
 		if (monthRows.length === 0) {
 			return fail(400, {
@@ -1014,8 +1037,9 @@ export const actions: Actions = {
 				transactions.filter((row) => rowMonth(row) === month),
 				categoryMap
 			),
-			despesas_total: Math.round(summary.expenses),
-			receitas_total: Math.round(summary.credits),
+			despesas_liquidas_total: Math.round(summary.expenses),
+			reembolsos_descontados: Math.round(summary.refunds),
+			renda_do_trabalho_total: Math.round(summary.credits),
 			taxa_poupanca_pct:
 				summary.credits > 0
 					? Math.round(
@@ -1048,7 +1072,9 @@ Regras:
 - 3 a 5 insights curtos (1 frase cada), em português do Brasil, tom direto e concreto.
 - Priorize o que é acionável: categorias fora do normal, assinaturas/estabelecimentos novos, ritmo vs meses anteriores, peso dos fixos e das parcelas.
 - Cite valores em R$ arredondados e percentuais quando relevantes.
+- A taxa de poupança usa só renda do trabalho; reembolsos já abatem as despesas.
 - Aportes e resgates são movimentações patrimoniais, já excluídas de receitas e despesas. Aportes líquidos não são poupança adicional e podem vir de reservas antigas.
+- Proventos (dividendos, juros, amortizações) não são renda do trabalho: aporte financiado por proventos é reinvestimento. Use investimentos.newCapital para falar de capital novo investido.
 - Não invente dados que não estão nos agregados; não dê conselhos genéricos ("gaste menos").`;
 
 		try {

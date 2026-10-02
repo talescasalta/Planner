@@ -32,6 +32,7 @@ export interface TransactionsPageData {
 		balance: number;
 		contributions: number;
 		redemptions: number;
+		investmentIncome: number;
 		transfers: number;
 	};
 }

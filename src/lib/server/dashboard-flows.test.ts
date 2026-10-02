@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { dashboardFlowKind, investmentFlowTotals } from './dashboard-flows';
+import type { FinancialTreatment } from '$lib/types/app';
 
 type TestCategory = {
 	id: string;
 	name: string;
 	parent_id: string | null;
-	financial_treatment: 'operating' | 'investment' | 'transfer' | null;
+	financial_treatment: FinancialTreatment | null;
 };
 const investments: TestCategory = {
 	id: 'invest',
@@ -48,18 +49,18 @@ describe('dashboard investment flows', () => {
 			dashboardFlowKind(flow(-3000, investments, fixedIncome), categories)
 		).toBe('contribution');
 	});
-	it('keeps investment income and costs in operating totals', () => {
+	it('separates investment income from earned income and keeps costs as expenses', () => {
 		for (const name of ['Rendimentos', 'Dividendos', 'Juros']) {
 			expect(
 				dashboardFlowKind(
 					flow(100, investments, {
 						...fixedIncome,
 						name,
-						financial_treatment: 'operating'
+						financial_treatment: 'investment_income'
 					}),
 					categories
 				)
-			).toBe('income');
+			).toBe('investment_income');
 		}
 		for (const name of ['Impostos', 'IOF', 'Taxas', 'Corretagem']) {
 			expect(
@@ -73,6 +74,29 @@ describe('dashboard investment flows', () => {
 				)
 			).toBe('expense');
 		}
+	});
+	it('treats credits in consumption categories as refunds, not income', () => {
+		const health: TestCategory = {
+			id: 'health',
+			name: 'Saúde',
+			parent_id: null,
+			financial_treatment: null
+		};
+		expect(dashboardFlowKind(flow(450, health), categories)).toBe('refund');
+		expect(dashboardFlowKind(flow(-450, health), categories)).toBe('expense');
+		expect(dashboardFlowKind(flow(450, null as never), categories)).toBe(
+			'refund'
+		);
+	});
+	it('keeps the sign of earned income so reversals reduce it', () => {
+		const salary: TestCategory = {
+			id: 'salary',
+			name: 'Salário',
+			parent_id: null,
+			financial_treatment: 'income'
+		};
+		expect(dashboardFlowKind(flow(10000, salary), categories)).toBe('income');
+		expect(dashboardFlowKind(flow(-300, salary), categories)).toBe('income');
 	});
 	it('ignores discarded rows and preserves legacy transfers as transfers', () => {
 		expect(
@@ -96,7 +120,7 @@ describe('dashboard investment flows', () => {
 			flow(10000, {
 				...investments,
 				name: 'Salário',
-				financial_treatment: 'operating'
+				financial_treatment: 'income'
 			}),
 			flow(-6000, {
 				...investments,
@@ -115,7 +139,25 @@ describe('dashboard investment flows', () => {
 		expect(investmentFlowTotals(rows, categories)).toEqual({
 			contributions: 30000,
 			redemptions: 5000,
-			net: 25000
+			investmentIncome: 0,
+			net: 25000,
+			newCapital: 25000
+		});
+	});
+	it('counts contributions funded by dividends as reinvestment, not new capital', () => {
+		const dividends: TestCategory = {
+			id: 'dividends',
+			name: 'Dividendos',
+			parent_id: null,
+			financial_treatment: 'investment_income'
+		};
+		const rows = [flow(2000, dividends), flow(-2000)];
+		expect(investmentFlowTotals(rows, categories)).toEqual({
+			contributions: 2000,
+			redemptions: 0,
+			investmentIncome: 2000,
+			net: 2000,
+			newCapital: 0
 		});
 	});
 });

@@ -8,12 +8,23 @@ export type PatternType =
 export type FinancialProfileType = 'individual' | 'shared';
 export type SplitMethod = 'income_proportional' | 'equal';
 
-export type FinancialTreatment = 'operating' | 'investment' | 'transfer';
+/**
+ * - operating: consumption; credits are refunds that net against expenses.
+ * - income: earned income (salary, benefits) — the savings-rate denominator.
+ * - investment: principal moving in/out of investments (aporte/resgate).
+ * - investment_income: dividends, interest and other returns on investments;
+ *   reinvesting them is not new savings.
+ * - transfer: money moving between the household's own accounts.
+ */
+export type FinancialTreatment =
+	'operating' | 'income' | 'investment' | 'investment_income' | 'transfer';
 export type FinancialFlowKind =
 	| 'income'
 	| 'expense'
+	| 'refund'
 	| 'contribution'
 	| 'redemption'
+	| 'investment_income'
 	| 'transfer'
 	| 'excluded';
 export type TransactionSourceType =

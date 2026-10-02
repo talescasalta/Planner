@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import { flowKindLabel } from '$lib/financial-labels';
 	import {
 		ArrowDown,
 		ArrowUp,
@@ -65,15 +66,6 @@
 
 	function splitMethodLabel(method: string) {
 		return method === 'equal' ? '50/50' : 'Por renda';
-	}
-
-	function flowLabel(kind: string) {
-		if (kind === 'expense') return 'Despesa';
-		if (kind === 'income') return 'Receita';
-		if (kind === 'contribution') return 'Aporte';
-		if (kind === 'redemption') return 'Resgate';
-		if (kind === 'transfer') return 'Transferência';
-		return 'Ignorado';
 	}
 
 	function formatMonth(month: string) {
@@ -637,7 +629,7 @@
 												<span
 													class="inline-flex rounded bg-gray-100 px-2 py-0.5 font-medium text-gray-700"
 												>
-													{flowLabel(tx.financial_flow_kind)}
+													{flowKindLabel(tx.financial_flow_kind, 'Ignorado')}
 												</span>
 											</td>
 											<td class="whitespace-nowrap px-3 py-2 text-gray-700">

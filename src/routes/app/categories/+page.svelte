@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import type { Category } from '$lib/types/app';
+	import { TREATMENT_OPTIONS } from '$lib/financial-labels';
 
 	let {
 		data,
@@ -79,9 +80,9 @@
 					class="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm px-3 py-2"
 				>
 					<option value="">Automático / operacional</option>
-					<option value="operating">Operacional</option>
-					<option value="investment">Investimento</option>
-					<option value="transfer">Transferência</option>
+					{#each TREATMENT_OPTIONS as option (option.value)}
+						<option value={option.value}>{option.label}</option>
+					{/each}
 				</select>
 			</div>
 			<div class="flex justify-end">
@@ -199,21 +200,13 @@
 													selected={!subcategory.financial_treatment}
 													>Automático</option
 												>
-												<option
-													value="operating"
-													selected={subcategory.financial_treatment ===
-														'operating'}>Operacional</option
-												>
-												<option
-													value="investment"
-													selected={subcategory.financial_treatment ===
-														'investment'}>Investimento</option
-												>
-												<option
-													value="transfer"
-													selected={subcategory.financial_treatment ===
-														'transfer'}>Transferência</option
-												>
+												{#each TREATMENT_OPTIONS as option (option.value)}
+													<option
+														value={option.value}
+														selected={subcategory.financial_treatment ===
+															option.value}>{option.label}</option
+													>
+												{/each}
 											</select>
 										</form>
 										<form
@@ -258,21 +251,13 @@
 									<option value="" selected={!category.financial_treatment}
 										>Automático</option
 									>
-									<option
-										value="operating"
-										selected={category.financial_treatment === 'operating'}
-										>Operacional</option
-									>
-									<option
-										value="investment"
-										selected={category.financial_treatment === 'investment'}
-										>Investimento</option
-									>
-									<option
-										value="transfer"
-										selected={category.financial_treatment === 'transfer'}
-										>Transferência</option
-									>
+									{#each TREATMENT_OPTIONS as option (option.value)}
+										<option
+											value={option.value}
+											selected={category.financial_treatment === option.value}
+											>{option.label}</option
+										>
+									{/each}
 								</select>
 							</form>
 						</td>

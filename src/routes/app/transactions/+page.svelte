@@ -16,6 +16,7 @@
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import type { TransactionsPageData } from '$lib/types/page-data';
 	import type { Transaction } from '$lib/types/app';
+	import { TREATMENT_OPTIONS, flowKindLabel } from '$lib/financial-labels';
 
 	let { data }: { data: TransactionsPageData } = $props();
 	let transactions = $derived(data.transactions ?? []);
@@ -264,15 +265,6 @@
 			(filters.direction && filters.direction !== 'all') ||
 			(filters.flow && filters.flow !== 'all')
 		);
-	}
-
-	function flowLabel(value: string | null | undefined) {
-		if (value === 'expense') return 'Despesa';
-		if (value === 'income') return 'Receita';
-		if (value === 'contribution') return 'Aporte';
-		if (value === 'redemption') return 'Resgate';
-		if (value === 'transfer') return 'Transferência';
-		return '—';
 	}
 
 	function sourceTypeText(value: string | null | undefined) {
@@ -573,7 +565,7 @@
 				</div>
 			</div>
 
-			<div class="grid grid-cols-2 md:grid-cols-7 gap-3 text-sm">
+			<div class="grid grid-cols-2 md:grid-cols-8 gap-3 text-sm">
 				<div>
 					<p class="text-xs text-gray-500">Transações</p>
 					<p class="font-semibold text-gray-900">{summary.count}</p>
@@ -606,6 +598,12 @@
 					<p class="text-xs text-gray-500">Resgates</p>
 					<p class="font-semibold text-emerald-700">
 						{formatCurrency(summary.redemptions)}
+					</p>
+				</div>
+				<div>
+					<p class="text-xs text-gray-500">Proventos</p>
+					<p class="font-semibold text-emerald-700">
+						{formatCurrency(summary.investmentIncome)}
 					</p>
 				</div>
 				<div>
@@ -760,9 +758,11 @@
 				>
 					<option value="all">Todos</option>
 					<option value="expense">Despesas</option>
+					<option value="refund">Reembolsos</option>
 					<option value="income">Receitas</option>
 					<option value="contribution">Aportes</option>
 					<option value="redemption">Resgates</option>
+					<option value="investment_income">Proventos</option>
 					<option value="transfer">Transferências</option>
 				</select>
 			</div>
@@ -966,9 +966,9 @@
 						>
 							<option value={KEEP}>— manter —</option>
 							<option value="">Automático (herdar)</option>
-							<option value="operating">Operacional</option>
-							<option value="investment">Investimento</option>
-							<option value="transfer">Transferência</option>
+							{#each TREATMENT_OPTIONS as option (option.value)}
+								<option value={option.value}>{option.label}</option>
+							{/each}
 						</select>
 					</label>
 					<button
@@ -1246,9 +1246,9 @@
 										class="block w-40 rounded-md border-gray-300 px-2 py-1 text-xs shadow-sm disabled:bg-gray-100"
 									>
 										<option value="">Automático</option>
-										<option value="operating">Operacional</option>
-										<option value="investment">Investimento</option>
-										<option value="transfer">Transferência</option>
+										{#each TREATMENT_OPTIONS as option (option.value)}
+											<option value={option.value}>{option.label}</option>
+										{/each}
 									</select>
 									{#if suggestionLabel(tx)}
 										<span class="w-40 text-xs text-amber-700"
@@ -1292,7 +1292,7 @@
 									<span
 										class="mb-1 inline-flex rounded bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700"
 									>
-										{flowLabel(tx.financial_flow_kind)}
+										{flowKindLabel(tx.financial_flow_kind)}
 									</span>
 								{/if}
 								{#if tx.review_status === 'needs_review'}
