@@ -1,1 +1,10 @@
 @import 'tailwindcss';
+
+/* iOS Safari zooms into any field under 16px on focus. */
+@media (max-width: 639px) {
+	input:not([type='checkbox']):not([type='radio']),
+	select,
+	textarea {
+		font-size: 16px;
+	}
+}

@@ -1,0 +1,50 @@
+<script lang="ts">
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import AppLayout from '../../app/+layout.svelte';
+	import Sheet from '$lib/components/ui/Sheet.svelte';
+	import { layoutData } from './fixtures';
+
+	const VIEWS = ['layout', 'sheet'];
+	const NOTICE =
+		'Vitrine só visual (apenas em desenvolvimento): os formulários não devem ser enviados.';
+
+	const view = $derived(page.url.searchParams.get('view') ?? 'layout');
+	let sheetOpen = $state(true);
+</script>
+
+<AppLayout data={layoutData}>
+	<div class="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm">
+		<p class="text-amber-900">{NOTICE}</p>
+		<ul class="mt-2 flex flex-wrap gap-3">
+			{#each VIEWS as name (name)}
+				<li>
+					<a
+						href="{resolve('/dev/mobile')}?view={name}"
+						class="text-indigo-700 underline {view === name
+							? 'font-semibold'
+							: ''}">{name}</a
+					>
+				</li>
+			{/each}
+		</ul>
+	</div>
+
+	{#if view === 'sheet'}
+		<button
+			type="button"
+			class="min-h-11 rounded bg-indigo-600 px-4 text-sm text-white"
+			onclick={() => (sheetOpen = true)}>Abrir folha</button
+		>
+		<Sheet open={sheetOpen} title="Exemplo" onClose={() => (sheetOpen = false)}>
+			<label class="block text-sm text-gray-700">
+				Campo de exemplo
+				<input
+					type="text"
+					class="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+				/>
+			</label>
+			<p class="mt-4 text-sm text-gray-600">Conteúdo de exemplo da folha.</p>
+		</Sheet>
+	{/if}
+</AppLayout>
