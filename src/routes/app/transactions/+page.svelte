@@ -757,6 +757,7 @@
 					}}
 				>
 					<option value="all">Todos</option>
+					<option value="spending">Despesas e reembolsos</option>
 					<option value="expense">Despesas</option>
 					<option value="refund">Reembolsos</option>
 					<option value="income">Receitas</option>

@@ -198,7 +198,7 @@ function summarize(
 		(row) => row.review_status === 'needs_review'
 	).length;
 	const uncategorized = operatingRows.filter(
-		(row) => !row.category_id && Number(row.amount) < 0
+		(row) => !row.category_id && row.flow === 'expense'
 	).length;
 	const expenses = totals.expense - totals.refund;
 	return {
@@ -496,7 +496,7 @@ const RECURRENCE_MIN_HITS = 2;
 function recurringMonthsByKey(rows: TransactionRow[], lookback: Set<string>) {
 	const keyMonths = new Map<string, Set<string>>();
 	for (const transaction of rows) {
-		if (Number(transaction.amount) >= 0) continue;
+		if (transaction.flow !== 'expense') continue;
 		const month = rowMonth(transaction);
 		if (!lookback.has(month)) continue;
 		const key = recurrenceKey(transaction);
@@ -528,9 +528,8 @@ function buildFixedVsVariable(rows: TransactionRow[], selectedMonth: string) {
 	let variableTotal = 0;
 	const fixedByKey = new Map<string, { name: string; total: number }>();
 	for (const tx of rows) {
-		const amount = Number(tx.amount);
-		if (!(amount < 0) || rowMonth(tx) !== selectedMonth) continue;
-		const expense = Math.abs(amount);
+		if (tx.flow !== 'expense' || rowMonth(tx) !== selectedMonth) continue;
+		const expense = Math.abs(Number(tx.amount));
 		const key = recurrenceKey(tx);
 		const recurring = (keyMonths.get(key)?.size ?? 0) >= RECURRENCE_MIN_HITS;
 		const isInstallment = (tx.installment_total ?? 0) >= 2;
@@ -563,7 +562,7 @@ function latestInstallments(rows: TransactionRow[]) {
 			!transaction.installment_total
 		)
 			continue;
-		if (Number(transaction.amount) >= 0) continue;
+		if (transaction.flow !== 'expense') continue;
 		const current = latestByGroup.get(transaction.installment_group_key);
 		if (
 			!current ||
@@ -970,13 +969,13 @@ function findNewMerchants(
 		visible
 			.filter(
 				(transaction) =>
-					lookback.has(rowMonth(transaction)) && Number(transaction.amount) < 0
+					lookback.has(rowMonth(transaction)) && transaction.flow === 'expense'
 			)
 			.map(recurrenceKey)
 	);
 	const totals = new Map<string, number>();
 	for (const transaction of monthRows) {
-		if (Number(transaction.amount) >= 0) continue;
+		if (transaction.flow !== 'expense') continue;
 		const key = recurrenceKey(transaction);
 		if (!key || previousKeys.has(key)) continue;
 		totals.set(

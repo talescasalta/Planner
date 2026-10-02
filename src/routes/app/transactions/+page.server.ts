@@ -16,11 +16,15 @@ import {
 } from '$lib/server/categories';
 import { selectAllStrict } from '$lib/server/supabase-paging';
 import {
+	SPENDING_FLOW_FILTER,
 	financialFlowKind,
+	flowMatchesFilter,
 	isFinancialTreatment,
-	summarizeFinancialFlows
+	isFlowFilter,
+	summarizeFinancialFlows,
+	type FlowFilter
 } from '$lib/server/financial-treatment';
-import type { FinancialFlowKind, FinancialTreatment } from '$lib/types/app';
+import type { FinancialTreatment } from '$lib/types/app';
 import { fail, redirect } from '@sveltejs/kit';
 
 const PAGE_SIZE = 100;
@@ -40,7 +44,8 @@ const VALID_REVIEW_STATUSES = new Set(['needs_review', 'confirmed', 'ignored']);
 // Lets the dashboard's Receitas and Despesas cards link straight to the rows
 // behind the figure, which is otherwise only reachable by scanning the list.
 const VALID_DIRECTIONS = new Set(['in', 'out']);
-const VALID_FLOWS = new Set<FinancialFlowKind>([
+const VALID_FLOWS = new Set<FlowFilter>([
+	SPENDING_FLOW_FILTER,
 	'expense',
 	'refund',
 	'income',
@@ -150,9 +155,7 @@ function readFilters(url: URL) {
 		subcategoryId: cleanFilter(url.searchParams.get('subcategory_id')),
 		status: VALID_REVIEW_STATUSES.has(status) ? status : ALL_FILTERS,
 		direction: VALID_DIRECTIONS.has(direction) ? direction : ALL_FILTERS,
-		flow: VALID_FLOWS.has(flow as FinancialFlowKind)
-			? (flow as FinancialFlowKind)
-			: ALL_FILTERS
+		flow: isFlowFilter(flow) && VALID_FLOWS.has(flow) ? flow : ALL_FILTERS
 	};
 }
 
@@ -780,9 +783,11 @@ export const load: PageServerLoad = async ({
 	const filteredByFlow =
 		filters.flow === ALL_FILTERS
 			? enriched
-			: enriched.filter(
-					(transaction) =>
-						financialFlowKind(transaction, categoryMap) === filters.flow
+			: enriched.filter((transaction) =>
+					flowMatchesFilter(
+						financialFlowKind(transaction, categoryMap),
+						filters.flow as FlowFilter
+					)
 				);
 	const selectedCategoryIds = new Set(
 		enriched

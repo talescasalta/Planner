@@ -86,7 +86,8 @@ describe('dashboard insights action', () => {
 			{ amount: 1000, name: 'Moradia' },
 			{ amount: 2000, name: 'Dividendos' },
 			{ amount: -3000, name: 'Investimentos' },
-			{ amount: 500, name: 'Investimentos' }
+			{ amount: 500, name: 'Investimentos' },
+			{ amount: -2000, name: 'Salário' }
 		].map(({ amount, name }, index) => ({
 			id: `tx-${index}`,
 			amount,
@@ -120,15 +121,17 @@ describe('dashboard insights action', () => {
 			fixedVsVariable: { variableTotal: number };
 			monthlyTrend: { expenses: number }[];
 		};
-		// The refund nets against Moradia; dividends never reach income.
+		// The refund nets against Moradia; dividends never reach income, and the
+		// negative salary row (a reversal) lowers income instead of counting as
+		// spending.
 		expect(result.summary).toMatchObject({
-			credits: 10000,
+			credits: 8000,
 			expenses: 5000,
 			refunds: 1000,
-			balance: 5000
+			balance: 3000
 		});
 		expect(result.savingsHistory).toEqual([
-			{ month: '2026-07', credits: 10000, expenses: 5000, rate: 0.5 }
+			{ month: '2026-07', credits: 8000, expenses: 5000, rate: 0.375 }
 		]);
 		expect(result.investmentFlows).toEqual({
 			contributions: 3000,
@@ -141,17 +144,17 @@ describe('dashboard insights action', () => {
 		expect(result.fixedVsVariable.variableTotal).toBe(6000);
 		expect(result.monthlyTrend[0].expenses).toBe(5000);
 		vi.mocked(callLlm).mockResolvedValue({
-			choices: [{ message: { content: '{"insights":["Poupança de 50%."]}' } }]
+			choices: [{ message: { content: '{"insights":["Poupança de 38%."]}' } }]
 		} as never);
 		await actions.insights(event(requestForMonth('2026-07')));
 		const facts = JSON.parse(
 			String(vi.mocked(callLlm).mock.calls[0][0].messages[1].content)
 		);
 		expect(facts).toMatchObject({
-			renda_do_trabalho_total: 10000,
+			renda_do_trabalho_total: 8000,
 			despesas_liquidas_total: 5000,
 			reembolsos_descontados: 1000,
-			taxa_poupanca_pct: 50
+			taxa_poupanca_pct: 38
 		});
 	});
 	it('rejects unauthenticated insight generation before reading financial data', async () => {

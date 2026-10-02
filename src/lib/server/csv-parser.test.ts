@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	assignImportDedupKeys,
 	buildImportDedupKey,
 	detectMapping,
 	parseAmount,
@@ -87,6 +88,47 @@ describe('buildImportDedupKey', () => {
 		});
 
 		expect(key).toBe('2026-04-01|MERCADO CENTRAL|10.50|BRL');
+	});
+});
+
+describe('assignImportDedupKeys', () => {
+	const row = (description: string, amount = -18.9) => ({
+		date: '2026-04-01',
+		description,
+		clean_description: description,
+		amount,
+		currency: 'BRL'
+	});
+
+	it('keeps the bare key for the first occurrence and numbers repeats', () => {
+		const keys = assignImportDedupKeys([
+			row('UBER'),
+			row('UBER'),
+			row('UBER')
+		]).map((r) => r.dedup_key);
+
+		expect(keys).toEqual([
+			'2026-04-01|UBER|-18.90|BRL',
+			'2026-04-01|UBER|-18.90|BRL|#2',
+			'2026-04-01|UBER|-18.90|BRL|#3'
+		]);
+	});
+
+	it('does not suffix rows that differ', () => {
+		const keys = assignImportDedupKeys([
+			row('UBER'),
+			row('99'),
+			row('UBER', -20)
+		]).map((r) => r.dedup_key);
+
+		expect(new Set(keys).size).toBe(3);
+		expect(keys.some((key) => key.includes('#'))).toBe(false);
+	});
+
+	it('is idempotent across runs of the same input', () => {
+		const rows = [row('UBER'), row('UBER')];
+
+		expect(assignImportDedupKeys(rows)).toEqual(assignImportDedupKeys(rows));
 	});
 });
 

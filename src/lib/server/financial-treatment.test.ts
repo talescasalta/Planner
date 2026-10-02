@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
 	financialFlowKind,
+	flowMatchesFilter,
+	isFlowFilter,
 	resolveFinancialTreatment,
 	summarizeFinancialFlows
 } from './financial-treatment';
@@ -85,6 +87,17 @@ describe('financial treatment', () => {
 				new Map()
 			)
 		).toBe('expense');
+	});
+
+	it('lets the spending filter match expenses and refunds only', () => {
+		expect(isFlowFilter('spending')).toBe(true);
+		expect(isFlowFilter('refund')).toBe(true);
+		expect(isFlowFilter('bogus')).toBe(false);
+		expect(flowMatchesFilter('expense', 'spending')).toBe(true);
+		expect(flowMatchesFilter('refund', 'spending')).toBe(true);
+		expect(flowMatchesFilter('income', 'spending')).toBe(false);
+		expect(flowMatchesFilter('transfer', 'spending')).toBe(false);
+		expect(flowMatchesFilter('expense', 'refund')).toBe(false);
 	});
 
 	it('aggregates budget and investment flows in cents', () => {

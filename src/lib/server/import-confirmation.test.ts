@@ -4,7 +4,7 @@ import { supabaseAdmin } from '$lib/server/supabase';
 import { getHouseholdMembers, getUserHouseholdId } from '$lib/server/household';
 import { isHouseholdAdmin } from '$lib/server/access';
 import { resolveImportMapping } from '$lib/server/import-mapping';
-import { buildImportDedupKey, detectMapping } from '$lib/server/csv-parser';
+import { assignImportDedupKeys, detectMapping } from '$lib/server/csv-parser';
 import { classifyTransactions } from '$lib/server/classifier';
 import {
 	extractRowsFromText,
@@ -36,7 +36,7 @@ vi.mock('$lib/server/import-mapping', () => ({
 // row is filed under, so stubbing it would assert nothing.
 vi.mock('$lib/server/csv-parser', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/server/csv-parser')>()),
-	buildImportDedupKey: vi.fn(),
+	assignImportDedupKeys: vi.fn(),
 	detectMapping: vi.fn()
 }));
 vi.mock('$lib/server/import-extract', () => ({
@@ -115,14 +115,16 @@ beforeEach(() => {
 	vi.mocked(getHouseholdMembers).mockReset();
 	vi.mocked(isHouseholdAdmin).mockReset();
 	vi.mocked(resolveImportMapping).mockReset();
-	vi.mocked(buildImportDedupKey).mockReset();
+	vi.mocked(assignImportDedupKeys).mockReset();
 	vi.mocked(detectMapping).mockReset();
 	vi.mocked(classifyTransactions).mockReset();
 	vi.mocked(getUserHouseholdId).mockResolvedValue('household-a');
 	vi.mocked(getHouseholdMembers).mockResolvedValue(['user-a']);
 	vi.mocked(isHouseholdAdmin).mockResolvedValue(true);
 	vi.mocked(detectMapping).mockReturnValue({} as never);
-	vi.mocked(buildImportDedupKey).mockReturnValue('dedup-a');
+	vi.mocked(assignImportDedupKeys).mockImplementation((rows) =>
+		rows.map((row) => ({ ...row, dedup_key: 'dedup-a' }))
+	);
 	vi.mocked(resolveImportMapping).mockResolvedValue({
 		rows: [
 			{
