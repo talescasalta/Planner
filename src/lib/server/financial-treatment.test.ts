@@ -4,12 +4,13 @@ import {
 	resolveFinancialTreatment,
 	summarizeFinancialFlows
 } from './financial-treatment';
+import type { FinancialTreatment } from '$lib/types/app';
 
 type Category = {
 	id: string;
 	name: string;
 	parent_id: string | null;
-	financial_treatment: 'operating' | 'investment' | 'transfer' | null;
+	financial_treatment: FinancialTreatment | null;
 };
 
 const investment: Category = {
@@ -91,11 +92,19 @@ describe('financial treatment', () => {
 			[
 				{
 					amount: 10000,
-					category: { ...investment, financial_treatment: 'operating' }
+					category: { ...investment, financial_treatment: 'income' }
 				},
 				{
 					amount: -6000,
 					category: { ...investment, financial_treatment: 'operating' }
+				},
+				{
+					amount: 250,
+					category: { ...investment, financial_treatment: 'operating' }
+				},
+				{
+					amount: 800,
+					category: { ...investment, financial_treatment: 'investment_income' }
 				},
 				{ amount: -3000, category: investment },
 				{ amount: 1000, category: investment },
@@ -107,11 +116,13 @@ describe('financial treatment', () => {
 		expect(totals).toEqual({
 			income: 10000,
 			expense: 6000,
+			refund: 250,
 			contribution: 3000,
 			redemption: 1000,
+			investmentIncome: 800,
 			transfer: 500,
-			count: 5
+			count: 7
 		});
-		expect(totals.income - totals.expense).toBe(4000);
+		expect(totals.income - (totals.expense - totals.refund)).toBe(4250);
 	});
 });

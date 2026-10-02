@@ -19,7 +19,7 @@ import {
 	toCents,
 	type FinancialCategory
 } from '$lib/server/financial-treatment';
-import type { FinancialTreatment } from '$lib/types/app';
+import type { FinancialFlowKind, FinancialTreatment } from '$lib/types/app';
 import { fail, redirect } from '@sveltejs/kit';
 
 type SplitMethod = 'income_proportional' | 'equal';
@@ -56,13 +56,7 @@ type GroupTransaction = {
 	paid_by_user_id: string | null;
 	paid_by_display_name: string | null;
 	split_method: SplitMethod;
-	financial_flow_kind:
-		| 'income'
-		| 'expense'
-		| 'contribution'
-		| 'redemption'
-		| 'transfer'
-		| 'excluded';
+	financial_flow_kind: FinancialFlowKind;
 };
 
 type GroupActivity = {
@@ -224,7 +218,7 @@ function operatingGroupRows(
 ) {
 	return rows.filter((row) => {
 		const kind = financialFlowKind(row, categories);
-		return kind === 'expense' || kind === 'income';
+		return kind === 'expense' || kind === 'income' || kind === 'refund';
 	});
 }
 

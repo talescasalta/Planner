@@ -373,6 +373,11 @@
 				<p class="mt-3 text-2xl font-semibold text-gray-950">
 					{formatCurrency(summary.expenses)}
 				</p>
+				{#if summary.refunds > 0}
+					<p class="mt-1 text-xs text-gray-500">
+						Já descontados {formatCurrency(summary.refunds)} de reembolsos
+					</p>
+				{/if}
 				<p
 					class={`mt-1 flex items-center gap-1 text-xs ${expenseDelta <= 0 ? 'text-emerald-700' : 'text-rose-700'}`}
 				>
@@ -449,7 +454,9 @@
 						: '—'}
 				</p>
 				<p class="mt-1 text-xs text-gray-500">
-					(receitas − despesas) ÷ receitas; aportes e resgates excluídos
+					(renda do trabalho − despesas líquidas) ÷ renda do trabalho.
+					Reembolsos abatem despesas; proventos, aportes, resgates e
+					transferências ficam fora.
 				</p>
 				<p class="mt-2 text-xs text-gray-600">
 					Poupança do mês: {formatCurrency(
@@ -470,9 +477,25 @@
 					>
 					· Líquido: {formatCurrency(data.investmentFlows.net)}
 				</p>
+				<p class="mt-1 text-xs text-gray-600">
+					<a
+						class="hover:text-indigo-700"
+						href={resolve(transactionHref('investment_income'))}
+						>Proventos: {formatCurrency(
+							data.investmentFlows.investmentIncome
+						)}</a
+					>
+					· Capital novo investido:
+					<span
+						class={data.investmentFlows.newCapital < 0
+							? 'text-rose-700'
+							: 'text-gray-900'}
+						>{formatCurrency(data.investmentFlows.newCapital)}</span
+					>
+				</p>
 				<p class="mt-1 text-xs text-gray-500">
-					Classifique aplicações e resgates em Investimentos. Rendimentos,
-					impostos e tarifas devem ter subcategorias próprias.
+					Capital novo = aportes líquidos − proventos: reinvestir proventos não
+					é poupança nova.
 				</p>
 				{#if savingsHistory.length > 1}
 					<div class="mt-3 flex h-10 items-end gap-1" aria-hidden="true">

@@ -42,9 +42,11 @@ const VALID_REVIEW_STATUSES = new Set(['needs_review', 'confirmed', 'ignored']);
 const VALID_DIRECTIONS = new Set(['in', 'out']);
 const VALID_FLOWS = new Set<FinancialFlowKind>([
 	'expense',
+	'refund',
 	'income',
 	'contribution',
 	'redemption',
+	'investment_income',
 	'transfer'
 ]);
 
@@ -796,15 +798,18 @@ export const load: PageServerLoad = async ({
 	const flowTotals = summarizeFinancialFlows(filteredByFlow, categoryMap);
 	const summary = {
 		count: flowTotals.count,
-		expenses: flowTotals.expense,
+		expenses: flowTotals.expense - flowTotals.refund,
 		credits: flowTotals.income,
 		balance:
 			flowTotals.income +
-			flowTotals.redemption -
+			flowTotals.refund +
+			flowTotals.redemption +
+			flowTotals.investmentIncome -
 			flowTotals.expense -
 			flowTotals.contribution,
 		contributions: flowTotals.contribution,
 		redemptions: flowTotals.redemption,
+		investmentIncome: flowTotals.investmentIncome,
 		transfers: flowTotals.transfer
 	};
 

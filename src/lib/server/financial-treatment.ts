@@ -23,15 +23,19 @@ export type FinancialCategory = FinancialCategoryRef & { id: string };
 
 export const FINANCIAL_TREATMENTS: readonly FinancialTreatment[] = [
 	'operating',
+	'income',
 	'investment',
+	'investment_income',
 	'transfer'
 ];
 
 export const FINANCIAL_FLOW_KINDS: readonly FinancialFlowKind[] = [
 	'income',
 	'expense',
+	'refund',
 	'contribution',
 	'redemption',
+	'investment_income',
 	'transfer',
 	'excluded'
 ];
@@ -107,7 +111,15 @@ export function financialFlowKind(
 	if (treatment === 'investment') {
 		return amount < 0 ? 'contribution' : 'redemption';
 	}
-	return amount < 0 ? 'expense' : 'income';
+	// Income keeps its sign so a payroll reversal reduces income instead of
+	// showing up as spending.
+	if (treatment === 'income') return 'income';
+	if (treatment === 'investment_income') {
+		return amount < 0 ? 'expense' : 'investment_income';
+	}
+	// A credit in a consumption category (reimbursement, chargeback, refund) is
+	// money coming back, not income: it nets against expenses.
+	return amount < 0 ? 'expense' : 'refund';
 }
 
 export function toCents(value: number | string | null | undefined): number {
@@ -120,10 +132,15 @@ export function fromCents(value: number): number {
 }
 
 export type FinancialFlowTotals = {
+	/** Earned income, signed (reversals reduce it). */
 	income: number;
+	/** Gross outflows of consumption categories. */
 	expense: number;
+	/** Credits in consumption categories; net them against `expense`. */
+	refund: number;
 	contribution: number;
 	redemption: number;
+	investmentIncome: number;
 	transfer: number;
 	count: number;
 };
@@ -135,8 +152,10 @@ export function summarizeFinancialFlows(
 	const totals = {
 		income: 0,
 		expense: 0,
+		refund: 0,
 		contribution: 0,
 		redemption: 0,
+		investment_income: 0,
 		transfer: 0,
 		count: 0
 	};
@@ -145,16 +164,17 @@ export function summarizeFinancialFlows(
 		if (kind === 'excluded') continue;
 		const cents = toCents(row.amount);
 		totals.count += 1;
-		if (kind === 'income' || kind === 'redemption') totals[kind] += cents;
-		else if (kind === 'expense' || kind === 'contribution')
+		if (kind === 'expense' || kind === 'contribution' || kind === 'transfer')
 			totals[kind] += Math.abs(cents);
-		else totals.transfer += Math.abs(cents);
+		else totals[kind] += cents;
 	}
 	return {
 		income: fromCents(totals.income),
 		expense: fromCents(totals.expense),
+		refund: fromCents(totals.refund),
 		contribution: fromCents(totals.contribution),
 		redemption: fromCents(totals.redemption),
+		investmentIncome: fromCents(totals.investment_income),
 		transfer: fromCents(totals.transfer),
 		count: totals.count
 	};
@@ -165,9 +185,14 @@ export function investmentFlowTotals(
 	categories: ReadonlyMap<string, FinancialCategory> = new Map()
 ) {
 	const totals = summarizeFinancialFlows(rows, categories);
+	const net = totals.contribution - totals.redemption;
 	return {
 		contributions: totals.contribution,
 		redemptions: totals.redemption,
-		net: totals.contribution - totals.redemption
+		investmentIncome: totals.investmentIncome,
+		net,
+		// Contributions funded by dividends/interest are reinvestment; only what
+		// exceeds them is capital that came from earned income or reserves.
+		newCapital: net - totals.investmentIncome
 	};
 }
