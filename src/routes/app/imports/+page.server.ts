@@ -16,6 +16,7 @@ import { checkPersistentRateLimit } from '$lib/server/rate-limit';
 import {
 	LLM_RATE_LIMIT,
 	LLM_RATE_LIMIT_MESSAGE,
+	MAX_PDF_TEXT_CHARS,
 	MAX_PROMPT_TEXT_CHARS,
 	UPLOAD_TOO_LARGE_MESSAGE,
 	isIsoMonth,
@@ -28,6 +29,11 @@ import {
 	extractTextFromPdf,
 	isPdf
 } from '$lib/server/import-extract';
+import {
+	signPreview,
+	verifyPreview,
+	type PreviewPayload
+} from '$lib/server/import-preview-token';
 
 function readSourceType(formData: FormData): CsvSourceType {
 	const raw = formData.get('source_type');
@@ -52,6 +58,9 @@ const MIN_PDF_TEXT_LENGTH = 100;
 const SCANNED_PDF_MESSAGE =
 	'O PDF enviado não contém texto selecionável (provavelmente é digitalizado). Envie um print da tela ou cole o conteúdo do extrato.';
 
+const PDF_TOO_LONG_NOTE =
+	'O PDF é muito longo: só o início foi lido. Envie o extrato em períodos menores para importar o restante.';
+
 const UNREADABLE_PDF_MESSAGE =
 	'Não foi possível ler o PDF enviado. Verifique se o arquivo não está protegido por senha ou corrompido.';
 
@@ -66,6 +75,38 @@ interface ResolvedImportInput {
 
 function pastedImportText(formData: FormData) {
 	return (formData.get('pasted_text')?.toString() ?? '').trim();
+}
+
+function resolvedFromPreview(payload: PreviewPayload): ResolvedImportInput {
+	return {
+		rows: payload.rows,
+		sourceType: payload.sourceType,
+		mappingSource: 'llm',
+		confidence: 1,
+		sourceName: payload.sourceName
+	};
+}
+
+// The preview already extracted these rows (and paid for the AI call), so the
+// confirm step writes exactly what was reviewed. A missing, expired or foreign
+// token (page reloaded, rows too large for a token, another user or group)
+// falls back to extracting the upload again.
+async function resolveConfirmInput(
+	formData: FormData,
+	referenceMonth: string,
+	userId: string,
+	householdId: string
+) {
+	const previewed = verifyPreview(
+		formData.get('preview_token')?.toString() ?? ''
+	);
+	const reviewed =
+		previewed?.userId === userId && previewed.householdId === householdId
+			? previewed
+			: null;
+	return reviewed
+		? resolvedFromPreview(reviewed)
+		: resolveImportInput(formData, referenceMonth);
 }
 
 function emptyImportRowsMessage(resolved: ResolvedImportInput) {
@@ -100,8 +141,9 @@ async function resolvePdfImport(
 	if (extracted.text.length < MIN_PDF_TEXT_LENGTH) {
 		return pdfImportFailure(sourceType, sourceName, SCANNED_PDF_MESSAGE);
 	}
+	const oversized = extracted.text.length > MAX_PDF_TEXT_CHARS;
 	const extraction = await extractRowsFromText(
-		extracted.text,
+		oversized ? extracted.text.slice(0, MAX_PDF_TEXT_CHARS) : extracted.text,
 		sourceType,
 		referenceMonth
 	);
@@ -109,8 +151,12 @@ async function resolvePdfImport(
 		rows: extraction.rows,
 		sourceType,
 		mappingSource: 'llm',
-		confidence: extraction.confidence,
-		notes: extraction.notes,
+		confidence: oversized
+			? Math.min(extraction.confidence, 0.6)
+			: extraction.confidence,
+		notes: [extraction.notes, oversized ? PDF_TOO_LONG_NOTE : undefined]
+			.filter(Boolean)
+			.join(' · '),
 		sourceName
 	};
 }
@@ -542,6 +588,14 @@ export const actions: Actions = {
 			rows
 		);
 
+		const previewToken = signPreview({
+			householdId,
+			userId: user.id,
+			sourceType: resolved.sourceType,
+			sourceName: resolved.sourceName,
+			rows: resolved.rows
+		});
+
 		const previewRows = rows.slice(0, 10).map((r) => ({
 			...r,
 			duplicate: existingKeys.has(r.dedup_key)
@@ -564,7 +618,8 @@ export const actions: Actions = {
 			source_type: resolved.sourceType,
 			mapping_source: resolved.mappingSource,
 			mapping_confidence: resolved.confidence,
-			mapping_notes: resolved.notes
+			mapping_notes: resolved.notes,
+			preview_token: previewToken
 		};
 	},
 
@@ -582,7 +637,20 @@ export const actions: Actions = {
 			});
 		}
 
-		const resolved = await resolveImportInput(formData, referenceMonth);
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId) {
+			return fail(400, {
+				success: false,
+				message: 'Usuário não pertence a um grupo'
+			});
+		}
+
+		const resolved = await resolveConfirmInput(
+			formData,
+			referenceMonth,
+			user.id,
+			householdId
+		);
 		if (!resolved) {
 			return fail(400, {
 				success: false,
@@ -595,14 +663,6 @@ export const actions: Actions = {
 			return fail(400, {
 				success: false,
 				message: emptyImportRowsMessage(resolved)
-			});
-		}
-
-		const householdId = await getUserHouseholdId(supabase, user.id);
-		if (!householdId) {
-			return fail(400, {
-				success: false,
-				message: 'Usuário não pertence a um grupo'
 			});
 		}
 

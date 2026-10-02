@@ -464,6 +464,11 @@
 				/>
 				<input type="hidden" name="pasted_text" value={pastedText} />
 				<input
+					type="hidden"
+					name="preview_token"
+					value={form?.preview_token ?? ''}
+				/>
+				<input
 					bind:this={confirmFileInput}
 					name="file"
 					type="file"
@@ -472,7 +477,7 @@
 					tabindex="-1"
 					aria-hidden="true"
 				/>
-				{#if !selectedFile && !pastedText.trim()}
+				{#if !selectedFile && !pastedText.trim() && !form?.preview_token}
 					<p
 						class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3 mb-3"
 					>
@@ -498,7 +503,10 @@
 					</a>
 					<button
 						type="submit"
-						disabled={(!selectedFile && !pastedText.trim()) || isConfirming}
+						disabled={(!selectedFile &&
+							!pastedText.trim() &&
+							!form?.preview_token) ||
+							isConfirming}
 						class="inline-flex min-w-44 items-center justify-center gap-2 rounded-md border border-transparent bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
 					>
 						{#if isConfirming}

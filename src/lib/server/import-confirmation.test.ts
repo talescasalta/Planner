@@ -11,6 +11,7 @@ import {
 	extractTextFromPdf,
 	isPdf
 } from '$lib/server/import-extract';
+import { verifyPreview } from '$lib/server/import-preview-token';
 
 vi.mock('@sveltejs/kit', () => ({
 	fail: (status: number, data: Record<string, unknown>) => ({
@@ -38,6 +39,12 @@ vi.mock('$lib/server/csv-parser', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/server/csv-parser')>()),
 	assignImportDedupKeys: vi.fn(),
 	detectMapping: vi.fn()
+}));
+vi.mock('$lib/server/import-preview-token', async (importOriginal) => ({
+	...(await importOriginal<
+		typeof import('$lib/server/import-preview-token')
+	>()),
+	verifyPreview: vi.fn()
 }));
 vi.mock('$lib/server/import-extract', () => ({
 	detectImageMimeType: vi.fn(),
@@ -118,6 +125,8 @@ beforeEach(() => {
 	vi.mocked(assignImportDedupKeys).mockReset();
 	vi.mocked(detectMapping).mockReset();
 	vi.mocked(classifyTransactions).mockReset();
+	vi.mocked(verifyPreview).mockReset();
+	vi.mocked(verifyPreview).mockReturnValue(null);
 	vi.mocked(getUserHouseholdId).mockResolvedValue('household-a');
 	vi.mocked(getHouseholdMembers).mockResolvedValue(['user-a']);
 	vi.mocked(isHouseholdAdmin).mockResolvedValue(true);
@@ -203,6 +212,40 @@ describe('PDF statement import', () => {
 		expect(result.total).toBe(1);
 		expect(result.filename).toBe('itau_extrato.pdf');
 		expect(result.mapping_source).toBe('llm');
+	});
+
+	it('reads only the first 120k characters of a huge PDF and says so', async () => {
+		vi.mocked(isPdf).mockReturnValue(true);
+		vi.mocked(extractTextFromPdf).mockResolvedValue({
+			text: 'x'.repeat(130_000),
+			pages: 40
+		});
+		vi.mocked(extractRowsFromText).mockResolvedValue({
+			rows: [
+				{
+					date: '2026-08-12',
+					description: 'PIX',
+					clean_description: 'PIX',
+					amount: -1,
+					currency: 'BRL'
+				}
+			],
+			confidence: 0.9
+		} as never);
+
+		const result = (await actions.preview({
+			request: requestWithPdf(),
+			locals: previewLocals
+		} as never)) as never as {
+			mapping_notes: string;
+			mapping_confidence: number;
+		};
+
+		expect(vi.mocked(extractRowsFromText).mock.calls[0][0]).toHaveLength(
+			120_000
+		);
+		expect(result.mapping_notes).toContain('muito longo');
+		expect(result.mapping_confidence).toBe(0.6);
 	});
 
 	it('explains that a scanned PDF has no text layer instead of calling the AI', async () => {
@@ -716,5 +759,137 @@ describe('import access repair', () => {
 				]
 			]
 		});
+	});
+});
+
+describe('reviewed preview token', () => {
+	const reviewedRow = {
+		date: '2026-05-01',
+		description: 'Mercado',
+		clean_description: 'MERCADO',
+		amount: -10,
+		currency: 'BRL'
+	};
+
+	function requestWithToken(extra: Record<string, string> = {}) {
+		const formData = new FormData();
+		formData.set('reference_month', '2026-05');
+		formData.set('preview_token', 'signed-token');
+		for (const [key, value] of Object.entries(extra)) formData.set(key, value);
+		return { formData: async () => formData } as never;
+	}
+
+	function queueSuccessfulWrites() {
+		const queries = [
+			new QueryMock({ data: { id: 'import-a' }, error: null }),
+			new QueryMock({
+				data: [
+					{
+						id: 'tx-a',
+						amount: -10,
+						date: '2026-05-01',
+						description: 'Mercado',
+						clean_description: 'MERCADO'
+					}
+				],
+				error: null
+			}),
+			new QueryMock({ data: null, error: null }),
+			new QueryMock({ data: null, count: 1, error: null }),
+			new QueryMock({ data: null, error: null })
+		];
+		const upsert = queries[1];
+		mockedAdminFrom.mockImplementation(() => {
+			const query = queries.shift();
+			if (!query) throw new Error('Unexpected admin query');
+			return query as never;
+		});
+		return upsert;
+	}
+
+	function confirmAs(request: never) {
+		return actions.confirm({
+			request,
+			locals: {
+				supabase: {
+					from: () => new QueryMock({ data: [], error: null })
+				} as never,
+				safeGetSession: async () => ({ user: { id: 'user-a' } })
+			}
+		} as never);
+	}
+
+	it('writes the rows the user reviewed without extracting again', async () => {
+		vi.mocked(verifyPreview).mockReturnValue({
+			v: 1,
+			exp: Date.now() + 60_000,
+			householdId: 'household-a',
+			userId: 'user-a',
+			sourceType: 'bank_account',
+			sourceName: 'itau_extrato.pdf',
+			rows: [reviewedRow]
+		});
+		const upsert = queueSuccessfulWrites();
+
+		await confirmAs(requestWithToken());
+
+		expect(resolveImportMapping).not.toHaveBeenCalled();
+		expect(extractRowsFromText).not.toHaveBeenCalled();
+		expect(extractTextFromPdf).not.toHaveBeenCalled();
+		expect(upsert.calls).toContainEqual({
+			method: 'upsert',
+			args: [
+				[
+					expect.objectContaining({
+						description: 'Mercado',
+						source_type: 'bank_account'
+					})
+				],
+				expect.anything()
+			]
+		});
+	});
+
+	it('ignores a token issued to another user and extracts the upload as before', async () => {
+		vi.mocked(verifyPreview).mockReturnValue({
+			v: 1,
+			exp: Date.now() + 60_000,
+			householdId: 'household-a',
+			userId: 'user-b',
+			sourceType: 'bank_account',
+			sourceName: 'outro.pdf',
+			rows: [{ ...reviewedRow, description: 'Do outro usuário' }]
+		});
+		queueSuccessfulWrites();
+
+		await confirmAs(
+			requestWithToken({
+				pasted_text: 'date,title,amount\n2026-05-01,Mercado,10'
+			})
+		);
+
+		expect(resolveImportMapping).toHaveBeenCalledOnce();
+	});
+
+	it('ignores a token issued for a different household and extracts the upload as before', async () => {
+		vi.mocked(verifyPreview).mockReturnValue({
+			v: 1,
+			exp: Date.now() + 60_000,
+			householdId: 'household-b',
+			userId: 'user-a',
+			sourceType: 'bank_account',
+			sourceName: 'itau_extrato.pdf',
+			rows: [reviewedRow]
+		});
+
+		queueSuccessfulWrites();
+
+		await confirmAs(
+			requestWithToken({
+				pasted_text: 'date,title,amount\n2026-05-01,Mercado,10'
+			})
+		);
+
+		expect(resolveImportMapping).toHaveBeenCalledOnce();
 	});
 });

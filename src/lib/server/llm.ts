@@ -57,6 +57,7 @@ export interface LlmResponse {
 		message: {
 			content: string;
 		};
+		finish_reason?: string | null;
 	}>;
 }
 
