@@ -41,6 +41,59 @@ export function monthWindow(month: string, today: string): MonthWindow {
 	return { month, start, end: lastDay > today ? today : lastDay };
 }
 
+// A period is measured between two closing marks: the last close before it
+// (start) and its own last day (end). Days and years follow the same rule as
+// months, so one engine answers all three.
+export interface PeriodWindow {
+	start: string;
+	end: string;
+}
+
+function addDays(iso: string, days: number): string {
+	return new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86400000)
+		.toISOString()
+		.slice(0, 10);
+}
+
+function isWeekend(iso: string): boolean {
+	const weekday = new Date(`${iso}T00:00:00Z`).getUTCDay();
+	return weekday === 0 || weekday === 6;
+}
+
+// A day opens at the previous trading day's close: Monday is measured from
+// Friday, so the weekend never shows up as a flat day of its own.
+export function dayWindow(day: string): PeriodWindow {
+	let start = addDays(day, -1);
+	while (isWeekend(start)) start = addDays(start, -1);
+	return { start, end: day };
+}
+
+export function yearWindow(year: string, today: string): PeriodWindow {
+	const lastDay = `${year}-12-31`;
+	return {
+		start: `${Number(year) - 1}-12-31`,
+		end: lastDay > today ? today : lastDay
+	};
+}
+
+// The most recent weekdays up to today (or the last Friday on a weekend).
+export function recentDays(today: string, howMany = 10): string[] {
+	const days: string[] = [];
+	let day = today;
+	while (days.length < howMany) {
+		if (!isWeekend(day)) days.push(day);
+		day = addDays(day, -1);
+	}
+	return days;
+}
+
+export function recentYears(today: string, firstYear: string): string[] {
+	const years: string[] = [];
+	for (let year = Number(today.slice(0, 4)); year >= Number(firstYear); year--)
+		years.push(String(year));
+	return years;
+}
+
 export function recentMonths(today: string, howMany = 2): string[] {
 	const [year, monthNumber] = today.slice(0, 7).split('-').map(Number);
 	const months: string[] = [];
@@ -120,7 +173,7 @@ interface DatedFlow {
 function flowsInWindow(
 	assetId: string,
 	events: EventRow[],
-	window: MonthWindow
+	window: PeriodWindow
 ): DatedFlow[] {
 	const flows: DatedFlow[] = [];
 	for (const event of events) {
@@ -157,7 +210,7 @@ export function modifiedDietz(
 	startValue: number,
 	endValue: number,
 	flows: DatedFlow[],
-	window: MonthWindow
+	window: PeriodWindow
 ): { gain: number; returnRate: number | null } {
 	const netFlow = flows.reduce((sum, flow) => sum + flow.amount, 0);
 	const gain = endValue - startValue - netFlow;
@@ -316,7 +369,7 @@ export function appliedSeries(
 
 export function lastCdiDate(
 	rates: CdiRate[],
-	window: MonthWindow
+	window: PeriodWindow
 ): string | null {
 	let last: string | null = null;
 	for (const rate of rates) {
@@ -336,11 +389,14 @@ function percentOfCdi(
 
 export function assetMonthReturn(
 	assetId: string,
-	window: MonthWindow,
+	window: PeriodWindow,
 	snapshots: SnapshotRow[],
 	events: EventRow[],
 	quotes: QuoteRow[],
-	cdiRate: number
+	cdiRate: number,
+	// How old the opening quote may be. A month tolerates a stale fortnight;
+	// a day does not, or a week of movement would land on a single day.
+	toleranceDays = 12
 ): AssetMonthReturn {
 	const startQuantity = deriveQuantity(
 		assetId,
@@ -367,7 +423,8 @@ export function assetMonthReturn(
 	const priced =
 		endPrice !== null &&
 		(openedThisMonth ||
-			(startPrice !== null && hasPriceNear(assetId, quotes, window.start)));
+			(startPrice !== null &&
+				hasPriceNear(assetId, quotes, window.start, toleranceDays)));
 	// A restatement the events do not explain moves the quantity with no flow
 	// behind it, which Modified Dietz would read as pure gain.
 	const gap = restatementGap(
@@ -419,19 +476,29 @@ export function assetMonthReturn(
 	};
 }
 
-export function monthReturn(
+export type PeriodReturn = Omit<MonthReturn, 'month'> & { key: string };
+
+export function periodReturn(
 	assetIds: string[],
-	month: string,
-	today: string,
+	key: string,
+	window: PeriodWindow,
 	snapshots: SnapshotRow[],
 	events: EventRow[],
 	quotes: QuoteRow[],
-	rates: CdiRate[]
-): MonthReturn {
-	const window = monthWindow(month, today);
+	rates: CdiRate[],
+	toleranceDays = 12
+): PeriodReturn {
 	const cdiRate = cdiFactor(rates, window.start, window.end) - 1;
 	const assets = assetIds.map((assetId) =>
-		assetMonthReturn(assetId, window, snapshots, events, quotes, cdiRate)
+		assetMonthReturn(
+			assetId,
+			window,
+			snapshots,
+			events,
+			quotes,
+			cdiRate,
+			toleranceDays
+		)
 	);
 
 	const priced = assets.filter((asset) => !asset.unpriced && !asset.divergent);
@@ -458,7 +525,7 @@ export function monthReturn(
 	const returnRate = denominator > 0 ? gain / denominator : null;
 
 	return {
-		month,
+		key,
 		start: window.start,
 		end: window.end,
 		cdiRate,
@@ -475,4 +542,25 @@ export function monthReturn(
 		divergentCount: divergent.length,
 		cdiThrough: lastCdiDate(rates, window)
 	};
+}
+
+export function monthReturn(
+	assetIds: string[],
+	month: string,
+	today: string,
+	snapshots: SnapshotRow[],
+	events: EventRow[],
+	quotes: QuoteRow[],
+	rates: CdiRate[]
+): MonthReturn {
+	const { key, ...rest } = periodReturn(
+		assetIds,
+		month,
+		monthWindow(month, today),
+		snapshots,
+		events,
+		quotes,
+		rates
+	);
+	return { month: key, ...rest };
 }

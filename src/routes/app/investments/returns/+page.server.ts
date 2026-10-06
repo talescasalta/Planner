@@ -3,10 +3,16 @@ import { getUserHouseholdId } from '$lib/server/household';
 import { loadCdiRates } from '$lib/server/investment-cdi';
 import {
 	appliedSeries,
-	monthReturn,
+	dayWindow,
+	monthWindow,
+	periodReturn,
+	recentDays,
 	recentMonths,
+	recentYears,
+	yearWindow,
 	type AppliedSeries,
-	type MonthReturn
+	type PeriodReturn,
+	type PeriodWindow
 } from '$lib/server/investment-monthly';
 import {
 	buildCashFlows,
@@ -23,7 +29,13 @@ import {
 } from '$lib/server/investment-overview';
 import type { TaxAssetRow } from '$lib/server/investment-tax';
 
+const HOW_MANY_DAYS = 10;
 const HOW_MANY_MONTHS = 6;
+const HOW_MANY_YEARS = 5;
+// A day is measured from the previous close, so its opening quote may be a
+// long weekend old at most; anything staler would book days of movement on
+// one day.
+const DAY_TOLERANCE_DAYS = 5;
 
 interface AssetLabel {
 	label: string;
@@ -110,7 +122,9 @@ export const load: PageServerLoad = async ({
 			excludedCount: 0,
 			excludedValue: 0
 		} as AppliedSeries,
-		months: [] as (MonthReturn & { assets: MonthReturn['assets'] })[],
+		days: [] as PeriodReturn[],
+		months: [] as PeriodReturn[],
+		years: [] as PeriodReturn[],
 		labels: {} as Record<string, AssetLabel>,
 		currentUserId: '',
 		owners: [] as string[]
@@ -125,8 +139,17 @@ export const load: PageServerLoad = async ({
 	if (assets.length === 0) return { ...empty, currentUserId: user.id };
 
 	const today = new Date().toISOString().slice(0, 10);
+	const firstYear = events.reduce(
+		(earliest, event) =>
+			event.event_date.slice(0, 4) < earliest
+				? event.event_date.slice(0, 4)
+				: earliest,
+		today.slice(0, 4)
+	);
+	const days = recentDays(today, HOW_MANY_DAYS);
 	const months = recentMonths(today, HOW_MANY_MONTHS);
-	const oldest = `${months.at(-1)}-01`;
+	const years = recentYears(today, firstYear).slice(0, HOW_MANY_YEARS);
+	const oldest = yearWindow(years.at(-1)!, today).start;
 	const rates = await loadCdiRates(oldest, today);
 
 	const positions = valuePositions(rows).filter(
@@ -134,9 +157,30 @@ export const load: PageServerLoad = async ({
 	);
 
 	const assetIds = assets.map((asset) => asset.id);
-	const computed: MonthReturn[] = months.map((month) =>
-		monthReturn(assetIds, month, today, snapshots, events, quotes, rates)
-	);
+	const measure = (key: string, window: PeriodWindow, tolerance?: number) => {
+		const result = periodReturn(
+			assetIds,
+			key,
+			window,
+			snapshots,
+			events,
+			quotes,
+			rates,
+			tolerance
+		);
+		// Only assets that actually held a position are worth listing.
+		return {
+			...result,
+			assets: result.assets.filter(
+				(asset) => asset.startQuantity > 0 || asset.endQuantity > 0
+			)
+		};
+	};
+	// Days and years before the quote history began measure nothing at all;
+	// listing them would only add empty tabs. The current one always stays.
+	const measurable = (period: PeriodReturn, index: number) =>
+		index === 0 ||
+		period.assets.some((asset) => !asset.unpriced && !asset.divergent);
 
 	const labels: Record<string, AssetLabel> = {};
 	for (const asset of assets) {
@@ -162,13 +206,13 @@ export const load: PageServerLoad = async ({
 			recentMonths(today, 12),
 			today
 		),
-		months: computed.map((month) => ({
-			...month,
-			// Only assets that actually held a position are worth listing.
-			assets: month.assets.filter(
-				(asset) => asset.startQuantity > 0 || asset.endQuantity > 0
-			)
-		})),
+		days: days
+			.map((day) => measure(day, dayWindow(day), DAY_TOLERANCE_DAYS))
+			.filter(measurable),
+		months: months.map((month) => measure(month, monthWindow(month, today))),
+		years: years
+			.map((year) => measure(year, yearWindow(year, today)))
+			.filter(measurable),
 		labels,
 		currentUserId: user.id,
 		owners: [...new Set(assets.map((asset) => asset.owner_user_id))]

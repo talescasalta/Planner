@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { SvelteMap } from 'svelte/reactivity';
+	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import CategoryTreemap from '$lib/components/charts/CategoryTreemap.svelte';
 	import AssetDetailPanel from '$lib/components/investments/AssetDetailPanel.svelte';
@@ -11,6 +12,7 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let ownerFilter: 'todos' | 'meus' = $state('todos');
+	let refreshing = $state(false);
 	let positions = $derived(
 		ownerFilter === 'todos'
 			? data.positions
@@ -178,16 +180,61 @@
 					cotações.
 				{/if}
 			</p>
-			{#if data.owners.length > 1}
-				<select
-					bind:value={ownerFilter}
-					class="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700"
+			<div class="flex flex-wrap items-center gap-2">
+				{#if data.owners.length > 1}
+					<select
+						bind:value={ownerFilter}
+						class="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700"
+					>
+						<option value="todos">Todos do grupo</option>
+						<option value="meus">Só os meus</option>
+					</select>
+				{/if}
+				<form
+					method="POST"
+					action="?/refresh_quotes"
+					use:enhance={() => {
+						refreshing = true;
+						return async ({ update }) => {
+							await update();
+							refreshing = false;
+						};
+					}}
 				>
-					<option value="todos">Todos do grupo</option>
-					<option value="meus">Só os meus</option>
-				</select>
-			{/if}
+					<button
+						type="submit"
+						disabled={refreshing}
+						title="Busca agora as cotações da bolsa e do Tesouro Direto e recalcula CDB, LCA e LCI na curva. Fundos seguem com a cota diária da CVM."
+						class="inline-flex items-center gap-1.5 rounded border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+					>
+						<svg
+							class={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`}
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<path d="M21 12a9 9 0 1 1-2.64-6.36" />
+							<path d="M21 3v6h-6" />
+						</svg>
+						{refreshing ? 'Atualizando…' : 'Atualizar preços'}
+					</button>
+				</form>
+			</div>
 		</div>
+
+		{#if form?.refresh && !refreshing}
+			<div
+				class={form.refresh.ok
+					? 'rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800'
+					: 'rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800'}
+			>
+				{form.refresh.message}
+			</div>
+		{/if}
 
 		{#if data.unknownEventTypes.length > 0}
 			<div

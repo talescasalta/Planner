@@ -5,6 +5,7 @@ import {
 	dateBr,
 	gainClass,
 	monthName,
+	dayShort,
 	monthShort,
 	pct,
 	percentOfCdi,
@@ -44,6 +45,7 @@ describe('percentages', () => {
 describe('dates', () => {
 	it('renders month keys and ISO dates in Portuguese', () => {
 		expect(monthName('2026-08')).toBe('Agosto de 2026');
+		expect(dayShort('2026-10-05')).toBe('Seg, 05/10');
 		expect(monthShort('2026-08')).toBe('Ago/26');
 		expect(dateBr('2026-08-31')).toBe('31/08/2026');
 		expect(dateBr(null)).toBe('—');

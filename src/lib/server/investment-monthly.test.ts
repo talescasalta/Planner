@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
 	appliedSeries,
 	assetMonthReturn,
+	dayWindow,
 	modifiedDietz,
 	monthReturn,
 	monthWindow,
-	recentMonths
+	periodReturn,
+	recentDays,
+	recentMonths,
+	recentYears,
+	yearWindow
 } from './investment-monthly';
 import type { EventRow, QuoteRow, SnapshotRow } from './investment-positions';
 
@@ -58,6 +63,69 @@ describe('month windows', () => {
 			'2025-12',
 			'2025-11'
 		]);
+	});
+});
+
+describe('day and year windows', () => {
+	it('opens a day at the previous trading close', () => {
+		expect(dayWindow('2026-10-02')).toEqual({
+			start: '2026-10-01',
+			end: '2026-10-02'
+		});
+		// Monday is measured from Friday.
+		expect(dayWindow('2026-10-05').start).toBe('2026-10-02');
+	});
+
+	it('lists only weekdays, starting from Friday on a weekend', () => {
+		expect(recentDays('2026-10-04', 3)).toEqual([
+			'2026-10-02',
+			'2026-10-01',
+			'2026-09-30'
+		]);
+	});
+
+	it('opens a year on the previous 31/12 and stops the running one today', () => {
+		expect(yearWindow('2025', '2026-10-05')).toEqual({
+			start: '2024-12-31',
+			end: '2025-12-31'
+		});
+		expect(yearWindow('2026', '2026-10-05').end).toBe('2026-10-05');
+		expect(recentYears('2026-10-05', '2024')).toEqual(['2026', '2025', '2024']);
+	});
+});
+
+describe('periodReturn', () => {
+	it('measures a single day from the previous close', () => {
+		const quotes = [quote('2026-10-02', 10), quote('2026-10-05', 10.5)];
+		const result = periodReturn(
+			['a1'],
+			'2026-10-05',
+			dayWindow('2026-10-05'),
+			[snapshot()],
+			[],
+			quotes,
+			[{ date: '2026-10-05', rate: 0.05 }],
+			5
+		);
+		expect(result.key).toBe('2026-10-05');
+		expect(result.gain).toBeCloseTo(50);
+		expect(result.returnRate).toBeCloseTo(0.05);
+	});
+
+	it('does not book a stale week of movement on one day', () => {
+		const quotes = [quote('2026-09-25', 10), quote('2026-10-05', 11)];
+		const result = periodReturn(
+			['a1'],
+			'2026-10-05',
+			dayWindow('2026-10-05'),
+			[snapshot()],
+			[],
+			quotes,
+			[],
+			5
+		);
+		expect(result.unpricedCount).toBe(1);
+		expect(result.returnRate).toBeNull();
 	});
 });
 

@@ -89,6 +89,14 @@ export function monthShort(key: string): string {
 	return `${MONTHS_SHORT[month - 1] ?? '?'}/${String(year).slice(-2)}`;
 }
 
+// "Seg, 31/08" from "2026-08-31". Built by hand for the same reason.
+const WEEKDAYS_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+export function dayShort(iso: string): string {
+	const [year, month, day] = iso.split('-').map(Number);
+	const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+	return `${WEEKDAYS_SHORT[weekday]}, ${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`;
+}
+
 // "31/08/2026" from "2026-08-31".
 export function dateBr(iso: string | null | undefined): string {
 	if (!iso) return '—';

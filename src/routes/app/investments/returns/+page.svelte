@@ -7,6 +7,7 @@
 		brl,
 		cdiClass,
 		dateBr,
+		dayShort,
 		gainClass,
 		monthName,
 		monthShort,
@@ -20,17 +21,51 @@
 
 	let { data }: { data: PageData } = $props();
 
-	// Two questions used to share one long page: how the running month is
-	// going, and how the whole history compares to the CDI. Splitting them
-	// keeps each half short enough to read without scrolling past the answer.
-	type View = 'mes' | 'historico';
+	// Two questions used to share one long page: how a period is going (a
+	// day, a month or a year), and how the whole history compares to the CDI.
+	// Splitting them keeps each half short enough to read without scrolling
+	// past the answer.
+	type Period = 'dia' | 'mes' | 'ano';
+	type View = Period | 'historico';
 	let view = $state<View>('mes');
+	const VIEWS = [
+		{ id: 'dia', label: 'Dia' },
+		{ id: 'mes', label: 'Mês' },
+		{ id: 'ano', label: 'Ano' },
+		{ id: 'historico', label: 'Histórico' }
+	] as const;
 
-	let selectedMonth = $state(0);
+	// Each period keeps its own selection, so switching tabs and back does not
+	// lose the day or month being read.
+	let selected = $state<Record<Period, number>>({ dia: 0, mes: 0, ano: 0 });
 	let ownerFilter: 'todos' | 'meus' = $state('todos');
 	let onlyMovers = $state(true);
 
-	let month = $derived(data.months[selectedMonth]);
+	let periodKind = $derived<Period>(view === 'historico' ? 'mes' : view);
+	let periods = $derived(
+		periodKind === 'dia'
+			? data.days
+			: periodKind === 'ano'
+				? data.years
+				: data.months
+	);
+	let month = $derived(periods[selected[periodKind]]);
+
+	const IN_PERIOD: Record<Period, string> = {
+		dia: 'no dia',
+		mes: 'no mês',
+		ano: 'no ano'
+	};
+	function periodName(key: string): string {
+		if (periodKind === 'dia') return dayShort(key);
+		if (periodKind === 'ano') return key;
+		return monthName(key);
+	}
+	function periodShort(key: string): string {
+		if (periodKind === 'dia') return dayShort(key);
+		if (periodKind === 'ano') return key;
+		return monthShort(key);
+	}
 	// Two different reasons a holding has no rate this month, both meaning the
 	// same thing for every ranking on this page: do not show a number.
 	const unmeasured = (asset: { unpriced: boolean; divergent: boolean }) =>
@@ -103,7 +138,7 @@
 			role="tablist"
 			aria-label="Período do rendimento"
 		>
-			{#each [{ id: 'mes', label: 'Mês' }, { id: 'historico', label: 'Histórico' }] as const as option (option.id)}
+			{#each VIEWS as option (option.id)}
 				<button
 					type="button"
 					role="tab"
@@ -138,22 +173,30 @@
 				href={resolve('/app/investments/import')}>Importar agora</a
 			>.
 		</div>
-	{:else if view === 'mes'}
-		<!-- ============================ MÊS ============================ -->
+	{:else if view !== 'historico'}
+		<!-- ======================= DIA / MÊS / ANO ======================= -->
 		<div class="flex flex-wrap gap-2">
-			{#each data.months as m, index (m.month)}
+			{#each periods as m, index (m.key)}
 				<button
 					type="button"
-					onclick={() => (selectedMonth = index)}
-					class={index === selectedMonth
+					onclick={() => (selected[periodKind] = index)}
+					class={index === selected[periodKind]
 						? 'rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white'
 						: 'rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50'}
 				>
-					<span class="sm:hidden">{monthShort(m.month)}</span>
-					<span class="hidden sm:inline">{monthName(m.month)}</span>
+					<span class="sm:hidden">{periodShort(m.key)}</span>
+					<span class="hidden sm:inline">{periodName(m.key)}</span>
 				</button>
 			{/each}
 		</div>
+
+		{#if periodKind === 'dia'}
+			<p class="text-xs text-gray-500">
+				Cada dia é medido do fechamento do dia útil anterior. Fundos e
+				previdência só mudam quando a CVM publica a cota, com uns dois dias de
+				atraso — até lá aparecem parados e o movimento cai no dia da publicação.
+			</p>
+		{/if}
 
 		{#if month}
 			<div class="grid gap-4 lg:grid-cols-[260px_1fr]">
@@ -163,15 +206,17 @@
 					<ReturnGauge
 						portfolio={month.returnRate}
 						cdi={month.cdiRate}
-						label={monthName(month.month)}
+						label={periodName(month.key)}
 						centerValue={brl(month.endValue)}
-						centerCaption={`${signedBrl(month.gain)} no mês`}
+						centerCaption={`${signedBrl(month.gain)} ${IN_PERIOD[periodKind]}`}
 						percentOfCdi={month.percentOfCdi}
 					/>
 				</div>
 				<div class="grid gap-3 sm:grid-cols-2">
 					<div class="rounded-lg border border-gray-200 bg-white p-4">
-						<p class="text-xs text-gray-500">Rendeu no mês</p>
+						<p class="text-xs text-gray-500">
+							Rendeu {IN_PERIOD[periodKind]}
+						</p>
 						<p class={`mt-1 text-2xl font-semibold ${gainClass(month.gain)}`}>
 							{signedBrl(month.gain)}
 						</p>
@@ -218,7 +263,7 @@
 					O Banco Central publica o CDI com atraso: a série vai só até {dateBr(
 						month.cdiThrough
 					)}, não até {dateBr(month.end)}. O "% do CDI" está mais alto do que
-					ficará quando o mês fechar.
+					ficará quando o período fechar.
 				</div>
 			{/if}
 
