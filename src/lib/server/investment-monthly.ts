@@ -87,6 +87,27 @@ export function recentDays(today: string, howMany = 10): string[] {
 	return days;
 }
 
+// How many years the returns page offers, and so how many year-end closes the
+// quote history must hold for each of them to have an opening mark.
+export const YEARS_SHOWN = 5;
+
+// The closes that open each of the years shown: 31/12 of every year before the
+// running one. The window before each date matches the tolerance a period
+// gives its opening quote.
+export function recentYearEnds(
+	today: string,
+	howMany = YEARS_SHOWN
+): { from: string; to: string }[] {
+	const year = Number(today.slice(0, 4));
+	const ends: { from: string; to: string }[] = [];
+	for (let back = 1; back <= howMany; back++)
+		ends.push({
+			from: `${year - back}-12-15`,
+			to: `${year - back}-12-31`
+		});
+	return ends;
+}
+
 export function recentYears(today: string, firstYear: string): string[] {
 	const years: string[] = [];
 	for (let year = Number(today.slice(0, 4)); year >= Number(firstYear); year--)

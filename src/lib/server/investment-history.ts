@@ -8,6 +8,7 @@ import {
 	tesouroMatchKey
 } from './investment-quotes';
 import { fundKey, onlyDigits } from './investment-funds';
+import { recentYearEnds } from './investment-monthly';
 
 // Backfills the closing prices of past months so a month's return has an
 // opening mark to measure from. Same three sources the daily cron already
@@ -84,17 +85,38 @@ export async function fetchTickerHistory(
 	return pricesFromYahooChart(await response.json());
 }
 
+export interface DateWindow {
+	from: string;
+	to: string;
+}
+
+// A backfill wants the recent past in full, for monthly and daily returns, and
+// only the last fortnight of each recent year before it, for the year view's
+// opening marks. Everything else would be stored and never read.
+export function wantedDate(
+	date: string,
+	since: string,
+	yearEnds: DateWindow[] = []
+): boolean {
+	return (
+		date >= since ||
+		yearEnds.some((window) => date >= window.from && date <= window.to)
+	);
+}
+
 // Keeps every daily PU of the wanted bonds, not just the freshest — the whole
 // point of a backfill.
 export function collectTesouroHistory(
 	csv: string,
 	wantedKeys: Set<string>,
 	since: string,
-	into: Map<string, DatedPrice[]> = new Map()
+	into: Map<string, DatedPrice[]> = new Map(),
+	yearEnds: DateWindow[] = []
 ): Map<string, DatedPrice[]> {
 	for (const line of csv.split('\n')) {
 		const row = parseTesouroLine(line);
-		if (!row || row.date < since || !wantedKeys.has(row.key)) continue;
+		if (!row || !wantedDate(row.date, since, yearEnds)) continue;
+		if (!wantedKeys.has(row.key)) continue;
 		const list = into.get(row.key) ?? [];
 		list.push({ date: row.date, price: row.price });
 		into.set(row.key, list);
@@ -190,6 +212,8 @@ type QuoteRowInsert = {
 async function tickerRows(
 	assets: HistoryAsset[],
 	range: string,
+	since: string,
+	yearEnds: DateWindow[],
 	summary: BackfillSummary,
 	fetcher: typeof fetch
 ): Promise<QuoteRowInsert[]> {
@@ -197,7 +221,9 @@ async function tickerRows(
 	for (const asset of assets) {
 		if (!asset.ticker || !TICKER_CLASSES.has(asset.asset_class)) continue;
 		try {
-			const prices = await fetchTickerHistory(asset.ticker, range, fetcher);
+			const prices = (
+				await fetchTickerHistory(asset.ticker, range, fetcher)
+			).filter((price) => wantedDate(price.date, since, yearEnds));
 			for (const price of prices) {
 				rows.push({
 					household_id: asset.household_id,
@@ -218,6 +244,7 @@ async function tickerRows(
 async function tesouroRows(
 	assets: HistoryAsset[],
 	since: string,
+	yearEnds: DateWindow[],
 	summary: BackfillSummary,
 	fetcher: typeof fetch
 ): Promise<QuoteRowInsert[]> {
@@ -238,7 +265,9 @@ async function tesouroRows(
 		const history = collectTesouroHistory(
 			await response.text(),
 			new Set(wanted.keys()),
-			since
+			since,
+			new Map(),
+			yearEnds
 		);
 		const rows: QuoteRowInsert[] = [];
 		for (const [key, prices] of history) {
@@ -325,10 +354,14 @@ async function fundRows(
 	return rows;
 }
 
+// Bonds and tickers come in one request each whatever the span, so they also
+// cover the recent year ends the year view opens from. Fund quotas stay
+// limited to `since`: the CVM ships one ~40 MB file per month, and reading
+// five Decembers on every run would cost more than the year view gains.
 export async function backfillQuoteHistory(
 	since: string,
 	today: string = brazilToday(),
-	range = '3mo',
+	range = '5y',
 	fetcher: typeof fetch = fetch
 ): Promise<BackfillSummary> {
 	const summary: BackfillSummary = {
@@ -348,9 +381,10 @@ export async function backfillQuoteHistory(
 		return summary;
 	}
 	const assets = (data ?? []) as HistoryAsset[];
+	const yearEnds = recentYearEnds(today);
 	const rows = [
-		...(await tickerRows(assets, range, summary, fetcher)),
-		...(await tesouroRows(assets, since, summary, fetcher)),
+		...(await tickerRows(assets, range, since, yearEnds, summary, fetcher)),
+		...(await tesouroRows(assets, since, yearEnds, summary, fetcher)),
 		...(await fundRows(assets, since, today, summary, fetcher))
 	];
 

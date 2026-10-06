@@ -10,6 +10,7 @@ import {
 	periodReturn,
 	recentDays,
 	recentMonths,
+	recentYearEnds,
 	recentYears,
 	yearWindow
 } from './investment-monthly';
@@ -92,6 +93,10 @@ describe('day and year windows', () => {
 		});
 		expect(yearWindow('2026', '2026-10-05').end).toBe('2026-10-05');
 		expect(recentYears('2026-10-05', '2024')).toEqual(['2026', '2025', '2024']);
+		expect(recentYearEnds('2026-10-05', 2)).toEqual([
+			{ from: '2025-12-15', to: '2025-12-31' },
+			{ from: '2024-12-15', to: '2024-12-31' }
+		]);
 	});
 });
 
