@@ -1,4 +1,5 @@
 import { unzipSync } from 'fflate';
+import { brazilToday } from './brazil-date';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { writeQuoteBatches } from './investment-quote-write';
 import {
@@ -326,7 +327,7 @@ async function fundRows(
 
 export async function backfillQuoteHistory(
 	since: string,
-	today: string = new Date().toISOString().slice(0, 10),
+	today: string = brazilToday(),
 	range = '3mo',
 	fetcher: typeof fetch = fetch
 ): Promise<BackfillSummary> {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	classifyEvent,
+	closeAbsentPositions,
 	deriveQuantity,
 	evolutionSeries,
 	latestPrice,
@@ -98,6 +99,57 @@ describe('classifyEvent', () => {
 		expect(
 			classifyEvent({ event_type: 'TRANSFERÊNCIA', total_value: null })
 		).toBe('quantity');
+	});
+});
+
+describe('closeAbsentPositions', () => {
+	const assets = [
+		{ id: 'main', owner_user_id: 'u1', cnpj: null },
+		{ id: 'receipt', owner_user_id: 'u1', cnpj: null },
+		{ id: 'fund', owner_user_id: 'u1', cnpj: '12345678000199' },
+		{ id: 'other', owner_user_id: 'u2', cnpj: null }
+	];
+	const credit = (assetId: string, date = '2024-04-05') =>
+		event({
+			asset_id: assetId,
+			event_date: date,
+			event_type: 'Transferência - Liquidação',
+			quantity: 468
+		});
+
+	it('zeroes a B3 asset missing from its owner posição', () => {
+		const snapshots = [
+			snapshot({ asset_id: 'main', snapshot_date: '2026-08-27' }),
+			snapshot({ asset_id: 'main', snapshot_date: '2026-09-30' })
+		];
+		const events = [credit('receipt')];
+		const closures = closeAbsentPositions(assets, snapshots, events);
+		// Closed once; the later posição finds it already at zero.
+		expect(closures).toEqual([
+			{
+				asset_id: 'receipt',
+				snapshot_date: '2026-08-27',
+				quantity: 0,
+				close_price: null,
+				net_value: 0
+			}
+		]);
+		expect(
+			deriveQuantity('receipt', [...snapshots, ...closures], events).quantity
+		).toBe(0);
+	});
+
+	it('leaves funds, other owners and same-day settlements alone', () => {
+		const snapshots = [
+			snapshot({ asset_id: 'main', snapshot_date: '2026-08-27' })
+		];
+		const events = [
+			{ ...credit('fund'), source: 'manual' as const },
+			credit('other'),
+			// Settles on the posição day itself: not in the file yet, but held.
+			credit('receipt', '2026-08-27')
+		];
+		expect(closeAbsentPositions(assets, snapshots, events)).toEqual([]);
 	});
 });
 

@@ -1,4 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
+import { brazilToday } from '$lib/server/brazil-date';
 import { fail } from '@sveltejs/kit';
 import { getUserHouseholdId } from '$lib/server/household';
 import { loadCdiRates } from '$lib/server/investment-cdi';
@@ -41,7 +42,7 @@ async function buildContext(
 			.eq('household_id', householdId)
 	]);
 	const { assets, snapshots, events, quotes } = rows;
-	const today = new Date().toISOString().slice(0, 10);
+	const today = brazilToday();
 
 	const months = recentMonths(today, 3);
 	const rates = await loadCdiRates(`${months.at(-1)}-01`, today);

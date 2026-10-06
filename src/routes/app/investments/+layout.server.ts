@@ -1,4 +1,5 @@
 import type { LayoutServerLoad } from './$types';
+import { brazilToday } from '$lib/server/brazil-date';
 import { getUserHouseholdId } from '$lib/server/household';
 import {
 	buildOverview,
@@ -20,6 +21,6 @@ export const load: LayoutServerLoad = async ({
 	const rows = await loadInvestmentRows(supabase, householdId);
 	if (rows.assets.length === 0) return { overview: EMPTY_OVERVIEW };
 
-	const today = new Date().toISOString().slice(0, 10);
+	const today = brazilToday();
 	return { overview: await buildOverview(rows, today) };
 };

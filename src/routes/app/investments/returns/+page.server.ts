@@ -1,4 +1,5 @@
 import type { PageServerLoad } from './$types';
+import { brazilToday } from '$lib/server/brazil-date';
 import { getUserHouseholdId } from '$lib/server/household';
 import { loadCdiRates } from '$lib/server/investment-cdi';
 import {
@@ -138,7 +139,7 @@ export const load: PageServerLoad = async ({
 	const { assets, snapshots, events, quotes } = rows;
 	if (assets.length === 0) return { ...empty, currentUserId: user.id };
 
-	const today = new Date().toISOString().slice(0, 10);
+	const today = brazilToday();
 	const firstYear = events.reduce(
 		(earliest, event) =>
 			event.event_date.slice(0, 4) < earliest

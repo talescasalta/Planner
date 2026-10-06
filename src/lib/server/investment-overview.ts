@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
 import {
+	closeAbsentPositions,
 	deriveQuantity,
 	latestPrice,
 	type EventRow,
@@ -80,24 +81,22 @@ async function fetchInvestmentRows(
 	// Every table is read in full and ordered by its primary key, which is what
 	// keeps the paged ranges from repeating or skipping rows.
 	const [assets, snapshots, events, quotes] = await Promise.all([
-		selectAll<InvestmentAssetRow>('investment_assets', (from, to) => {
-			const query = supabase
+		selectAll<InvestmentAssetRow>('investment_assets', (from, to) =>
+			supabase
 				.from('investment_assets')
 				.select(ASSET_COLUMNS)
 				.eq('household_id', householdId)
 				.order('id')
-				.range(from, to);
-			return assetIds ? query.in('id', assetIds) : query;
-		}),
-		selectAll<SnapshotRow>('investment_snapshots', (from, to) => {
-			const query = supabase
+				.range(from, to)
+		),
+		selectAll<SnapshotRow>('investment_snapshots', (from, to) =>
+			supabase
 				.from('investment_snapshots')
 				.select('asset_id, snapshot_date, quantity, close_price, net_value')
 				.eq('household_id', householdId)
 				.order('id')
-				.range(from, to);
-			return assetIds ? query.in('asset_id', assetIds) : query;
-		}),
+				.range(from, to)
+		),
 		selectAll<EventRow>('investment_events', (from, to) => {
 			const query = supabase
 				.from('investment_events')
@@ -120,7 +119,20 @@ async function fetchInvestmentRows(
 		})
 	]);
 
-	return { assets, snapshots, events, quotes };
+	// Closing a ghost position needs every posição date of its owner, so assets
+	// and snapshots are read whole even for a by-id request, and narrowed here.
+	const closed = [
+		...snapshots,
+		...closeAbsentPositions(assets, snapshots, events)
+	];
+	if (!assetIds) return { assets, snapshots: closed, events, quotes };
+	const wanted = new Set(assetIds);
+	return {
+		assets: assets.filter((asset) => wanted.has(asset.id)),
+		snapshots: closed.filter((snapshot) => wanted.has(snapshot.asset_id)),
+		events,
+		quotes
+	};
 }
 
 export interface PositionValue {
@@ -183,6 +195,8 @@ export interface InvestmentOverview {
 	lastQuoteDate: string | null;
 	lastSnapshotDate: string | null;
 	cdiThrough: string | null;
+	cdiEstimatedFrom: string | null;
+	cdiStale: boolean;
 	monthEnd: string;
 }
 
@@ -198,6 +212,8 @@ export const EMPTY_OVERVIEW: InvestmentOverview = {
 	lastQuoteDate: null,
 	lastSnapshotDate: null,
 	cdiThrough: null,
+	cdiEstimatedFrom: null,
+	cdiStale: false,
 	monthEnd: ''
 };
 
@@ -235,6 +251,8 @@ export async function buildOverview(
 		lastQuoteDate: lastQuoteDate(rows.quotes),
 		lastSnapshotDate: lastSnapshotDate(rows.snapshots),
 		cdiThrough: current.cdiThrough,
+		cdiEstimatedFrom: current.cdiEstimatedFrom,
+		cdiStale: current.cdiStale,
 		monthEnd: current.end
 	};
 }

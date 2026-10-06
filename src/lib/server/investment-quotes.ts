@@ -3,6 +3,7 @@ import { writeQuoteBatches } from './investment-quote-write';
 import { collectFundQuoteUpserts } from './investment-funds';
 import { loadCdiRates } from './investment-cdi';
 import { accrualSeries, isAccruable } from './investment-accrual';
+import { brazilToday } from './brazil-date';
 
 // Daily quote refresh so patrimony stays current without monthly posição
 // uploads: Yahoo Finance covers B3-listed tickers (ETF/FII/ações), the Tesouro
@@ -52,15 +53,6 @@ export interface QuoteRefreshSummary {
 	fundQuotes: number;
 	upserted: number;
 	errors: string[];
-}
-
-// Quote dates follow the B3 calendar. The cron runs at 18h in Brasília, where
-// the UTC date is still the same; a refresh pressed late in the evening is not,
-// and a UTC date would stamp tonight's price on tomorrow.
-export function brazilToday(now: Date = new Date()): string {
-	return new Intl.DateTimeFormat('en-CA', {
-		timeZone: 'America/Sao_Paulo'
-	}).format(now);
 }
 
 export function yahooSymbol(ticker: string): string {
