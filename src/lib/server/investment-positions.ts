@@ -264,6 +264,73 @@ export function deriveQuantity(
 	};
 }
 
+// A posição file lists every B3 holding its owner has, so a B3 asset missing
+// from one held nothing on that date — whatever the movimentação says. The
+// stream does leave such ghosts behind: subscription receipts (NUIF15) that
+// became the main ticker without a debit, rights never exercised, a CDB whose
+// redemption month was never imported. Each would otherwise be held forever,
+// with no price, counted as a gap in every period.
+//
+// The answer is a zero snapshot on each posição date the asset is missing
+// from, while it would still derive a position. Only assets that B3 actually
+// reports qualify: funds and pension plans (CNPJ, quoted by the CVM) never
+// appear in a posição, and an owner's posição says nothing about another
+// owner's assets.
+export function closeAbsentPositions(
+	assets: { id: string; owner_user_id: string; cnpj: string | null }[],
+	snapshots: SnapshotRow[],
+	events: EventRow[]
+): SnapshotRow[] {
+	const ownerOf = new Map(
+		assets.map((asset) => [asset.id, asset.owner_user_id])
+	);
+	const datesByOwner = new Map<string, Set<string>>();
+	const present = new Set<string>();
+	for (const snapshot of snapshots) {
+		present.add(`${snapshot.asset_id}|${snapshot.snapshot_date}`);
+		const owner = ownerOf.get(snapshot.asset_id);
+		if (!owner) continue;
+		const dates = datesByOwner.get(owner) ?? new Set<string>();
+		dates.add(snapshot.snapshot_date);
+		datesByOwner.set(owner, dates);
+	}
+	const reportedByB3 = new Set(
+		events
+			.filter((event) => event.source.startsWith('b3_'))
+			.map((event) => event.asset_id)
+	);
+
+	const closures: SnapshotRow[] = [];
+	for (const asset of assets) {
+		if (asset.cnpj !== null || !reportedByB3.has(asset.id)) continue;
+		const dates = [...(datesByOwner.get(asset.owner_user_id) ?? [])].sort();
+		for (const date of dates) {
+			if (present.has(`${asset.id}|${date}`)) continue;
+			// A snapshot is the position at the start of its day (see
+			// countsForDerivation), so the question is what the day before ends
+			// with; that day's own settlements still count on top of the zero.
+			const before = new Date(Date.parse(`${date}T00:00:00Z`) - 86400000)
+				.toISOString()
+				.slice(0, 10);
+			const derived = deriveQuantity(
+				asset.id,
+				[...snapshots, ...closures],
+				events,
+				before
+			).quantity;
+			if (derived <= 0) continue;
+			closures.push({
+				asset_id: asset.id,
+				snapshot_date: date,
+				quantity: 0,
+				close_price: null,
+				net_value: 0
+			});
+		}
+	}
+	return closures;
+}
+
 // Latest known price for an asset: freshest quote, else the most recent
 // snapshot's implied price. Renda fixa without quotes falls back to the last
 // official value this way.

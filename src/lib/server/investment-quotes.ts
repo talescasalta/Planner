@@ -2,7 +2,14 @@ import { supabaseAdmin } from '$lib/server/supabase';
 import { writeQuoteBatches } from './investment-quote-write';
 import { collectFundQuoteUpserts } from './investment-funds';
 import { loadCdiRates } from './investment-cdi';
-import { accrualSeries, isAccruable } from './investment-accrual';
+import type { CdiRate } from './investment-returns';
+import {
+	accrualBackward,
+	accrualSeries,
+	isAccruable
+} from './investment-accrual';
+import { recentYearEnds } from './investment-monthly';
+import { brazilToday } from './brazil-date';
 
 // Daily quote refresh so patrimony stays current without monthly posição
 // uploads: Yahoo Finance covers B3-listed tickers (ETF/FII/ações), the Tesouro
@@ -38,6 +45,7 @@ interface QuoteAsset {
 	ticker: string | null;
 	product_key: string;
 	maturity_date: string | null;
+	issue_date: string | null;
 	index_type: string | null;
 	index_percent: number | null;
 	index_spread: number | null;
@@ -52,15 +60,6 @@ export interface QuoteRefreshSummary {
 	fundQuotes: number;
 	upserted: number;
 	errors: string[];
-}
-
-// Quote dates follow the B3 calendar. The cron runs at 18h in Brasília, where
-// the UTC date is still the same; a refresh pressed late in the evening is not,
-// and a UTC date would stamp tonight's price on tomorrow.
-export function brazilToday(now: Date = new Date()): string {
-	return new Intl.DateTimeFormat('en-CA', {
-		timeZone: 'America/Sao_Paulo'
-	}).format(now);
 }
 
 export function yahooSymbol(ticker: string): string {
@@ -342,10 +341,12 @@ export async function collectTesouroUpserts(
 	});
 }
 
-// The newest position row per asset, as a unit price. These sheets carry no
-// unit price of their own, so it comes from net value over quantity — which is
-// exactly B3's "Preço Atualizado CURVA".
-function latestAnchors(
+// The first position row per asset in the given order, as a unit price. These
+// sheets carry no unit price of their own, so it comes from net value over
+// quantity — which is exactly B3's "Preço Atualizado CURVA". Rows newest first
+// give the anchor to accrue forward from; oldest first, the one to discount
+// back from.
+function firstAnchors(
 	rows: Record<string, unknown>[]
 ): Map<string, { date: string; price: number }> {
 	const anchors = new Map<string, { date: string; price: number }>();
@@ -360,6 +361,31 @@ function latestAnchors(
 		});
 	}
 	return anchors;
+}
+
+// The last business day of each recent year end the paper already existed on,
+// before its first B3 anchor: the opening marks of the years it was held.
+// Without an issue date there is no telling when it was bought, so nothing is
+// reconstructed.
+function yearEndTargets(
+	asset: QuoteAsset,
+	firstAnchorDate: string,
+	rates: CdiRate[],
+	today: string
+): string[] {
+	if (!asset.issue_date) return [];
+	const targets: string[] = [];
+	for (const { from, to } of recentYearEnds(today)) {
+		if (asset.issue_date > to || to >= firstAnchorDate) continue;
+		const lastDay = rates
+			.filter((rate) => rate.date >= from && rate.date <= to)
+			.reduce<string | null>(
+				(last, rate) => (!last || rate.date > last ? rate.date : last),
+				null
+			);
+		if (lastDay) targets.push(lastDay);
+	}
+	return targets;
 }
 
 // Bank-issued fixed income: no public quote exists, so the price is carried
@@ -395,42 +421,57 @@ async function collectCurvaUpserts(
 		return [];
 	}
 
-	const anchors = latestAnchors(snapshots ?? []);
-	if (anchors.size === 0) return [];
+	const latest = firstAnchors(snapshots ?? []);
+	if (latest.size === 0) return [];
+	const earliest = firstAnchors([...(snapshots ?? [])].reverse());
 
-	const oldest = [...anchors.values()].reduce(
-		(earliest, anchor) => (anchor.date < earliest ? anchor.date : earliest),
-		today
+	// Far enough back for the oldest year end a paper may be discounted to, and
+	// for the oldest anchor a paper is accrued forward from.
+	const oldest = [...latest.values()].reduce(
+		(first, anchor) => (anchor.date < first ? anchor.date : first),
+		recentYearEnds(today).at(-1)!.from
 	);
 	const rates = await loadCdiRates(oldest, today);
 	if (rates.length === 0) return [];
 
-	const upserts: QuoteUpsert[] = [];
-	for (const asset of accruable) {
-		const anchor = anchors.get(asset.id);
-		if (!anchor) continue;
-		const series = accrualSeries(
-			anchor,
-			{
-				indexType: asset.index_type ?? '',
-				percent: asset.index_percent,
-				spread: asset.index_spread
-			},
+	const upserts = accruable.flatMap((asset) =>
+		curvaPoints(
+			asset,
+			latest.get(asset.id),
+			earliest.get(asset.id),
 			rates,
 			today
-		);
-		for (const point of series) {
-			upserts.push({
-				household_id: asset.household_id,
-				asset_id: asset.id,
-				quote_date: point.date,
-				price: point.price,
-				source: 'curva'
-			});
-		}
-	}
+		).map((point) => ({
+			household_id: asset.household_id,
+			asset_id: asset.id,
+			quote_date: point.date,
+			price: point.price,
+			source: 'curva'
+		}))
+	);
 	summary.curvaQuotes = upserts.length;
 	return upserts;
+}
+
+// One paper's prices: forward from the latest anchor through today, and back
+// from the earliest one to each year end it was already held over.
+function curvaPoints(
+	asset: QuoteAsset,
+	latest: { date: string; price: number } | undefined,
+	earliest: { date: string; price: number } | undefined,
+	rates: CdiRate[],
+	today: string
+): { date: string; price: number }[] {
+	if (!latest || !earliest) return [];
+	const rate = {
+		indexType: asset.index_type ?? '',
+		percent: asset.index_percent,
+		spread: asset.index_spread
+	};
+	const backward = yearEndTargets(asset, earliest.date, rates, today)
+		.map((target) => accrualBackward(earliest, rate, rates, target))
+		.filter((point) => point !== null);
+	return [...accrualSeries(latest, rate, rates, today), ...backward];
 }
 
 export interface QuoteRefreshOptions {
@@ -460,7 +501,7 @@ export async function refreshInvestmentQuotes(
 	let query = supabaseAdmin
 		.from('investment_assets')
 		.select(
-			'id, household_id, asset_class, ticker, product_key, maturity_date, index_type, index_percent, index_spread'
+			'id, household_id, asset_class, ticker, product_key, maturity_date, issue_date, index_type, index_percent, index_spread'
 		);
 	if (householdId) query = query.eq('household_id', householdId);
 	const { data, error } = await query;

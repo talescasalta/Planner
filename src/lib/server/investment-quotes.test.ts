@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('$env/dynamic/private', () => ({ env: {} }));
 vi.mock('$lib/server/supabase', () => ({ supabaseAdmin: { from: vi.fn() } }));
 
+import { brazilToday } from './brazil-date';
 import {
-	brazilToday,
 	collectTesouroUpserts,
 	fetchTesouroLiveQuotes,
 	fetchTickerQuotes,

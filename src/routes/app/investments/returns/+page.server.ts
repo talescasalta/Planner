@@ -1,4 +1,5 @@
 import type { PageServerLoad } from './$types';
+import { brazilToday } from '$lib/server/brazil-date';
 import { getUserHouseholdId } from '$lib/server/household';
 import { loadCdiRates } from '$lib/server/investment-cdi';
 import {
@@ -10,6 +11,7 @@ import {
 	recentMonths,
 	recentYears,
 	yearWindow,
+	YEARS_SHOWN,
 	type AppliedSeries,
 	type PeriodReturn,
 	type PeriodWindow
@@ -31,7 +33,6 @@ import type { TaxAssetRow } from '$lib/server/investment-tax';
 
 const HOW_MANY_DAYS = 10;
 const HOW_MANY_MONTHS = 6;
-const HOW_MANY_YEARS = 5;
 // A day is measured from the previous close, so its opening quote may be a
 // long weekend old at most; anything staler would book days of movement on
 // one day.
@@ -138,7 +139,7 @@ export const load: PageServerLoad = async ({
 	const { assets, snapshots, events, quotes } = rows;
 	if (assets.length === 0) return { ...empty, currentUserId: user.id };
 
-	const today = new Date().toISOString().slice(0, 10);
+	const today = brazilToday();
 	const firstYear = events.reduce(
 		(earliest, event) =>
 			event.event_date.slice(0, 4) < earliest
@@ -148,7 +149,7 @@ export const load: PageServerLoad = async ({
 	);
 	const days = recentDays(today, HOW_MANY_DAYS);
 	const months = recentMonths(today, HOW_MANY_MONTHS);
-	const years = recentYears(today, firstYear).slice(0, HOW_MANY_YEARS);
+	const years = recentYears(today, firstYear).slice(0, YEARS_SHOWN);
 	const oldest = yearWindow(years.at(-1)!, today).start;
 	const rates = await loadCdiRates(oldest, today);
 

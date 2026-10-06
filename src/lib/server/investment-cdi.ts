@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '$lib/server/supabase';
+import { brazilToday } from './brazil-date';
 import { selectAll } from '$lib/server/supabase-paging';
 import type { CdiRate } from './investment-returns';
 
@@ -56,7 +57,7 @@ export async function fetchCdiRates(
 export async function syncCdiRates(
 	fetcher: typeof fetch = fetch
 ): Promise<{ inserted: number; error?: string }> {
-	const today = new Date().toISOString().slice(0, 10);
+	const today = brazilToday();
 	const { data: newest, error: selectError } = await supabaseAdmin
 		.from('cdi_daily_rates')
 		.select('rate_date')

@@ -40,13 +40,10 @@
 	let overview = $derived(data.overview);
 
 	// Freshness in one place: the newest priced day and how far the CDI series
-	// reaches. A running month measured against a short CDI flatters the
-	// comparison, so the strip says so instead of leaving it to each page.
-	let cdiLagging = $derived(
-		overview.cdiThrough !== null &&
-			overview.monthEnd !== '' &&
-			overview.cdiThrough < overview.monthEnd
-	);
+	// reaches. The day or two BCB has not published yet is estimated from the
+	// last rate; only a series behind by more than that flatters the
+	// comparison, and then the strip says so.
+	let cdiLagging = $derived(overview.cdiStale);
 </script>
 
 <div class="mx-auto max-w-7xl px-4 pt-4">
@@ -88,8 +85,15 @@
 					</dd>
 					{#if overview.cdiThrough}
 						<dt>· CDI até</dt>
-						<dd class={cdiLagging ? 'text-amber-700' : 'text-gray-700'}>
-							{dateBr(overview.cdiThrough)}
+						<dd
+							class={cdiLagging ? 'text-amber-700' : 'text-gray-700'}
+							title={overview.cdiEstimatedFrom
+								? `Publicado pelo Banco Central até ${dateBr(overview.cdiThrough)}; os dias seguintes usam a última taxa.`
+								: undefined}
+						>
+							{dateBr(overview.cdiThrough)}{overview.cdiEstimatedFrom
+								? ' (+ estimativa)'
+								: ''}
 						</dd>
 					{/if}
 				</div>

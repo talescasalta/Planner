@@ -248,22 +248,22 @@
 						<p class="mt-1 text-[11px] text-gray-500">
 							Período de {dateBr(month.start)} a {dateBr(
 								month.end
-							)}{month.cdiThrough && month.cdiThrough < month.end
-								? `, CDI disponível até ${dateBr(month.cdiThrough)}`
+							)}{month.cdiEstimatedFrom
+								? `. CDI publicado até ${dateBr(month.cdiThrough)}; a partir de ${dateBr(month.cdiEstimatedFrom)}, estimado pela última taxa`
 								: ''}.
 						</p>
 					</div>
 				</div>
 			</div>
 
-			{#if month.cdiThrough && month.cdiThrough < month.end}
+			{#if month.cdiStale}
 				<div
 					class="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"
 				>
-					O Banco Central publica o CDI com atraso: a série vai só até {dateBr(
-						month.cdiThrough
-					)}, não até {dateBr(month.end)}. O "% do CDI" está mais alto do que
-					ficará quando o período fechar.
+					A série do CDI está parada em {dateBr(month.cdiThrough)} — mais atrasada
+					do que o dia ou dois que o Banco Central costuma levar para publicar, o
+					que indica falha na sincronização. O "% do CDI" está mais alto do que ficará
+					quando a série for atualizada.
 				</div>
 			{/if}
 

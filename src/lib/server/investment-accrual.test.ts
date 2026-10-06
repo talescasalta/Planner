@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	accrualBackward,
 	accrualSeries,
 	accrualSteps,
 	dailyFactor,
@@ -217,5 +218,32 @@ describe('accrual dating', () => {
 		);
 
 		expect(implied).toBeCloseTo(100, 6);
+	});
+});
+
+describe('accrualBackward', () => {
+	it('undoes exactly what the forward accrual adds', () => {
+		const rate = { indexType: 'cdi', percent: 96, spread: null };
+		const cdi = flatCdi(10);
+		const anchor = { date: '2026-09-10', price: 1.05 };
+		const back = accrualBackward(anchor, rate, cdi, '2026-09-03')!;
+		expect(back.date).toBe('2026-09-03');
+		expect(back.price).toBeLessThan(anchor.price);
+		const again = accrualSeries(back, rate, cdi, '2026-09-10').at(-1)!;
+		expect(again.price).toBeCloseTo(anchor.price, 12);
+	});
+
+	it('only walks back, and only for a declared rate', () => {
+		const anchor = { date: '2026-09-05', price: 1 };
+		const rate = { indexType: 'cdi', percent: 100, spread: null };
+		expect(accrualBackward(anchor, rate, flatCdi(10), '2026-09-08')).toBeNull();
+		expect(
+			accrualBackward(
+				anchor,
+				{ indexType: 'ipca', percent: null, spread: 6 },
+				flatCdi(10),
+				'2026-09-02'
+			)
+		).toBeNull();
 	});
 });

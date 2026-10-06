@@ -117,6 +117,24 @@ export function accrualSeries(
 	return points;
 }
 
+// The same walk in reverse: the price a paper had on an earlier business day,
+// by discounting the anchor across every day in between. This is what gives a
+// paper held over a year end its opening mark when the first B3 position
+// export came months later. `target` must be a day the CDI series has a row
+// for, which is what makes it a business day.
+export function accrualBackward(
+	anchor: AccrualPoint,
+	rate: CarryRate,
+	cdiRates: CdiRate[],
+	target: string
+): AccrualPoint | null {
+	if (!isAccruable(rate) || target >= anchor.date) return null;
+	let price = anchor.price;
+	for (const step of accrualSteps(cdiRates, target, anchor.date))
+		price /= dailyFactor(rate, step.rate);
+	return { date: target, price };
+}
+
 // The percentage of CDI implied by two anchors of the same paper, found by
 // bisection on the one unknown. B3 restates the curve price at every position
 // export, so a second import is enough to check a declared rate against what

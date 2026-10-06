@@ -3,12 +3,14 @@ import {
 	appliedSeries,
 	assetMonthReturn,
 	dayWindow,
+	estimateMissingCdi,
 	modifiedDietz,
 	monthReturn,
 	monthWindow,
 	periodReturn,
 	recentDays,
 	recentMonths,
+	recentYearEnds,
 	recentYears,
 	yearWindow
 } from './investment-monthly';
@@ -91,10 +93,83 @@ describe('day and year windows', () => {
 		});
 		expect(yearWindow('2026', '2026-10-05').end).toBe('2026-10-05');
 		expect(recentYears('2026-10-05', '2024')).toEqual(['2026', '2025', '2024']);
+		expect(recentYearEnds('2026-10-05', 2)).toEqual([
+			{ from: '2025-12-15', to: '2025-12-31' },
+			{ from: '2024-12-15', to: '2024-12-31' }
+		]);
+	});
+});
+
+describe('estimateMissingCdi', () => {
+	it('fills the unpublished weekdays with the last rate', () => {
+		const { rates, estimatedFrom } = estimateMissingCdi(
+			[{ date: '2026-10-02', rate: 0.05 }],
+			'2026-10-06'
+		);
+		expect(estimatedFrom).toBe('2026-10-05');
+		expect(rates.map((rate) => rate.date)).toEqual([
+			'2026-10-02',
+			'2026-10-05',
+			'2026-10-06'
+		]);
+		expect(rates.at(-1)!.rate).toBe(0.05);
+	});
+
+	it('does not paper over a series stuck for weeks', () => {
+		const { rates } = estimateMissingCdi(
+			[{ date: '2026-09-01', rate: 0.05 }],
+			'2026-10-06'
+		);
+		expect(rates).toHaveLength(6);
 	});
 });
 
 describe('periodReturn', () => {
+	it('measures against an estimated CDI and flags only a stale series', () => {
+		const quotes = [quote('2026-09-30', 10), quote('2026-10-06', 10.1)];
+		const current = periodReturn(
+			['a1'],
+			'2026-10',
+			monthWindow('2026-10', '2026-10-06'),
+			[snapshot({ snapshot_date: '2026-09-30' })],
+			[],
+			quotes,
+			[
+				{ date: '2026-10-01', rate: 0.05 },
+				{ date: '2026-10-02', rate: 0.05 }
+			]
+		);
+		expect(current.cdiThrough).toBe('2026-10-02');
+		expect(current.cdiEstimatedFrom).toBe('2026-10-05');
+		expect(current.cdiStale).toBe(false);
+		// Four business days of 0.05%.
+		expect(current.cdiRate).toBeCloseTo(1.0005 ** 4 - 1, 10);
+
+		const stale = periodReturn(
+			['a1'],
+			'2026-10',
+			monthWindow('2026-10', '2026-10-31'),
+			[snapshot({ snapshot_date: '2026-09-30' })],
+			[],
+			quotes,
+			[{ date: '2026-10-01', rate: 0.05 }]
+		);
+		expect(stale.cdiStale).toBe(true);
+	});
+
+	it('does not report a holding that ended the period at zero', () => {
+		const result = periodReturn(
+			['a1'],
+			'2026-10',
+			monthWindow('2026-10', '2026-10-06'),
+			[snapshot({ snapshot_date: '2026-10-05', quantity: 0, net_value: 0 })],
+			[event({ event_date: '2026-01-10', quantity: 468 })],
+			[],
+			[]
+		);
+		expect(result.unpricedCount).toBe(0);
+	});
+
 	it('measures a single day from the previous close', () => {
 		const quotes = [quote('2026-10-02', 10), quote('2026-10-05', 10.5)];
 		const result = periodReturn(
@@ -614,7 +689,12 @@ describe('monthReturn', () => {
 			snapshots,
 			[],
 			quotes,
-			[{ date: '2026-08-15', rate: 1 }] // 1% CDI in the month
+			// 1% CDI in the month; the zero closes the series at month end, so
+			// nothing is estimated.
+			[
+				{ date: '2026-08-15', rate: 1 },
+				{ date: '2026-08-31', rate: 0 }
+			]
 		);
 		expect(result.gain).toBeCloseTo(1030);
 		// Dominated by the large holding, nowhere near the 15.5% average of both.

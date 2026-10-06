@@ -87,6 +87,27 @@ export function recentDays(today: string, howMany = 10): string[] {
 	return days;
 }
 
+// How many years the returns page offers, and so how many year-end closes the
+// quote history must hold for each of them to have an opening mark.
+export const YEARS_SHOWN = 5;
+
+// The closes that open each of the years shown: 31/12 of every year before the
+// running one. The window before each date matches the tolerance a period
+// gives its opening quote.
+export function recentYearEnds(
+	today: string,
+	howMany = YEARS_SHOWN
+): { from: string; to: string }[] {
+	const year = Number(today.slice(0, 4));
+	const ends: { from: string; to: string }[] = [];
+	for (let back = 1; back <= howMany; back++)
+		ends.push({
+			from: `${year - back}-12-15`,
+			to: `${year - back}-12-31`
+		});
+	return ends;
+}
+
 export function recentYears(today: string, firstYear: string): string[] {
 	const years: string[] = [];
 	for (let year = Number(today.slice(0, 4)); year >= Number(firstYear); year--)
@@ -268,10 +289,16 @@ export interface MonthReturn {
 	// matching movimentação — a missing import, not a missing price.
 	divergentValue: number;
 	divergentCount: number;
-	// Last CDI day actually available inside the window. BCB publishes with a
-	// lag, so a running month is measured against a short benchmark — which
-	// flatters the comparison until the series catches up.
+	// Last CDI day actually published inside the window. BCB publishes each
+	// day's rate on the next business day, so a running period always ends a
+	// day or two past it.
 	cdiThrough: string | null;
+	// First day whose CDI was estimated from the last published rate, when the
+	// window reaches past the series (see estimateMissingCdi).
+	cdiEstimatedFrom: string | null;
+	// The series is behind by more than an estimate should cover: the
+	// comparison is then measured against a short benchmark, and flattered.
+	cdiStale: boolean;
 }
 
 export interface AppliedPoint {
@@ -365,6 +392,41 @@ export function appliedSeries(
 	});
 
 	return { points, excludedCount, excludedValue };
+}
+
+// How many business days may be filled in. The daily CDI only moves on Copom
+// decisions, so the last published rate is an excellent stand-in for the day
+// or two BCB has not published yet; a longer gap means the sync is broken,
+// and filling it would hide that.
+export const CDI_ESTIMATE_MAX_DAYS = 5;
+
+// Extends the series through `through` with the last published rate, on
+// weekdays only (holidays are slightly over-counted until BCB catches up).
+export function estimateMissingCdi(
+	rates: CdiRate[],
+	through: string
+): { rates: CdiRate[]; estimatedFrom: string | null } {
+	let last: CdiRate | null = null;
+	for (const rate of rates) if (!last || rate.date > last.date) last = rate;
+	if (!last || last.date >= through) return { rates, estimatedFrom: null };
+	const filled: CdiRate[] = [];
+	let day = addDays(last.date, 1);
+	while (day <= through && filled.length < CDI_ESTIMATE_MAX_DAYS) {
+		if (!isWeekend(day)) filled.push({ date: day, rate: last.rate });
+		day = addDays(day, 1);
+	}
+	return {
+		rates: filled.length > 0 ? [...rates, ...filled] : rates,
+		estimatedFrom: filled[0]?.date ?? null
+	};
+}
+
+// True when a business day in (after, until] has no CDI even after the
+// estimate: weekends never carry a rate, so they do not count as missing.
+function hasWeekdayAfter(after: string, until: string): boolean {
+	for (let day = addDays(after, 1); day <= until; day = addDays(day, 1))
+		if (!isWeekend(day)) return true;
+	return false;
 }
 
 export function lastCdiDate(
@@ -488,7 +550,9 @@ export function periodReturn(
 	rates: CdiRate[],
 	toleranceDays = 12
 ): PeriodReturn {
-	const cdiRate = cdiFactor(rates, window.start, window.end) - 1;
+	const estimate = estimateMissingCdi(rates, window.end);
+	const cdiRate = cdiFactor(estimate.rates, window.start, window.end) - 1;
+	const estimatedThrough = lastCdiDate(estimate.rates, window);
 	const assets = assetIds.map((assetId) =>
 		assetMonthReturn(
 			assetId,
@@ -508,7 +572,11 @@ export function periodReturn(
 	// gone is not something the reader is missing.
 	const held = (asset: AssetMonthReturn) =>
 		asset.startQuantity > 0 || asset.endQuantity > 0;
-	const unpriced = assets.filter((asset) => asset.unpriced && held(asset));
+	// The unpriced report is about what is still in the patrimony: a holding
+	// that ended the period at zero is not something the total is missing.
+	const unpriced = assets.filter(
+		(asset) => asset.unpriced && asset.endQuantity > 0
+	);
 	// A holding with no price is already declared as such; the divergence is
 	// only worth its own banner when the price was there and the position was
 	// not.
@@ -540,7 +608,12 @@ export function periodReturn(
 		unpricedCount: unpriced.length,
 		divergentValue: divergent.reduce((sum, asset) => sum + asset.endValue, 0),
 		divergentCount: divergent.length,
-		cdiThrough: lastCdiDate(rates, window)
+		cdiThrough: lastCdiDate(rates, window),
+		cdiEstimatedFrom:
+			estimate.estimatedFrom && estimate.estimatedFrom > window.start
+				? estimate.estimatedFrom
+				: null,
+		cdiStale: hasWeekdayAfter(estimatedThrough ?? window.start, window.end)
 	};
 }
 

@@ -6,7 +6,8 @@ import {
 	collectFundHistory,
 	collectTesouroHistory,
 	monthsBetween,
-	pricesFromYahooChart
+	pricesFromYahooChart,
+	wantedDate
 } from './investment-history';
 import {
 	tesouroKeyFromProductName,
@@ -75,6 +76,24 @@ describe('collectTesouroHistory', () => {
 			'2026-06-01'
 		);
 		expect(history.get(key)).toHaveLength(1);
+	});
+
+	it('keeps the year-end fortnights before the start', () => {
+		const history = collectTesouroHistory(
+			[
+				line('30/11/2025', '2.700,00'),
+				line('30/12/2025', '2.750,00'),
+				line('31/07/2026', '2.920,94')
+			].join('\n'),
+			new Set([key]),
+			'2026-06-01',
+			new Map(),
+			[{ from: '2025-12-15', to: '2025-12-31' }]
+		);
+		expect(history.get(key)?.map((price) => price.date)).toEqual([
+			'2025-12-30',
+			'2026-07-31'
+		]);
 	});
 
 	it('ignores other bonds and malformed rows', () => {
@@ -152,5 +171,14 @@ describe('monthsBetween', () => {
 
 	it('handles a window inside one month', () => {
 		expect(monthsBetween('2026-08-01', '2026-08-31')).toEqual(['202608']);
+	});
+});
+
+describe('wantedDate', () => {
+	const yearEnds = [{ from: '2025-12-15', to: '2025-12-31' }];
+	it('takes the recent past and the year-end windows only', () => {
+		expect(wantedDate('2026-07-01', '2026-06-01', yearEnds)).toBe(true);
+		expect(wantedDate('2025-12-31', '2026-06-01', yearEnds)).toBe(true);
+		expect(wantedDate('2026-01-02', '2026-06-01', yearEnds)).toBe(false);
 	});
 });
