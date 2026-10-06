@@ -4,6 +4,7 @@ vi.mock('$env/dynamic/private', () => ({ env: {} }));
 vi.mock('$lib/server/supabase', () => ({ supabaseAdmin: { from: vi.fn() } }));
 
 import {
+	brazilToday,
 	collectTesouroUpserts,
 	fetchTesouroLiveQuotes,
 	fetchTickerQuotes,
@@ -13,6 +14,13 @@ import {
 	tesouroKeyFromProductName,
 	tesouroMatchKey
 } from './investment-quotes';
+
+describe('brazilToday', () => {
+	it('keeps the Brasília date after 21h, when UTC has already turned', () => {
+		expect(brazilToday(new Date('2026-10-06T01:30:00Z'))).toBe('2026-10-05');
+		expect(brazilToday(new Date('2026-10-05T21:00:00Z'))).toBe('2026-10-05');
+	});
+});
 
 describe('tesouro matching', () => {
 	it('builds the same key from product names and CSV rows', () => {

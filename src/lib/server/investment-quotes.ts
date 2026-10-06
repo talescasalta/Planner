@@ -54,6 +54,15 @@ export interface QuoteRefreshSummary {
 	errors: string[];
 }
 
+// Quote dates follow the B3 calendar. The cron runs at 18h in Brasília, where
+// the UTC date is still the same; a refresh pressed late in the evening is not,
+// and a UTC date would stamp tonight's price on tomorrow.
+export function brazilToday(now: Date = new Date()): string {
+	return new Intl.DateTimeFormat('en-CA', {
+		timeZone: 'America/Sao_Paulo'
+	}).format(now);
+}
+
 export function yahooSymbol(ticker: string): string {
 	return `${ticker.toUpperCase()}.SA`;
 }
@@ -258,7 +267,7 @@ async function collectTickerUpserts(
 	];
 	summary.tickersRequested = tickers.length;
 	if (tickers.length === 0) return [];
-	const today = new Date().toISOString().slice(0, 10);
+	const today = brazilToday();
 	const { quotes, failures } = await fetchTickerQuotes(tickers, fetcher);
 	summary.tickerQuotes = quotes.size;
 	if (failures.length > 0) summary.errors.push(`yahoo: ${failures.join(', ')}`);
@@ -424,8 +433,18 @@ async function collectCurvaUpserts(
 	return upserts;
 }
 
+export interface QuoteRefreshOptions {
+	// Restricts the run to one household, for the refresh button.
+	householdId?: string;
+	// CVM fund quotas come from a ~40 MB monthly file published once a day
+	// with two business days of lag: worth it for the nightly cron, pointless
+	// for a button pressed during the day.
+	includeFunds?: boolean;
+}
+
 export async function refreshInvestmentQuotes(
-	fetcher: typeof fetch = fetch
+	fetcher: typeof fetch = fetch,
+	{ householdId, includeFunds = true }: QuoteRefreshOptions = {}
 ): Promise<QuoteRefreshSummary> {
 	const summary: QuoteRefreshSummary = {
 		tickersRequested: 0,
@@ -438,26 +457,31 @@ export async function refreshInvestmentQuotes(
 		errors: []
 	};
 
-	const { data, error } = await supabaseAdmin
+	let query = supabaseAdmin
 		.from('investment_assets')
 		.select(
 			'id, household_id, asset_class, ticker, product_key, maturity_date, index_type, index_percent, index_spread'
 		);
+	if (householdId) query = query.eq('household_id', householdId);
+	const { data, error } = await query;
 	if (error) {
 		summary.errors.push(`assets: ${error.message}`);
 		return summary;
 	}
 	const assets = (data ?? []) as QuoteAsset[];
-	const funds = await collectFundQuoteUpserts(fetcher);
-	summary.fundsRequested = funds.fundsRequested;
-	summary.fundQuotes = funds.fundQuotes;
-	summary.errors.push(...funds.errors);
-	const today = new Date().toISOString().slice(0, 10);
+	const fundUpserts: QuoteUpsert[] = [];
+	if (includeFunds) {
+		const funds = await collectFundQuoteUpserts(fetcher);
+		summary.fundsRequested = funds.fundsRequested;
+		summary.fundQuotes = funds.fundQuotes;
+		summary.errors.push(...funds.errors);
+		fundUpserts.push(...funds.upserts);
+	}
 	const upserts = [
 		...(await collectTickerUpserts(assets, summary, fetcher)),
 		...(await collectTesouroUpserts(assets, summary, fetcher)),
-		...(await collectCurvaUpserts(assets, summary, today)),
-		...funds.upserts
+		...(await collectCurvaUpserts(assets, summary, brazilToday())),
+		...fundUpserts
 	];
 
 	if (upserts.length > 0) {

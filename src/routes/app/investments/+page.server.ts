@@ -11,6 +11,8 @@ import { computeTaxReport, type TaxAssetRow } from '$lib/server/investment-tax';
 import { isAccruable } from '$lib/server/investment-accrual';
 import { parseRate } from '$lib/server/request-guards';
 import { supabaseAdmin } from '$lib/server/supabase';
+import { refreshInvestmentQuotes } from '$lib/server/investment-quotes';
+import { syncCdiRates } from '$lib/server/investment-cdi';
 import { classLabel } from '$lib/investments/classes';
 
 // Bank-issued paper has no public quote: without a declared carry rate it can
@@ -150,7 +152,67 @@ function readCarryRateForm(
 	return { assetId, indexType, percent, spread };
 }
 
+// What the refresh button reports back: how many prices each source
+// returned, and the sources that failed, so a partial refresh says so.
+function refreshMessage(summary: {
+	tickerQuotes: number;
+	tesouroQuotes: number;
+	curvaQuotes: number;
+}): string {
+	const parts: string[] = [];
+	if (summary.tickerQuotes > 0)
+		parts.push(`${summary.tickerQuotes} cotações da bolsa`);
+	if (summary.tesouroQuotes > 0)
+		parts.push(`${summary.tesouroQuotes} títulos do Tesouro`);
+	if (summary.curvaQuotes > 0) parts.push('renda fixa bancária na curva');
+	return parts.length > 0
+		? `Preços atualizados: ${parts.join(', ')}.`
+		: 'Nenhum preço novo encontrado.';
+}
+
 export const actions: Actions = {
+	// On-demand version of the nightly cron, limited to this household and to
+	// the sources that publish during the day: B3 tickers (Yahoo, intraday),
+	// Tesouro Direto (same-day redemption price) and bank-issued paper accrued
+	// over the CDI. Fund quotas stay with the cron: CVM publishes them once a
+	// day, two business days late, so pressing the button could not bring a
+	// newer one.
+	refresh_quotes: async ({ locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user)
+			return fail(401, { refresh: { ok: false, message: 'Não autenticado' } });
+		const householdId = await getUserHouseholdId(supabase, user.id);
+		if (!householdId) {
+			return fail(400, {
+				refresh: { ok: false, message: 'Usuário não pertence a um grupo' }
+			});
+		}
+
+		// The accrual of bank-issued paper runs on the CDI series, so it is
+		// topped up first. Idempotent and shared by every household.
+		const cdi = await syncCdiRates();
+		const summary = await refreshInvestmentQuotes(fetch, {
+			householdId,
+			includeFunds: false
+		});
+		const errors = [
+			...(cdi.error ? [`cdi: ${cdi.error}`] : []),
+			...summary.errors
+		];
+		if (errors.length > 0) {
+			console.error('[investments] quote refresh', errors);
+		}
+		return {
+			refresh: {
+				ok: errors.length === 0,
+				message:
+					errors.length === 0
+						? refreshMessage(summary)
+						: `${refreshMessage(summary)} Algumas fontes falharam: ${errors.join('; ')}.`
+			}
+		};
+	},
+
 	set_carry_rate: async ({ request, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
