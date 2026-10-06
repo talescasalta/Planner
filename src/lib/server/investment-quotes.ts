@@ -24,6 +24,13 @@ const YAHOO_HEADERS = {
 const TESOURO_CSV_URL =
 	'https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/PrecoTaxaTesouroDireto.csv';
 
+// The Tesouro Direto site's own price feed (what its "resgatar" page renders):
+// same-day redemption prices, where the Transparente CSV lags a business day.
+// Undocumented — its predecessor treasurybondsinfo.json now answers 410 — so
+// it only ever supplements the CSV, never replaces it.
+const TESOURO_LIVE_URL =
+	'https://www.tesourodireto.com.br/o/rentabilidade/resgatar';
+
 interface QuoteAsset {
 	id: string;
 	household_id: string;
@@ -149,6 +156,49 @@ export async function fetchTesouroQuotes(
 	return best;
 }
 
+function liveBondQuote(
+	bond: Record<string, unknown>
+): { key: string | null; price: number; date: string } | null {
+	const { treasuryBondName: name, maturityDate: maturity } = bond;
+	const price = bond.unitaryRedemptionValue;
+	const date = bond.lastMarketPricingDate;
+	if (typeof name !== 'string' || typeof maturity !== 'string') return null;
+	if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0)
+		return null;
+	if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(date)) return null;
+	return {
+		key: tesouroKeyFromProductName(name, maturity),
+		price,
+		date: date.slice(0, 10)
+	};
+}
+
+export function parseTesouroLive(
+	body: unknown,
+	wantedKeys: Set<string>
+): Map<string, { price: number; date: string }> {
+	const out = new Map<string, { price: number; date: string }>();
+	const bonds = (body as { TesouroLegado?: unknown })?.TesouroLegado;
+	if (!Array.isArray(bonds)) return out;
+	for (const bond of bonds as Record<string, unknown>[]) {
+		const quote = liveBondQuote(bond);
+		if (quote?.key && wantedKeys.has(quote.key))
+			out.set(quote.key, { price: quote.price, date: quote.date });
+	}
+	return out;
+}
+
+export async function fetchTesouroLiveQuotes(
+	wantedKeys: Set<string>,
+	fetcher: typeof fetch = fetch
+): Promise<Map<string, { price: number; date: string }>> {
+	const response = await fetcher(TESOURO_LIVE_URL, { headers: YAHOO_HEADERS });
+	if (!response.ok) {
+		throw new Error(`Tesouro Direto respondeu ${response.status}`);
+	}
+	return parseTesouroLive(await response.json(), wantedKeys);
+}
+
 interface TesouroCsvRow {
 	key: string;
 	date: string;
@@ -227,7 +277,7 @@ async function collectTickerUpserts(
 	});
 }
 
-async function collectTesouroUpserts(
+export async function collectTesouroUpserts(
 	assets: QuoteAsset[],
 	summary: QuoteRefreshSummary,
 	fetcher: typeof fetch
@@ -247,29 +297,40 @@ async function collectTesouroUpserts(
 			(entry): entry is { asset: QuoteAsset; key: string } => entry.key !== null
 		);
 	if (tesouroAssets.length === 0) return [];
+	const keys = new Set(tesouroAssets.map((entry) => entry.key));
+	// The live feed is primary (same-day prices). The Transparente CSV, the
+	// original source, is the fallback for whatever the feed did not return —
+	// the whole set when the feed is down, or bonds it no longer lists, such as
+	// matured ones. When the feed covers everything the CSV is not downloaded.
+	let quotes = new Map<string, { price: number; date: string }>();
 	try {
-		const quotes = await fetchTesouroQuotes(
-			new Set(tesouroAssets.map((entry) => entry.key)),
-			fetcher
-		);
-		summary.tesouroQuotes = quotes.size;
-		return tesouroAssets.flatMap(({ asset, key }) => {
-			const quote = quotes.get(key);
-			if (!quote) return [];
-			return [
-				{
-					household_id: asset.household_id,
-					asset_id: asset.id,
-					quote_date: quote.date,
-					price: quote.price,
-					source: 'tesouro_transparente'
-				}
-			];
-		});
+		quotes = await fetchTesouroLiveQuotes(keys, fetcher);
 	} catch (error) {
-		summary.errors.push(`tesouro: ${String((error as Error).message)}`);
-		return [];
+		summary.errors.push(`tesouro direto: ${String((error as Error).message)}`);
 	}
+	const missing = new Set([...keys].filter((key) => !quotes.has(key)));
+	if (missing.size > 0) {
+		try {
+			for (const [key, quote] of await fetchTesouroQuotes(missing, fetcher))
+				quotes.set(key, quote);
+		} catch (error) {
+			summary.errors.push(`tesouro: ${String((error as Error).message)}`);
+		}
+	}
+	summary.tesouroQuotes = quotes.size;
+	return tesouroAssets.flatMap(({ asset, key }) => {
+		const quote = quotes.get(key);
+		if (!quote) return [];
+		return [
+			{
+				household_id: asset.household_id,
+				asset_id: asset.id,
+				quote_date: quote.date,
+				price: quote.price,
+				source: 'tesouro_transparente'
+			}
+		];
+	});
 }
 
 // The newest position row per asset, as a unit price. These sheets carry no
