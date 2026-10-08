@@ -12,6 +12,7 @@
 		MoreHorizontal,
 		Pencil,
 		Plus,
+		Receipt,
 		Search,
 		SlidersHorizontal,
 		X
@@ -19,6 +20,7 @@
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import Button from '$lib/components/ui/Button.svelte';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Sheet from '$lib/components/ui/Sheet.svelte';
 	import TransactionStatusActions from '$lib/components/transactions/TransactionStatusActions.svelte';
 	import type { TransactionsPageData } from '$lib/types/page-data';
@@ -922,8 +924,26 @@
 		</details>
 	</div>
 
-	{#if transactions.length === 0}
-		<p class="text-gray-600">Nenhuma transação encontrada para este filtro.</p>
+	{#if transactions.length === 0 && monthOptions.length === 0}
+		<EmptyState
+			icon={Receipt}
+			title="Nenhuma transação ainda"
+			description="Importe a fatura do cartão ou o extrato da conta. O que não aparece em extrato, como dinheiro vivo, dá para registrar à mão."
+		>
+			{#snippet actions()}
+				<Button href={resolve('/app/imports')}>Importar fatura</Button>
+				<Button href={resolve('/app/transactions/new')} variant="secondary"
+					>Nova transação</Button
+				>
+			{/snippet}
+		</EmptyState>
+	{:else if transactions.length === 0}
+		<EmptyState
+			title="Nenhuma transação neste filtro"
+			description={hasActiveFilters()
+				? 'Limpe os filtros ou escolha outro mês.'
+				: 'Escolha outro mês para ver as transações.'}
+		/>
 	{:else}
 		<form
 			id="transactions-delete-selected-form"

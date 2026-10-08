@@ -14,6 +14,8 @@
 		Users,
 		X
 	} from 'lucide-svelte';
+	import Button from '$lib/components/ui/Button.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -159,15 +161,17 @@
 	{/if}
 
 	{#if groups.length === 0 && !showCreateForm}
-		<div class="rounded-lg bg-surface p-8 text-center shadow">
-			<Users class="mx-auto h-10 w-10 text-gray-300" />
-			<p class="mt-3 text-sm text-gray-700">
-				Você ainda não pertence a nenhum grupo.
-			</p>
-			<p class="text-xs text-gray-500">
-				Crie um grupo para começar a organizar suas finanças compartilhadas.
-			</p>
-		</div>
+		<EmptyState
+			icon={Users}
+			title="Você ainda não está num grupo"
+			description="O grupo é a casa: transações, categorias e regras ficam nele. Crie o seu, ou peça para quem já tem um grupo adicionar você pelo seu e-mail."
+		>
+			{#snippet actions()}
+				<Button onclick={() => (showCreateForm = true)}
+					><Plus class="h-4 w-4" /> Criar grupo</Button
+				>
+			{/snippet}
+		</EmptyState>
 	{/if}
 
 	{#each groups as group (group.id)}

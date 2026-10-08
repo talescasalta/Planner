@@ -24,6 +24,8 @@
 	import type { TreemapSelection } from '$lib/components/charts/CategoryTreemap.svelte';
 	import MonthlyTrendChart from '$lib/components/charts/MonthlyTrendChart.svelte';
 	import CategoryTrendChart from '$lib/components/charts/CategoryTrendChart.svelte';
+	import OnboardingChecklist from '$lib/components/OnboardingChecklist.svelte';
+	import { buildOnboardingSteps } from '$lib/onboarding';
 
 	let { data, form } = $props();
 	let summary = $derived(data.summary);
@@ -46,6 +48,35 @@
 		!!(filters.profileId || filters.categoryId || filters.reviewStatus)
 	);
 	let showFilters = $state(false);
+
+	// Hidden until the browser says it was not dismissed, so a returning user
+	// never sees it flash in.
+	const ONBOARDING_DISMISSED_KEY = 'planner:onboarding-dismissed';
+	let onboardingDismissed = $state(true);
+	$effect(() => {
+		try {
+			onboardingDismissed =
+				localStorage.getItem(ONBOARDING_DISMISSED_KEY) === '1';
+		} catch {
+			onboardingDismissed = false;
+		}
+	});
+	let onboardingSteps = $derived(
+		data.onboarding
+			? buildOnboardingSteps(data.onboarding, data.reviewCount ?? null)
+			: []
+	);
+	let showOnboarding = $derived(
+		!onboardingDismissed && onboardingSteps.some((step) => !step.done)
+	);
+	function dismissOnboarding() {
+		onboardingDismissed = true;
+		try {
+			localStorage.setItem(ONBOARDING_DISMISSED_KEY, '1');
+		} catch {
+			// Private mode: it stays dismissed until the page reloads.
+		}
+	}
 	let selection = $state<TreemapSelection | null>(null);
 	// The selection detail is an aside from lg up and a Sheet below it.
 	const LARGE_QUERY = '(min-width: 1024px)';
@@ -354,24 +385,33 @@
 		</form>
 	{/if}
 
+	{#if showOnboarding}
+		<OnboardingChecklist
+			steps={onboardingSteps}
+			onDismiss={dismissOnboarding}
+		/>
+	{/if}
+
 	{#if summary.count === 0}
-		<Card class="p-6">
-			<div class="max-w-2xl">
-				<h3 class="text-lg font-semibold text-text">
-					Ainda não há dados para mostrar
-				</h3>
-				<p class="mt-2 text-sm text-gray-600">
-					Importe uma fatura ou cadastre transações para liberar indicadores de
-					gastos, revisão e categorias.
-				</p>
-				<div class="mt-4 flex flex-wrap gap-3">
-					<Button href={resolve('/app/imports')}>Importar fatura</Button>
-					<Button href={resolve('/app/transactions/new')} variant="secondary"
-						>Nova transação</Button
-					>
+		{#if !showOnboarding}
+			<Card class="p-6">
+				<div class="max-w-2xl">
+					<h3 class="text-lg font-semibold text-text">
+						Ainda não há dados para mostrar
+					</h3>
+					<p class="mt-2 text-sm text-gray-600">
+						Importe uma fatura ou cadastre transações para liberar indicadores
+						de gastos, revisão e categorias.
+					</p>
+					<div class="mt-4 flex flex-wrap gap-3">
+						<Button href={resolve('/app/imports')}>Importar fatura</Button>
+						<Button href={resolve('/app/transactions/new')} variant="secondary"
+							>Nova transação</Button
+						>
+					</div>
 				</div>
-			</div>
-		</Card>
+			</Card>
+		{/if}
 	{:else}
 		{#if summary.needsReview > 0 || summary.uncategorized > 0}
 			<a

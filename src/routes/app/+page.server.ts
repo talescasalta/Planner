@@ -8,6 +8,7 @@ import {
 	filterByReadableAccess
 } from '$lib/server/access';
 import { getUserHouseholdId } from '$lib/server/household';
+import { loadOnboardingFacts } from '$lib/server/onboarding';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { loadCategoriesForUser } from '$lib/server/categories';
 import { selectAllStrict } from '$lib/server/supabase-paging';
@@ -859,21 +860,27 @@ export const load: PageServerLoad = async ({
 		recentTransactions: [] as TransactionRow[],
 		profiles: [] as { id: string; name: string }[],
 		categories: [] as { id: string; name: string }[],
-		filters: { profileId: '', categoryId: '', reviewStatus: '' }
+		filters: { profileId: '', categoryId: '', reviewStatus: '' },
+		onboarding: null as Awaited<ReturnType<typeof loadOnboardingFacts>>
 	};
 
 	const { user } = await safeGetSession();
 	if (!user) return empty;
 
 	const householdId = await getUserHouseholdId(supabase, user.id);
-	if (!householdId) return empty;
+	if (!householdId) {
+		return {
+			...empty,
+			onboarding: await loadOnboardingFacts(supabaseAdmin, null)
+		};
+	}
 
-	const { transactions, categoriesData, categoryMap } = await loadDashboardRows(
-		supabase,
-		user.id,
-		householdId
-	);
-	if (transactions.length === 0) return empty;
+	const [{ transactions, categoriesData, categoryMap }, onboarding] =
+		await Promise.all([
+			loadDashboardRows(supabase, user.id, householdId),
+			loadOnboardingFacts(supabaseAdmin, householdId)
+		]);
+	if (transactions.length === 0) return { ...empty, onboarding };
 	const {
 		monthOptions,
 		selectedMonth,
@@ -947,7 +954,8 @@ export const load: PageServerLoad = async ({
 		recentTransactions: filtered.slice(0, 8),
 		profiles: profilesData ?? [],
 		categories: (categoriesData ?? []).filter((c) => !c.parent_id),
-		filters
+		filters,
+		onboarding
 	};
 };
 

@@ -1,5 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
+	import { WandSparkles } from 'lucide-svelte';
+	import Button from '$lib/components/ui/Button.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import type {
 		ClassificationRule,
 		Category,
@@ -168,90 +172,102 @@
 		{/if}
 	</form>
 
-	<div class="hidden overflow-x-auto rounded-lg bg-surface shadow sm:block">
-		<table class="min-w-full divide-y divide-gray-200 text-sm">
-			<thead class="bg-gray-50">
-				<tr>
-					<th
-						class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
-						>Padrão</th
-					>
-					<th
-						class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
-						>Tipo</th
-					>
-					<th
-						class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
-						>Categoria</th
-					>
-					<th
-						class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
-						>Subcategoria</th
-					>
-					<th
-						class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
-						>Atribuir a</th
-					>
-					<th
-						class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
-						>Confiança</th
-					>
-					<th
-						class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
-						>Ativa</th
-					>
-					<th
-						class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase"
-						>Ações</th
-					>
-				</tr>
-			</thead>
-			<tbody class="divide-y divide-gray-200">
-				{#each rules as rule (rule.id)}
+	{#if rules.length === 0}
+		<EmptyState
+			icon={WandSparkles}
+			title="Nenhuma regra ainda"
+			description="As regras nascem sozinhas: cada vez que você corrige a categoria de uma transação, o app aprende aquele estabelecimento. Também dá para criar uma regra no formulário acima."
+		>
+			{#snippet actions()}
+				<Button href={resolve('/app/review')}>Ir para a revisão</Button>
+			{/snippet}
+		</EmptyState>
+	{:else}
+		<div class="hidden overflow-x-auto rounded-lg bg-surface shadow sm:block">
+			<table class="min-w-full divide-y divide-gray-200 text-sm">
+				<thead class="bg-gray-50">
 					<tr>
-						<td class="px-4 py-2 font-mono text-xs">{rule.pattern}</td>
-						<td class="px-4 py-2">{rule.pattern_type}</td>
-						<td class="px-4 py-2">{rule.category?.name ?? '-'}</td>
-						<td class="px-4 py-2">{rule.subcategory?.name ?? '-'}</td>
-						<td class="px-4 py-2">{rule.owner_profile?.name ?? '-'}</td>
-						<td class="px-4 py-2">{rule.confidence}</td>
-						<td class="px-4 py-2">
-							{@render activeBadge(rule)}
-						</td>
-						<td class="px-4 py-2 text-right space-x-2">
-							{@render ruleActions(rule, false)}
-						</td>
+						<th
+							class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
+							>Padrão</th
+						>
+						<th
+							class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
+							>Tipo</th
+						>
+						<th
+							class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
+							>Categoria</th
+						>
+						<th
+							class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
+							>Subcategoria</th
+						>
+						<th
+							class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
+							>Atribuir a</th
+						>
+						<th
+							class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
+							>Confiança</th
+						>
+						<th
+							class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
+							>Ativa</th
+						>
+						<th
+							class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase"
+							>Ações</th
+						>
 					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+				</thead>
+				<tbody class="divide-y divide-gray-200">
+					{#each rules as rule (rule.id)}
+						<tr>
+							<td class="px-4 py-2 font-mono text-xs">{rule.pattern}</td>
+							<td class="px-4 py-2">{rule.pattern_type}</td>
+							<td class="px-4 py-2">{rule.category?.name ?? '-'}</td>
+							<td class="px-4 py-2">{rule.subcategory?.name ?? '-'}</td>
+							<td class="px-4 py-2">{rule.owner_profile?.name ?? '-'}</td>
+							<td class="px-4 py-2">{rule.confidence}</td>
+							<td class="px-4 py-2">
+								{@render activeBadge(rule)}
+							</td>
+							<td class="px-4 py-2 text-right space-x-2">
+								{@render ruleActions(rule, false)}
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
 
-	<ul class="space-y-3 sm:hidden">
-		{#each rules as rule (rule.id)}
-			<li class="space-y-2 rounded-lg bg-surface p-4 shadow">
-				<div class="flex items-start justify-between gap-3">
-					<p class="min-w-0 font-mono text-xs break-all">{rule.pattern}</p>
-					{@render activeBadge(rule)}
-				</div>
-				<dl class="grid grid-cols-2 gap-x-3 gap-y-1 text-sm text-gray-700">
-					<dt class="text-xs text-gray-500">Tipo</dt>
-					<dd>{rule.pattern_type}</dd>
-					<dt class="text-xs text-gray-500">Categoria</dt>
-					<dd>{rule.category?.name ?? '-'}</dd>
-					<dt class="text-xs text-gray-500">Subcategoria</dt>
-					<dd>{rule.subcategory?.name ?? '-'}</dd>
-					<dt class="text-xs text-gray-500">Atribuir a</dt>
-					<dd>{rule.owner_profile?.name ?? '-'}</dd>
-					<dt class="text-xs text-gray-500">Confiança</dt>
-					<dd>{rule.confidence}</dd>
-				</dl>
-				<div class="flex justify-end border-t border-gray-100 pt-2">
-					{@render ruleActions(rule, true)}
-				</div>
-			</li>
-		{/each}
-	</ul>
+		<ul class="space-y-3 sm:hidden">
+			{#each rules as rule (rule.id)}
+				<li class="space-y-2 rounded-lg bg-surface p-4 shadow">
+					<div class="flex items-start justify-between gap-3">
+						<p class="min-w-0 font-mono text-xs break-all">{rule.pattern}</p>
+						{@render activeBadge(rule)}
+					</div>
+					<dl class="grid grid-cols-2 gap-x-3 gap-y-1 text-sm text-gray-700">
+						<dt class="text-xs text-gray-500">Tipo</dt>
+						<dd>{rule.pattern_type}</dd>
+						<dt class="text-xs text-gray-500">Categoria</dt>
+						<dd>{rule.category?.name ?? '-'}</dd>
+						<dt class="text-xs text-gray-500">Subcategoria</dt>
+						<dd>{rule.subcategory?.name ?? '-'}</dd>
+						<dt class="text-xs text-gray-500">Atribuir a</dt>
+						<dd>{rule.owner_profile?.name ?? '-'}</dd>
+						<dt class="text-xs text-gray-500">Confiança</dt>
+						<dd>{rule.confidence}</dd>
+					</dl>
+					<div class="flex justify-end border-t border-gray-100 pt-2">
+						{@render ruleActions(rule, true)}
+					</div>
+				</li>
+			{/each}
+		</ul>
+	{/if}
 </div>
 
 {#snippet activeBadge(rule: ClassificationRule)}
