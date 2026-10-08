@@ -4,6 +4,10 @@
 	import type { TransactionDetailPageData } from '$lib/types/page-data';
 	import type { ActionData } from './$types';
 	import { TREATMENT_OPTIONS } from '$lib/financial-labels';
+	import { ConfirmSubmit } from '$lib/confirm-submit.svelte';
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+
+	const confirmer = new ConfirmSubmit();
 
 	let { data, form }: { data: TransactionDetailPageData; form: ActionData } =
 		$props();
@@ -303,9 +307,20 @@
 			id="delete-transaction-form"
 			method="POST"
 			action="?/delete"
-			onsubmit={(event) => {
-				if (!confirm('Excluir esta transação?')) event.preventDefault();
-			}}
+			onsubmit={(event) =>
+				confirmer.ask(event, {
+					title: 'Excluir esta transação?',
+					message: `"${tx.description}" será removida e não há como desfazer.`
+				})}
 		></form>
 	{/if}
 </div>
+
+<ConfirmDialog
+	open={confirmer.pending !== null}
+	title={confirmer.pending?.title ?? ''}
+	message={confirmer.pending?.message ?? ''}
+	confirmLabel="Excluir"
+	onConfirm={() => confirmer.confirm()}
+	onCancel={() => confirmer.cancel()}
+/>

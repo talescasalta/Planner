@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatMonthLong, money } from '$lib/format';
+	import { dateShort, formatMonthLong, money } from '$lib/format';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { flowKindLabel } from '$lib/financial-labels';
@@ -594,7 +594,7 @@
 									{#each txs as tx (tx.id)}
 										<tr>
 											<td class="whitespace-nowrap px-3 py-2 text-gray-700"
-												>{tx.date}</td
+												>{dateShort(tx.date)}</td
 											>
 											<td class="px-3 py-2">
 												<a
