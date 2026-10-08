@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatMonthLong, money } from '$lib/format';
+	import { dateShort, formatMonthLong, money } from '$lib/format';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import {
@@ -8,9 +8,8 @@
 		ArrowUpRight,
 		CalendarClock,
 		CircleDollarSign,
+		Info,
 		PiggyBank,
-		ReceiptText,
-		RefreshCcw,
 		SlidersHorizontal,
 		Sparkles,
 		X
@@ -18,7 +17,10 @@
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import CategoryBars from '$lib/components/charts/CategoryBars.svelte';
 	import CategoryTreemap from '$lib/components/charts/CategoryTreemap.svelte';
+	import Button from '$lib/components/ui/Button.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
 	import Sheet from '$lib/components/ui/Sheet.svelte';
+	import StatTile from '$lib/components/ui/StatTile.svelte';
 	import type { TreemapSelection } from '$lib/components/charts/CategoryTreemap.svelte';
 	import MonthlyTrendChart from '$lib/components/charts/MonthlyTrendChart.svelte';
 	import CategoryTrendChart from '$lib/components/charts/CategoryTrendChart.svelte';
@@ -125,6 +127,26 @@
 		drillDownTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
 	);
 
+	let monthSavings = $derived(
+		(currentSavings?.credits ?? 0) - (currentSavings?.expenses ?? 0)
+	);
+	let showFixedVsVariable = $derived(
+		fixedVsVariable.fixedTotal + fixedVsVariable.variableTotal > 0
+	);
+	let hasInvestmentFlows = $derived(
+		Object.values(data.investmentFlows).some((value) => value !== 0)
+	);
+	let pendingText = $derived(
+		[
+			summary.needsReview > 0
+				? `${summary.needsReview} ${summary.needsReview === 1 ? 'transação' : 'transações'} para revisar`
+				: '',
+			summary.uncategorized > 0 ? `${summary.uncategorized} sem categoria` : ''
+		]
+			.filter(Boolean)
+			.join(' · ')
+	);
+
 	let expenseDelta = $derived(summary.expenses - previousSummary.expenses);
 	let expenseDeltaPercent = $derived(
 		previousSummary.expenses > 0
@@ -199,15 +221,13 @@
 	<title>Visão geral | Planner</title>
 </svelte:head>
 
-<div class="flex flex-col gap-6 md:block md:space-y-6">
-	<div
-		class="order-first flex flex-col gap-4 md:order-none lg:flex-row lg:items-end lg:justify-between"
-	>
+<div class="space-y-6">
+	<div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
 		<div>
-			<p class="text-sm font-medium uppercase tracking-wider text-gray-500">
+			<p class="text-sm font-medium tracking-wider text-text-muted uppercase">
 				Visão geral
 			</p>
-			<h2 class="mt-1 text-2xl font-semibold text-gray-950">
+			<h2 class="mt-1 text-2xl font-semibold text-text">
 				{selectedMonth ? formatMonthLong(selectedMonth) : 'Sem dados'}
 			</h2>
 		</div>
@@ -216,7 +236,7 @@
 			<label for="month-filter" class="sr-only">Mês</label>
 			<select
 				id="month-filter"
-				class="rounded-md border-gray-300 bg-white px-3 py-2 text-sm shadow-sm"
+				class="min-h-11 rounded-md border-gray-300 bg-surface px-3 py-2 text-sm shadow-sm md:min-h-0"
 				value={selectedMonth}
 				onchange={(event) => navigate({ month: event.currentTarget.value })}
 			>
@@ -231,7 +251,7 @@
 			<button
 				type="button"
 				onclick={() => (showFilters = !showFilters)}
-				class={`inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm shadow-sm transition ${hasActiveSecondaryFilter ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}
+				class={`inline-flex min-h-11 items-center gap-1.5 rounded-md border px-3 py-2 text-sm shadow-sm transition md:min-h-0 ${hasActiveSecondaryFilter ? 'border-primary bg-primary-soft text-primary' : 'border-gray-300 bg-surface text-gray-700 hover:bg-canvas'}`}
 				aria-expanded={showFilters}
 			>
 				<SlidersHorizontal class="h-4 w-4" />
@@ -254,7 +274,7 @@
 	{#if showFilters}
 		<form
 			method="GET"
-			class="order-first md:order-none grid grid-cols-1 gap-3 rounded-lg bg-white p-4 shadow sm:grid-cols-4"
+			class="grid grid-cols-1 gap-3 rounded-lg bg-surface p-4 shadow sm:grid-cols-4"
 		>
 			<input type="hidden" name="month" value={selectedMonth} />
 			<div>
@@ -264,7 +284,7 @@
 				<select
 					id="profile"
 					name="profile"
-					class="mt-1 w-full rounded-md border-gray-300 text-sm px-2 py-1.5"
+					class="mt-1 w-full rounded-md border-gray-300 px-2 py-1.5 text-sm"
 				>
 					<option value="">Todos</option>
 					{#each profiles as p (p.id)}
@@ -281,7 +301,7 @@
 				<select
 					id="category"
 					name="category"
-					class="mt-1 w-full rounded-md border-gray-300 text-sm px-2 py-1.5"
+					class="mt-1 w-full rounded-md border-gray-300 px-2 py-1.5 text-sm"
 				>
 					<option value="">Todas</option>
 					{#each categories as c (c.id)}
@@ -299,7 +319,7 @@
 				<select
 					id="review_status"
 					name="review_status"
-					class="mt-1 w-full rounded-md border-gray-300 text-sm px-2 py-1.5"
+					class="mt-1 w-full rounded-md border-gray-300 px-2 py-1.5 text-sm"
 				>
 					<option value="">Todos</option>
 					<option
@@ -316,11 +336,7 @@
 				</select>
 			</div>
 			<div class="flex items-end gap-2">
-				<button
-					type="submit"
-					class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-hover"
-					>Aplicar</button
-				>
+				<Button type="submit" size="sm">Aplicar</Button>
 				{#if hasActiveSecondaryFilter}
 					<a
 						href={resolve(
@@ -330,7 +346,7 @@
 								review_status: ''
 							}) as `/app?${string}`
 						)}
-						class="text-xs text-gray-500 underline hover:text-gray-700"
+						class="text-xs text-text-muted underline hover:text-gray-700"
 						>Limpar</a
 					>
 				{/if}
@@ -339,9 +355,9 @@
 	{/if}
 
 	{#if summary.count === 0}
-		<section class="bg-white p-6 shadow rounded-lg">
+		<Card class="p-6">
 			<div class="max-w-2xl">
-				<h3 class="text-lg font-semibold text-gray-900">
+				<h3 class="text-lg font-semibold text-text">
 					Ainda não há dados para mostrar
 				</h3>
 				<p class="mt-2 text-sm text-gray-600">
@@ -349,266 +365,153 @@
 					gastos, revisão e categorias.
 				</p>
 				<div class="mt-4 flex flex-wrap gap-3">
-					<a
-						href={resolve('/app/imports')}
-						class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
-						>Importar fatura</a
-					>
-					<a
-						href={resolve('/app/transactions/new')}
-						class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-						>Nova transação</a
+					<Button href={resolve('/app/imports')}>Importar fatura</Button>
+					<Button href={resolve('/app/transactions/new')} variant="secondary"
+						>Nova transação</Button
 					>
 				</div>
 			</div>
-		</section>
+		</Card>
 	{:else}
-		<section class="contents md:grid md:grid-cols-2 md:gap-4 xl:grid-cols-4">
-			<a
-				href={resolve(transactionHref('spending'))}
-				class="order-first md:order-none rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
-			>
-				<div class="flex items-center justify-between">
-					<p class="text-sm font-medium text-gray-500">Despesas</p>
-					<CircleDollarSign class="h-5 w-5 text-expense" />
-				</div>
-				<p class="mt-3 text-2xl font-semibold text-gray-950">
-					{money(summary.expenses)}
-				</p>
-				{#if summary.refunds > 0}
-					<p class="mt-1 text-xs text-gray-500">
-						Já descontados {money(summary.refunds)} de reembolsos
-					</p>
-				{/if}
-				<p
-					class={`mt-1 flex items-center gap-1 text-xs ${expenseDelta <= 0 ? 'text-income' : 'text-expense'}`}
-				>
-					{#if expenseDelta <= 0}
-						<ArrowDownRight class="h-3.5 w-3.5" />
-					{:else}
-						<ArrowUpRight class="h-3.5 w-3.5" />
-					{/if}
-					{expenseDeltaPercent === null
-						? 'Sem mês anterior'
-						: `${Math.abs(expenseDeltaPercent)}% vs mês anterior`}
-				</p>
-			</a>
-
-			<a
-				href={resolve(transactionHref('income'))}
-				class="order-first md:order-none rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
-			>
-				<div class="flex items-center justify-between">
-					<p class="text-sm font-medium text-gray-500">Receitas</p>
-					<ArrowUpRight class="h-5 w-5 text-emerald-600" />
-				</div>
-				<p class="mt-3 text-2xl font-semibold text-gray-950">
-					{money(summary.credits)}
-				</p>
-				<p class="mt-1 text-xs text-gray-500">
-					Saldo: <span
-						class={summary.balance >= 0 ? 'text-income' : 'text-expense'}
-						>{money(summary.balance)}</span
-					>
-				</p>
-			</a>
-
+		{#if summary.needsReview > 0 || summary.uncategorized > 0}
 			<a
 				href={resolve('/app/review')}
-				class="order-1 md:order-none rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
+				class="flex items-center gap-3 rounded-lg border border-warning/40 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100"
 			>
-				<div class="flex items-center justify-between">
-					<p class="text-sm font-medium text-gray-500">Pendentes</p>
-					<AlertTriangle class="h-5 w-5 text-amber-600" />
-				</div>
-				<p class="mt-3 text-2xl font-semibold text-gray-950">
-					{summary.needsReview}
-				</p>
-				<p class="mt-1 text-xs text-gray-500">Aguardando confirmação</p>
+				<AlertTriangle class="h-5 w-5 shrink-0 text-warning" />
+				<span class="min-w-0 flex-1">
+					{pendingText}
+				</span>
+				<span aria-hidden="true">→</span>
 			</a>
+		{/if}
 
-			<a
-				href={resolve(transactionHref())}
-				class="order-1 md:order-none rounded-lg bg-white p-4 shadow transition hover:-translate-y-0.5 hover:shadow-md"
+		<section
+			class="grid grid-cols-2 gap-3 md:gap-4 {projection
+				? 'xl:grid-cols-4'
+				: 'lg:grid-cols-3'}"
+		>
+			<StatTile
+				label="Despesas"
+				value={money(summary.expenses)}
+				tone="expense"
+				icon={CircleDollarSign}
+				href={resolve(transactionHref('spending'))}
 			>
-				<div class="flex items-center justify-between">
-					<p class="text-sm font-medium text-gray-500">Transações</p>
-					<ReceiptText class="h-5 w-5 text-sky-600" />
-				</div>
-				<p class="mt-3 text-2xl font-semibold text-gray-950">{summary.count}</p>
-				<p class="mt-1 text-xs text-gray-500">
-					{summary.uncategorized} sem categoria
-				</p>
-			</a>
-		</section>
+				{#snippet hint()}
+					{#if summary.refunds > 0}
+						<p>Já descontados {money(summary.refunds)} de reembolsos</p>
+					{/if}
+					<p
+						class="flex items-center gap-1 {expenseDelta <= 0
+							? 'text-income'
+							: 'text-expense'}"
+					>
+						{#if expenseDelta <= 0}
+							<ArrowDownRight class="h-3.5 w-3.5" />
+						{:else}
+							<ArrowUpRight class="h-3.5 w-3.5" />
+						{/if}
+						{expenseDeltaPercent === null
+							? 'Sem mês anterior'
+							: `${Math.abs(expenseDeltaPercent)}% vs mês anterior`}
+					</p>
+				{/snippet}
+			</StatTile>
 
-		<section class="contents md:grid md:grid-cols-2 md:gap-4 xl:grid-cols-4">
-			<div class="order-first md:order-none rounded-lg bg-white p-4 shadow">
-				<div class="flex items-center justify-between">
-					<p class="text-sm font-medium text-gray-500">Taxa de poupança</p>
-					<PiggyBank class="h-5 w-5 text-emerald-600" />
-				</div>
-				<p
-					class={`mt-3 text-2xl font-semibold ${currentSavings?.rate != null && currentSavings.rate < 0 ? 'text-expense' : 'text-gray-950'}`}
-				>
-					{currentSavings?.rate != null
-						? formatPercent(currentSavings.rate)
-						: '—'}
-				</p>
-				<p class="mt-1 text-xs text-gray-500">
-					(renda do trabalho − despesas líquidas) ÷ renda do trabalho.
-					Reembolsos abatem despesas; proventos, aportes, resgates e
-					transferências ficam fora.
-				</p>
-				<p class="mt-2 text-xs text-gray-600">
-					Poupança do mês: {money(
-						(currentSavings?.credits ?? 0) - (currentSavings?.expenses ?? 0)
-					)}
-				</p>
-				<p class="mt-1 text-xs text-gray-600">
-					<a
-						class="hover:text-indigo-700"
-						href={resolve(transactionHref('contribution'))}
-						>Aportes: {money(data.investmentFlows.contributions)}</a
+			<StatTile
+				label="Receitas"
+				value={money(summary.credits)}
+				tone="income"
+				icon={ArrowUpRight}
+				href={resolve(transactionHref('income'))}
+			>
+				{#snippet hint()}
+					Saldo:
+					<span class={summary.balance >= 0 ? 'text-income' : 'text-expense'}
+						>{money(summary.balance)}</span
 					>
-					·
-					<a
-						class="hover:text-indigo-700"
-						href={resolve(transactionHref('redemption'))}
-						>Resgates: {money(data.investmentFlows.redemptions)}</a
-					>
-					· Líquido: {money(data.investmentFlows.net)}
-				</p>
-				<p class="mt-1 text-xs text-gray-600">
-					<a
-						class="hover:text-indigo-700"
-						href={resolve(transactionHref('investment_income'))}
-						>Proventos: {money(data.investmentFlows.investmentIncome)}</a
-					>
-					· Capital novo investido:
-					<span
-						class={data.investmentFlows.newCapital < 0
-							? 'text-expense'
-							: 'text-gray-900'}>{money(data.investmentFlows.newCapital)}</span
-					>
-				</p>
-				<p class="mt-1 text-xs text-gray-500">
-					Capital novo = aportes líquidos − proventos: reinvestir proventos não
-					é poupança nova.
-				</p>
-				{#if savingsHistory.length > 1}
-					<div class="mt-3 flex h-10 items-end gap-1" aria-hidden="true">
-						{#each savingsHistory as h (h.month)}
-							<div
-								class={`min-w-0 flex-1 rounded-sm ${h.rate == null ? 'bg-gray-200' : h.rate >= 0 ? 'bg-emerald-500' : 'bg-rose-500'} ${h.month === selectedMonth ? '' : 'opacity-50'}`}
-								style={`height: ${h.rate == null ? 8 : Math.max(8, Math.min(100, Math.abs(h.rate) * 100)) * 0.4}px`}
-								title={`${shortMonthLabel(h.month)}: ${h.rate == null ? 'sem receitas' : formatPercent(h.rate)}`}
-							></div>
-						{/each}
-					</div>
-				{/if}
-			</div>
+				{/snippet}
+			</StatTile>
 
-			<div class="rounded-lg bg-white p-4 shadow">
-				<div class="flex items-center justify-between">
-					<p class="text-sm font-medium text-gray-500">Fixos vs variáveis</p>
-					<RefreshCcw class="h-5 w-5 text-indigo-600" />
-				</div>
-				<p class="mt-3 text-2xl font-semibold text-gray-950">
-					{fixedShare}%
-					<span class="text-sm font-medium text-gray-500">fixos</span>
-				</p>
-				<div class="mt-2 flex h-2 overflow-hidden rounded bg-gray-100">
-					<div class="h-2 bg-primary" style={`width: ${fixedShare}%`}></div>
-				</div>
-				<p class="mt-1 text-xs text-gray-500">
-					{money(fixedVsVariable.fixedTotal)} recorrentes/parcelas · {money(
-						fixedVsVariable.variableTotal
-					)} variáveis
-				</p>
-				{#if fixedVsVariable.topFixed.length > 0}
-					<ul class="mt-2 space-y-0.5 text-[11px] text-gray-500">
-						{#each fixedVsVariable.topFixed.slice(0, 3) as item (item.name)}
-							<li class="flex justify-between gap-2">
-								<span class="truncate">{item.name}</span><span class="shrink-0"
-									>{money(item.total)}</span
-								>
-							</li>
-						{/each}
-					</ul>
-				{/if}
-			</div>
+			<StatTile
+				label="Taxa de poupança"
+				value={currentSavings?.rate != null
+					? formatPercent(currentSavings.rate)
+					: '—'}
+				tone={currentSavings?.rate != null && currentSavings.rate < 0
+					? 'expense'
+					: 'neutral'}
+				icon={PiggyBank}
+			>
+				{#snippet hint()}
+					<p>Poupança do mês: {money(monthSavings)}</p>
+					{#if savingsHistory.length > 1}
+						<div class="mt-2 flex h-8 items-end gap-1" aria-hidden="true">
+							{#each savingsHistory as h (h.month)}
+								<div
+									class={`min-w-0 flex-1 rounded-sm ${h.rate == null ? 'bg-gray-200' : h.rate >= 0 ? 'bg-income' : 'bg-expense'} ${h.month === selectedMonth ? '' : 'opacity-50'}`}
+									style={`height: ${h.rate == null ? 6 : Math.max(6, Math.min(100, Math.abs(h.rate) * 100)) * 0.32}px`}
+									title={`${shortMonthLabel(h.month)}: ${h.rate == null ? 'sem receitas' : formatPercent(h.rate)}`}
+								></div>
+							{/each}
+						</div>
+					{/if}
+					<details class="mt-2">
+						<summary
+							class="inline-flex min-h-6 cursor-pointer items-center gap-1 text-primary"
+						>
+							<Info class="h-3.5 w-3.5" /> Como é calculada
+						</summary>
+						<p class="mt-1">
+							(renda do trabalho − despesas líquidas) ÷ renda do trabalho.
+							Reembolsos abatem despesas; proventos, aportes, resgates e
+							transferências ficam fora.
+						</p>
+					</details>
+				{/snippet}
+			</StatTile>
 
 			{#if projection}
-				<div class="rounded-lg bg-white p-4 shadow">
-					<div class="flex items-center justify-between">
-						<p class="text-sm font-medium text-gray-500">Projeção do mês</p>
-						<CalendarClock class="h-5 w-5 text-amber-600" />
-					</div>
-					<p class="mt-3 text-2xl font-semibold text-gray-950">
-						{money(projection.projected)}
-					</p>
-					<p class="mt-1 text-xs text-gray-500">nesse ritmo até o fim do mês</p>
-					{#if projection.percentVsBaseline != null && projection.baseline != null}
-						<p
-							class={`mt-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${projection.percentVsBaseline > 5 ? 'bg-rose-50 text-expense' : 'bg-emerald-50 text-income'}`}
-						>
-							{#if projection.percentVsBaseline > 0}
-								<ArrowUpRight class="h-3.5 w-3.5" />
-							{:else}
-								<ArrowDownRight class="h-3.5 w-3.5" />
-							{/if}
-							{Math.abs(projection.percentVsBaseline)}% vs média de {money(
-								projection.baseline
-							)}
-						</p>
-					{/if}
-				</div>
+				<StatTile
+					label="Projeção do mês"
+					value={money(projection.projected)}
+					icon={CalendarClock}
+				>
+					{#snippet hint()}
+						<p>nesse ritmo até o fim do mês</p>
+						{#if projection.percentVsBaseline != null && projection.baseline != null}
+							<p
+								class={`mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium ${projection.percentVsBaseline > 5 ? 'bg-rose-50 text-expense' : 'bg-emerald-50 text-income'}`}
+							>
+								{#if projection.percentVsBaseline > 0}
+									<ArrowUpRight class="h-3.5 w-3.5" />
+								{:else}
+									<ArrowDownRight class="h-3.5 w-3.5" />
+								{/if}
+								{Math.abs(projection.percentVsBaseline)}% vs média de {money(
+									projection.baseline
+								)}
+							</p>
+						{/if}
+					{/snippet}
+				</StatTile>
 			{/if}
-
-			<div class="rounded-lg bg-white p-4 shadow">
-				<div class="flex items-center justify-between">
-					<p class="text-sm font-medium text-gray-500">Parcelas futuras</p>
-					<ReceiptText class="h-5 w-5 text-violet-600" />
-				</div>
-				<p class="mt-3 text-2xl font-semibold text-gray-950">
-					{money(installmentForecast.totalCommitted)}
-				</p>
-				<p class="mt-1 text-xs text-gray-500">já comprometidos em parcelas</p>
-				{#if installmentForecast.months.length > 0}
-					<p class="mt-2 text-xs text-gray-500">
-						Próximo mês: <span class="font-medium text-gray-800"
-							>{money(installmentForecast.months[0].total)}</span
-						>
-						({installmentForecast.months[0].count}
-						{installmentForecast.months[0].count === 1
-							? 'parcela'
-							: 'parcelas'})
-					</p>
-				{/if}
-			</div>
 		</section>
 
-		<section class="rounded-lg bg-white p-5 shadow">
-			<div
-				class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"
-			>
-				<div>
-					<h3 class="text-sm font-semibold text-gray-900">
-						Para onde foi o dinheiro
-					</h3>
-					<p class="text-xs text-gray-500">
-						{selection
-							? 'Clique fora ou em outro item para mudar o foco'
-							: 'Clique em um item para ver as transações.'}
-					</p>
-				</div>
-				<p class="text-lg font-semibold text-gray-900">
+		<Card
+			title="Para onde foi o dinheiro"
+			subtitle={selection
+				? 'Clique fora ou em outro item para mudar o foco'
+				: 'Clique em um item para ver as transações.'}
+		>
+			{#snippet actions()}
+				<p class="text-lg font-semibold text-text tabular-nums">
 					{money(totalExpenses)}
 				</p>
-			</div>
+			{/snippet}
 			<div
-				class={`mt-4 grid gap-4 ${selection ? 'lg:grid-cols-[1fr_360px]' : 'grid-cols-1'}`}
+				class={`grid gap-4 ${selection ? 'lg:grid-cols-[1fr_360px]' : 'grid-cols-1'}`}
 			>
 				<div class="hidden min-w-0 sm:block">
 					<CategoryTreemap
@@ -627,21 +530,21 @@
 				</div>
 				{#if selection}
 					<aside
-						class="hidden h-[460px] flex-col rounded-md border border-gray-200 bg-gray-50 lg:flex"
+						class="hidden h-[460px] flex-col rounded-md border border-border bg-canvas lg:flex"
 					>
 						<div
-							class="flex items-start justify-between border-b border-gray-200 bg-white px-4 py-3"
+							class="flex items-start justify-between border-b border-border bg-surface px-4 py-3"
 						>
 							<div class="min-w-0">
-								<p class="text-[11px] uppercase tracking-wide text-gray-500">
+								<p class="text-[11px] tracking-wide text-text-muted uppercase">
 									{selection.categoryName}
 								</p>
-								<p class="truncate text-sm font-semibold text-gray-900">
+								<p class="truncate text-sm font-semibold text-text">
 									{selection.subcategoryName === selection.categoryName
 										? 'Sem subcategoria'
 										: selection.subcategoryName}
 								</p>
-								<p class="mt-0.5 text-xs text-gray-500">
+								<p class="mt-0.5 text-xs text-text-muted">
 									{drillDownTx.length}
 									{drillDownTx.length === 1 ? 'transação' : 'transações'} · {money(
 										drillDownTotal
@@ -663,42 +566,21 @@
 					</aside>
 				{/if}
 			</div>
-		</section>
+		</Card>
 
-		<section
-			class="order-2 md:order-none grid grid-cols-1 gap-4 xl:grid-cols-3"
-		>
-			<div class="rounded-lg bg-white p-5 shadow xl:col-span-2">
-				<h3 class="text-sm font-semibold text-gray-900">
-					Evolução por categoria
-				</h3>
-				<p class="text-xs text-gray-500">
-					Despesas mensais das principais categorias (últimos {categoryTrend
-						.months.length} meses)
-				</p>
-				<div class="mt-4">
-					<CategoryTrendChart
-						series={categoryTrend.series}
-						points={categoryTrend.points}
-					/>
-				</div>
-			</div>
-
-			<div class="rounded-lg bg-white p-5 shadow">
-				<h3 class="text-sm font-semibold text-gray-900">
-					Fora do normal em {formatMonthLong(selectedMonth)}
-				</h3>
-				<p class="text-xs text-gray-500">
-					Comparado à média dos meses anteriores
-				</p>
-				<div class="mt-3 space-y-3">
+		<section class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+			<Card
+				title="Fora do normal em {formatMonthLong(selectedMonth)}"
+				subtitle="Comparado à média dos meses anteriores"
+			>
+				<div class="space-y-3">
 					{#each aboveNormal as item (item.id)}
 						<div class="flex items-start justify-between gap-3">
 							<div class="min-w-0">
-								<p class="truncate text-sm font-medium text-gray-900">
+								<p class="truncate text-sm font-medium text-text">
 									{item.name}
 								</p>
-								<p class="text-[11px] text-gray-500">
+								<p class="text-[11px] text-text-muted">
 									{money(item.current)} vs média {money(item.baseline)}
 								</p>
 							</div>
@@ -714,35 +596,106 @@
 						</div>
 					{/each}
 					{#if aboveNormal.length === 0}
-						<p class="text-xs text-gray-500">
+						<p class="text-xs text-text-muted">
 							Nada fora do padrão — ou ainda não há meses anteriores suficientes
 							para comparar.
 						</p>
 					{/if}
 				</div>
-			</div>
+			</Card>
+
+			<Card
+				title="Insights do mês"
+				subtitle="Resumo gerado por IA a partir dos números de {formatMonthLong(
+					selectedMonth
+				)}"
+			>
+				{#snippet actions()}
+					<form method="POST" action="?/insights" use:enhance={insightsEnhance}>
+						<input type="hidden" name="month" value={selectedMonth} />
+						<Button
+							type="submit"
+							size="sm"
+							disabled={generatingInsights || !selectedMonth}
+						>
+							{#if generatingInsights}
+								<span
+									class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white"
+									aria-hidden="true"
+								></span>
+								Gerando...
+							{:else}
+								<Sparkles class="h-3.5 w-3.5" />
+								{insights ? 'Gerar novamente' : 'Gerar insights'}
+							{/if}
+						</Button>
+					</form>
+				{/snippet}
+				{#if insights}
+					<ul class="space-y-2.5">
+						{#each insights as insight (insight)}
+							<li class="flex items-start gap-2 text-sm text-gray-800">
+								<span
+									class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+									aria-hidden="true"
+								></span>
+								{insight}
+							</li>
+						{/each}
+					</ul>
+				{:else if form?.message && !form?.insights}
+					<p class="text-sm text-expense">{form.message}</p>
+				{:else if !generatingInsights}
+					<p class="text-xs text-text-muted">
+						Clique em "Gerar insights" para um resumo do que mudou neste mês:
+						categorias fora do padrão, gastos novos e peso dos compromissos
+						fixos.
+					</p>
+				{/if}
+			</Card>
 		</section>
 
-		<section
-			class="order-2 md:order-none grid grid-cols-1 gap-4 xl:grid-cols-2"
-		>
-			<div class="rounded-lg bg-white p-5 shadow">
-				<h3 class="text-sm font-semibold text-gray-900">
-					Parcelas nos próximos meses
-				</h3>
-				<p class="text-xs text-gray-500">
-					Compromissos já assumidos em compras parceladas
-				</p>
-				<div class="mt-4 space-y-3">
+		<section class="grid grid-cols-1 gap-4 xl:grid-cols-3">
+			{#if categoryTrend.months.length >= 2}
+				<Card
+					class="xl:col-span-2"
+					title="Evolução por categoria"
+					subtitle="Despesas mensais das principais categorias (últimos {categoryTrend
+						.months.length} meses)"
+				>
+					<CategoryTrendChart
+						series={categoryTrend.series}
+						points={categoryTrend.points}
+					/>
+				</Card>
+			{/if}
+
+			<Card
+				class={categoryTrend.months.length >= 2 ? '' : 'xl:col-span-3'}
+				title="Receitas vs despesas"
+				subtitle="Últimos 6 meses"
+			>
+				<MonthlyTrendChart data={monthlyTrend} />
+			</Card>
+		</section>
+
+		{#if installmentForecast.totalCommitted > 0}
+			<Card
+				title="Parcelas nos próximos meses"
+				subtitle="{money(
+					installmentForecast.totalCommitted
+				)} já comprometidos em compras parceladas"
+			>
+				<div class="space-y-3">
 					{#each installmentForecast.months as m (m.month)}
 						<div>
 							<div class="flex items-center justify-between gap-3 text-sm">
-								<span class="capitalize text-gray-700"
+								<span class="text-gray-700 first-letter:uppercase"
 									>{formatMonthLong(m.month)}</span
 								>
-								<span class="font-medium text-gray-950"
+								<span class="font-medium text-text tabular-nums"
 									>{money(m.total)}
-									<span class="text-xs font-normal text-gray-500"
+									<span class="text-xs font-normal text-text-muted"
 										>· {m.count} {m.count === 1 ? 'parcela' : 'parcelas'}</span
 									></span
 								>
@@ -755,185 +708,178 @@
 							</div>
 						</div>
 					{/each}
-					{#if installmentForecast.months.length === 0}
-						<p class="text-xs text-gray-500">
-							Nenhuma parcela futura identificada.
-						</p>
-					{/if}
 				</div>
-			</div>
+			</Card>
+		{/if}
 
-			<div class="rounded-lg bg-white p-5 shadow">
-				<div class="flex items-start justify-between gap-3">
-					<div>
-						<h3 class="text-sm font-semibold text-gray-900">Insights do mês</h3>
-						<p class="text-xs text-gray-500">
-							Resumo gerado por IA a partir dos números de {formatMonthLong(
-								selectedMonth
-							)}
+		{#if showFixedVsVariable || hasInvestmentFlows}
+			<section class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+				{#if showFixedVsVariable}
+					<Card title="Fixos vs variáveis">
+						<p class="text-2xl font-semibold text-text tabular-nums">
+							{fixedShare}%
+							<span class="text-sm font-medium text-text-muted">fixos</span>
 						</p>
-					</div>
-					<form method="POST" action="?/insights" use:enhance={insightsEnhance}>
-						<input type="hidden" name="month" value={selectedMonth} />
-						<button
-							type="submit"
-							disabled={generatingInsights || !selectedMonth}
-							class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-indigo-300"
-						>
-							{#if generatingInsights}
-								<span
-									class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white"
-									aria-hidden="true"
-								></span>
-								Gerando...
-							{:else}
-								<Sparkles class="h-3.5 w-3.5" />
-								{insights ? 'Gerar novamente' : 'Gerar insights'}
-							{/if}
-						</button>
-					</form>
-				</div>
-				<div class="mt-4">
-					{#if insights}
-						<ul class="space-y-2.5">
-							{#each insights as insight (insight)}
-								<li class="flex items-start gap-2 text-sm text-gray-800">
-									<span
-										class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500"
-										aria-hidden="true"
-									></span>
-									{insight}
-								</li>
-							{/each}
-						</ul>
-					{:else if form?.message && !form?.insights}
-						<p class="text-sm text-expense">{form.message}</p>
-					{:else if !generatingInsights}
-						<p class="text-xs text-gray-500">
-							Clique em "Gerar insights" para um resumo do que mudou neste mês:
-							categorias fora do padrão, gastos novos e peso dos compromissos
-							fixos.
+						<div class="mt-2 flex h-2 overflow-hidden rounded bg-gray-100">
+							<div class="h-2 bg-primary" style={`width: ${fixedShare}%`}></div>
+						</div>
+						<p class="mt-1 text-xs text-text-muted">
+							{money(fixedVsVariable.fixedTotal)} recorrentes/parcelas · {money(
+								fixedVsVariable.variableTotal
+							)} variáveis
 						</p>
-					{/if}
-				</div>
-			</div>
-		</section>
-
-		<section
-			class="order-2 md:order-none grid grid-cols-1 gap-4 xl:grid-cols-3"
-		>
-			<div class="rounded-lg bg-white p-4 shadow xl:col-span-2">
-				<h3 class="text-sm font-semibold text-gray-900">
-					Receitas vs despesas
-				</h3>
-				<p class="text-xs text-gray-500">Últimos 6 meses</p>
-				<div class="mt-4">
-					<MonthlyTrendChart data={monthlyTrend} />
-				</div>
-			</div>
-
-			<div class="rounded-lg bg-white p-4 shadow">
-				<h3 class="text-sm font-semibold text-gray-900">Transações recentes</h3>
-				<div class="mt-3 overflow-x-auto rounded-md border border-gray-100">
-					<table class="min-w-full divide-y divide-gray-100 text-sm">
-						<tbody class="divide-y divide-gray-100">
-							{#each recentTransactions as transaction (transaction.id)}
-								<tr>
-									<td class="px-3 py-2.5">
-										<a
-											href={resolve(`/app/transactions/${transaction.id}`)}
-											class="font-medium text-gray-900 hover:text-indigo-700"
-											>{transaction.description}</a
+						{#if fixedVsVariable.topFixed.length > 0}
+							<ul class="mt-2 space-y-0.5 text-[11px] text-text-muted">
+								{#each fixedVsVariable.topFixed.slice(0, 3) as item (item.name)}
+									<li class="flex justify-between gap-2">
+										<span class="truncate">{item.name}</span><span
+											class="shrink-0">{money(item.total)}</span
 										>
-										<p class="mt-0.5 text-[11px] text-gray-500">
-											{transaction.date} · {reviewStatusLabel(
-												transaction.review_status
-											)}
-										</p>
-									</td>
-									<td
-										class={`px-3 py-2.5 text-right text-sm font-medium ${transaction.amount < 0 ? 'text-expense' : 'text-income'}`}
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					</Card>
+				{/if}
+
+				{#if hasInvestmentFlows}
+					<Card title="Investimentos no mês">
+						<ul class="space-y-1.5 text-sm text-gray-700">
+							<li class="flex justify-between gap-3">
+								<a
+									class="hover:text-primary"
+									href={resolve(transactionHref('contribution'))}>Aportes</a
+								>
+								<span class="tabular-nums"
+									>{money(data.investmentFlows.contributions)}</span
+								>
+							</li>
+							<li class="flex justify-between gap-3">
+								<a
+									class="hover:text-primary"
+									href={resolve(transactionHref('redemption'))}>Resgates</a
+								>
+								<span class="tabular-nums"
+									>{money(data.investmentFlows.redemptions)}</span
+								>
+							</li>
+							<li class="flex justify-between gap-3">
+								<span>Líquido</span>
+								<span class="tabular-nums"
+									>{money(data.investmentFlows.net)}</span
+								>
+							</li>
+							<li class="flex justify-between gap-3">
+								<a
+									class="hover:text-primary"
+									href={resolve(transactionHref('investment_income'))}
+									>Proventos</a
+								>
+								<span class="tabular-nums"
+									>{money(data.investmentFlows.investmentIncome)}</span
+								>
+							</li>
+							<li class="flex justify-between gap-3 font-medium">
+								<span>Capital novo investido</span>
+								<span
+									class="tabular-nums {data.investmentFlows.newCapital < 0
+										? 'text-expense'
+										: 'text-text'}"
+									>{money(data.investmentFlows.newCapital)}</span
+								>
+							</li>
+						</ul>
+						<p class="mt-2 text-xs text-text-muted">
+							Capital novo = aportes líquidos − proventos: reinvestir proventos
+							não é poupança nova.
+						</p>
+					</Card>
+				{/if}
+			</section>
+		{/if}
+
+		<Card title="Transações recentes">
+			<div class="overflow-x-auto rounded-md border border-gray-100">
+				<table class="min-w-full divide-y divide-gray-100 text-sm">
+					<tbody class="divide-y divide-gray-100">
+						{#each recentTransactions as transaction (transaction.id)}
+							<tr>
+								<td class="px-3 py-2.5">
+									<a
+										href={resolve(`/app/transactions/${transaction.id}`)}
+										class="font-medium text-text hover:text-primary"
+										>{transaction.description}</a
 									>
-										{money(transaction.amount, transaction.currency ?? 'BRL')}
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-				<a
-					href={resolve(
-						`/app/transactions?month=${encodeURIComponent(selectedMonth)}`
-					)}
-					class="mt-3 inline-block text-xs font-medium text-indigo-600 hover:text-indigo-800"
-					>Ver todas →</a
-				>
+									<p class="mt-0.5 text-[11px] text-text-muted">
+										{dateShort(transaction.date)} · {reviewStatusLabel(
+											transaction.review_status
+										)}
+									</p>
+								</td>
+								<td
+									class={`px-3 py-2.5 text-right text-sm font-medium tabular-nums ${transaction.amount < 0 ? 'text-expense' : 'text-income'}`}
+								>
+									{money(transaction.amount, transaction.currency ?? 'BRL')}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
 			</div>
-		</section>
+			<a
+				href={resolve(
+					`/app/transactions?month=${encodeURIComponent(selectedMonth)}`
+				)}
+				class="mt-3 inline-block text-xs font-medium text-primary hover:text-primary-hover"
+				>Ver todas →</a
+			>
+		</Card>
 
-		<section
-			class="order-2 md:order-none grid grid-cols-1 gap-4 xl:grid-cols-2"
-		>
-			<div class="rounded-lg bg-white p-4 shadow">
-				<h3 class="text-sm font-semibold text-gray-900">Por perfil</h3>
-				<div class="mt-3 space-y-3">
-					{#each byProfile as row (row.id)}
-						<div>
-							<div class="flex items-center justify-between gap-3 text-sm">
-								<span class="truncate text-gray-700">{row.name}</span>
-								<span class="font-medium text-gray-950">{money(row.total)}</span
-								>
-							</div>
-							<div class="mt-1 flex items-center gap-2">
-								<div class="h-2 flex-1 rounded bg-gray-100">
-									<div
-										class="h-2 rounded bg-sky-500"
-										style={`width: ${row.share}%`}
-									></div>
-								</div>
-								<span class="w-9 text-right text-xs text-gray-500"
-									>{row.share}%</span
-								>
-							</div>
-						</div>
-					{/each}
-					{#if byProfile.length === 0}
-						<p class="text-xs text-gray-500">Sem dados.</p>
-					{/if}
-				</div>
-			</div>
-
-			<div class="rounded-lg bg-white p-4 shadow">
-				<h3 class="text-sm font-semibold text-gray-900">Por pagador</h3>
-				<div class="mt-3 space-y-3">
-					{#each byPayer as row (row.id)}
-						<div>
-							<div class="flex items-center justify-between gap-3 text-sm">
-								<span class="truncate text-gray-700">{row.name}</span>
-								<span class="font-medium text-gray-950">{money(row.total)}</span
-								>
-							</div>
-							<div class="mt-1 flex items-center gap-2">
-								<div class="h-2 flex-1 rounded bg-gray-100">
-									<div
-										class="h-2 rounded bg-indigo-500"
-										style={`width: ${row.share}%`}
-									></div>
-								</div>
-								<span class="w-9 text-right text-xs text-gray-500"
-									>{row.share}%</span
-								>
-							</div>
-						</div>
-					{/each}
-					{#if byPayer.length === 0}
-						<p class="text-xs text-gray-500">Sem dados.</p>
-					{/if}
-				</div>
-			</div>
-		</section>
+		{#if byProfile.length > 1 || byPayer.length > 1}
+			<section class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+				{#if byProfile.length > 1}
+					<Card title="Por perfil">
+						{@render shareRows(byProfile, 'bg-sky-500')}
+					</Card>
+				{/if}
+				{#if byPayer.length > 1}
+					<Card title="Por pagador">
+						{@render shareRows(byPayer, 'bg-primary')}
+					</Card>
+				{/if}
+			</section>
+		{/if}
 	{/if}
 </div>
+
+{#snippet shareRows(
+	rows: { id: string; name: string; total: number; share: number }[],
+	barClass: string
+)}
+	<div class="space-y-3">
+		{#each rows as row (row.id)}
+			<div>
+				<div class="flex items-center justify-between gap-3 text-sm">
+					<span class="truncate text-gray-700">{row.name}</span>
+					<span class="font-medium text-text tabular-nums"
+						>{money(row.total)}</span
+					>
+				</div>
+				<div class="mt-1 flex items-center gap-2">
+					<div class="h-2 flex-1 rounded bg-gray-100">
+						<div
+							class="h-2 rounded {barClass}"
+							style={`width: ${row.share}%`}
+						></div>
+					</div>
+					<span class="w-9 text-right text-xs text-text-muted"
+						>{row.share}%</span
+					>
+				</div>
+			</div>
+		{/each}
+	</div>
+{/snippet}
 
 {#snippet selectionList()}
 	{#if drillDownTx.length === 0}
@@ -950,7 +896,7 @@
 							<p class="truncate font-medium text-gray-900">
 								{tx.description}
 							</p>
-							<p class="text-[11px] text-gray-500">{tx.date}</p>
+							<p class="text-[11px] text-gray-500">{dateShort(tx.date)}</p>
 						</div>
 						<span
 							class={`shrink-0 text-sm font-medium ${tx.amount < 0 ? 'text-expense' : 'text-income'}`}
