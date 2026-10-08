@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { Component, Snippet } from 'svelte';
+	import type { Snippet } from 'svelte';
+	import type { Icon as IconType } from 'lucide-svelte';
 
 	let {
 		label,
@@ -11,7 +12,7 @@
 	}: {
 		label: string;
 		value: string;
-		icon?: Component<{ class?: string }>;
+		icon?: typeof IconType;
 		href?: string;
 		tone?: 'income' | 'expense' | 'neutral';
 		hint?: Snippet;

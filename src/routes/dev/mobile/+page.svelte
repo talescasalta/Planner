@@ -17,7 +17,11 @@
 	import ImportsPage from '../../app/imports/+page.svelte';
 	import NewTransactionPage from '../../app/transactions/new/+page.svelte';
 	import TransactionsPage from '../../app/transactions/+page.svelte';
-	import { appliedVsGrossData, dashboardData } from './dashboard-fixture';
+	import {
+		appliedVsGrossData,
+		dashboardData,
+		dashboardEmptyData
+	} from './dashboard-fixture';
 	import {
 		importsData,
 		importsForm,
@@ -35,6 +39,8 @@
 		'layout',
 		'sheet',
 		'ui',
+		'dashboard',
+		'dashboard-empty',
 		'categories',
 		'rules',
 		'installments',
@@ -75,6 +81,8 @@
 		<TransactionsPage data={transactionsData} />
 	{:else if view === 'dashboard'}
 		<DashboardPage data={dashboardData} form={null} />
+	{:else if view === 'dashboard-empty'}
+		<DashboardPage data={dashboardEmptyData} form={null} />
 	{:else if view === 'chart'}
 		<div class="rounded-lg bg-white p-4 shadow">
 			<AppliedVsGrossChart data={appliedVsGrossData} />
