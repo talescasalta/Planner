@@ -24,6 +24,7 @@ Planejador de finanças da casa, feito com SvelteKit e Supabase. Importa faturas
 | publicar a minha instância (Supabase + Vercel)  | [docs/deploy.md](docs/deploy.md)             |
 | configurar a IA e entender custos e privacidade | [docs/llm.md](docs/llm.md)                   |
 | usar o app depois de instalado                  | [docs/primeiro-uso.md](docs/primeiro-uso.md) |
+| pedir para um agente de IA montar tudo          | [AGENTS.md](AGENTS.md)                       |
 
 Resumo para quem já conhece a stack:
 
