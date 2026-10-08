@@ -58,7 +58,7 @@
 				<form
 					method="POST"
 					use:enhance
-					class="bg-white p-4 rounded-lg shadow space-y-3"
+					class="bg-surface p-4 rounded-lg shadow space-y-3"
 				>
 					<input type="hidden" name="transaction_id" value={tx.id} />
 
@@ -155,7 +155,7 @@
 	{/if}
 
 	{#if form?.success}
-		<p class="text-sm text-green-600">Revisão salva.</p>
+		<p class="text-sm text-income">Revisão salva.</p>
 	{/if}
 	{#if form && !form.success}
 		<p class="text-sm text-red-600">{form.message}</p>

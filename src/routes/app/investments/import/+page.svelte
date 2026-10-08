@@ -71,7 +71,7 @@
 				await update({ reset: false });
 			};
 		}}
-		class="space-y-4 rounded-lg border border-gray-200 bg-white p-4"
+		class="space-y-4 rounded-lg border border-gray-200 bg-surface p-4"
 	>
 		<div>
 			<label for="file" class="block text-sm font-medium text-gray-700"
@@ -123,7 +123,7 @@
 	{/if}
 
 	{#if showConfirm && form?.success}
-		<div class="space-y-4 rounded-lg border border-gray-200 bg-white p-4">
+		<div class="space-y-4 rounded-lg border border-gray-200 bg-surface p-4">
 			<div class="flex items-baseline justify-between">
 				<h2 class="text-sm font-semibold text-gray-900">{form.kind_label}</h2>
 				<span class="text-xs text-gray-500">{form.filename}</span>

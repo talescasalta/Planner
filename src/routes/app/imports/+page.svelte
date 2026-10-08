@@ -19,7 +19,7 @@
 
 	// Below sm the confirmation bar pins above the bottom navigation.
 	const CONFIRM_BAR =
-		'fixed inset-x-0 bottom-16 z-20 flex items-center justify-between gap-3 border-t border-gray-200 bg-white px-4 py-3 shadow-lg sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none';
+		'fixed inset-x-0 bottom-16 z-20 flex items-center justify-between gap-3 border-t border-gray-200 bg-surface px-4 py-3 shadow-lg sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none';
 
 	const now = new Date();
 	const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -267,7 +267,7 @@
 
 	{#if coverage.rows.length > 0}
 		<section
-			class="rounded-lg bg-white p-4 shadow"
+			class="rounded-lg bg-surface p-4 shadow"
 			aria-labelledby="coverage-title"
 		>
 			<h3 id="coverage-title" class="text-sm font-semibold text-gray-900">
@@ -283,7 +283,7 @@
 						<tr>
 							<th
 								scope="col"
-								class="sticky left-0 bg-white py-1 pr-3 text-left font-medium text-gray-500"
+								class="sticky left-0 bg-surface py-1 pr-3 text-left font-medium text-gray-500"
 								>Conta</th
 							>
 							{#each coverage.months as month (month)}
@@ -300,7 +300,7 @@
 							<tr>
 								<th
 									scope="row"
-									class="sticky left-0 whitespace-nowrap bg-white py-1 pr-3 text-left font-medium text-gray-900"
+									class="sticky left-0 whitespace-nowrap bg-surface py-1 pr-3 text-left font-medium text-gray-900"
 									>{row.account}</th
 								>
 								{#each row.cells as cell (cell.month)}
@@ -328,7 +328,7 @@
 		use:enhance
 		onsubmit={() => rememberAccount(sourceType, accountName)}
 		enctype="multipart/form-data"
-		class="bg-white p-6 rounded-lg shadow space-y-4"
+		class="bg-surface p-6 rounded-lg shadow space-y-4"
 	>
 		<div>
 			<label
@@ -363,7 +363,7 @@
 			<div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
 				{#each sourceOptions as option (option.value)}
 					<label
-						class={`flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm ${sourceType === option.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}
+						class={`flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm ${sourceType === option.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-surface hover:border-gray-300'}`}
 					>
 						<input
 							type="radio"
@@ -511,7 +511,7 @@
 	</form>
 
 	{#if showConfirm}
-		<div class="bg-white p-6 rounded-lg shadow space-y-4">
+		<div class="bg-surface p-6 rounded-lg shadow space-y-4">
 			<div class="flex items-center justify-between">
 				<h3 class="text-lg font-medium text-gray-900">Preview: {filename}</h3>
 				<span class="text-sm text-gray-600"

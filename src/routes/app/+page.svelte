@@ -890,7 +890,7 @@
 				<li>
 					<a
 						href={resolve(`/app/transactions/${tx.id}`)}
-						class="flex items-start justify-between gap-3 px-4 py-2.5 text-sm hover:bg-white"
+						class="flex items-start justify-between gap-3 px-4 py-2.5 text-sm hover:bg-surface"
 					>
 						<div class="min-w-0">
 							<p class="truncate font-medium text-gray-900">

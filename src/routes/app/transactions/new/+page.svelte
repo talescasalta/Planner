@@ -63,7 +63,7 @@
 
 	// Below sm the save bar pins above the bottom navigation.
 	const SAVE_BAR =
-		'fixed inset-x-0 bottom-16 z-20 flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 shadow-lg sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none';
+		'fixed inset-x-0 bottom-16 z-20 flex items-center justify-between border-t border-gray-200 bg-surface px-4 py-3 shadow-lg sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none';
 
 	function addRow() {
 		rows = [...rows, createRow()];
@@ -107,7 +107,7 @@
 
 	<form method="POST" use:enhance class="space-y-4">
 		<div
-			class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
+			class="overflow-hidden rounded-2xl border border-gray-200 bg-surface shadow-sm"
 		>
 			{#if isWide}
 				<div class="overflow-x-auto">
@@ -132,7 +132,7 @@
 
 						<tbody class="divide-y divide-gray-100 align-top">
 							{#each rows as row, index (row)}
-								<tr class="bg-white">
+								<tr class="bg-surface">
 									<ManualEntryFields
 										bind:row={rows[index]}
 										{index}
@@ -206,7 +206,7 @@
 				<button
 					type="button"
 					onclick={addRow}
-					class="min-h-11 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 md:min-h-0"
+					class="min-h-11 rounded-md border border-gray-300 bg-surface px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 md:min-h-0"
 				>
 					Adicionar linha
 				</button>

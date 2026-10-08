@@ -145,7 +145,7 @@
 					aria-selected={view === option.id}
 					onclick={() => (view = option.id)}
 					class={view === option.id
-						? 'rounded-md bg-white px-3 py-1.5 font-medium text-gray-900 shadow-sm'
+						? 'rounded-md bg-surface px-3 py-1.5 font-medium text-gray-900 shadow-sm'
 						: 'rounded-md px-3 py-1.5 text-gray-600 hover:text-gray-900'}
 				>
 					{option.label}
@@ -165,7 +165,7 @@
 
 	{#if data.months.length === 0}
 		<div
-			class="rounded-lg border border-gray-200 bg-white p-8 text-center text-sm text-gray-500"
+			class="rounded-lg border border-gray-200 bg-surface p-8 text-center text-sm text-gray-500"
 		>
 			O rendimento aparece depois da primeira importação da B3.
 			<a
@@ -201,7 +201,7 @@
 		{#if month}
 			<div class="grid gap-4 lg:grid-cols-[260px_1fr]">
 				<div
-					class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-4"
+					class="flex items-center justify-center rounded-lg border border-gray-200 bg-surface p-4"
 				>
 					<ReturnGauge
 						portfolio={month.returnRate}
@@ -213,7 +213,7 @@
 					/>
 				</div>
 				<div class="grid gap-3 sm:grid-cols-2">
-					<div class="rounded-lg border border-gray-200 bg-white p-4">
+					<div class="rounded-lg border border-gray-200 bg-surface p-4">
 						<p class="text-xs text-gray-500">
 							Rendeu {IN_PERIOD[periodKind]}
 						</p>
@@ -225,7 +225,7 @@
 							{brl(month.netFlow)} de aportes líquidos
 						</p>
 					</div>
-					<div class="rounded-lg border border-gray-200 bg-white p-4">
+					<div class="rounded-lg border border-gray-200 bg-surface p-4">
 						<p class="text-xs text-gray-500">Rentabilidade</p>
 						<p
 							class={`mt-1 text-2xl font-semibold ${gainClass(month.returnRate)}`}
@@ -237,7 +237,7 @@
 						</p>
 					</div>
 					<div
-						class="rounded-lg border border-gray-200 bg-white p-4 sm:col-span-2"
+						class="rounded-lg border border-gray-200 bg-surface p-4 sm:col-span-2"
 					>
 						<p class="text-xs text-gray-500">Equivalente a</p>
 						<p
@@ -297,7 +297,7 @@
 			{/if}
 
 			<div class="grid gap-4 lg:grid-cols-2">
-				<div class="rounded-lg border border-gray-200 bg-white p-4">
+				<div class="rounded-lg border border-gray-200 bg-surface p-4">
 					<h2 class="text-sm font-semibold text-gray-900">Quem mais variou</h2>
 					<p class="mt-1 text-xs text-gray-500">
 						Movimento percentual, independente do tamanho da posição.
@@ -341,7 +341,7 @@
 					</div>
 				</div>
 
-				<div class="rounded-lg border border-gray-200 bg-white p-4">
+				<div class="rounded-lg border border-gray-200 bg-surface p-4">
 					<h2 class="text-sm font-semibold text-gray-900">
 						Quem mais pesou no patrimônio
 					</h2>
@@ -388,7 +388,7 @@
 				</div>
 			</div>
 
-			<div class="rounded-lg border border-gray-200 bg-white p-4">
+			<div class="rounded-lg border border-gray-200 bg-surface p-4">
 				<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
 					<h2 class="text-sm font-semibold text-gray-900">Por ativo</h2>
 					<label class="flex items-center gap-2 text-xs text-gray-600">
@@ -511,7 +511,7 @@
 		{/if}
 	{:else}
 		<!-- ========================= HISTÓRICO ========================= -->
-		<div class="rounded-lg border border-gray-200 bg-white p-4">
+		<div class="rounded-lg border border-gray-200 bg-surface p-4">
 			<h2 class="text-sm font-semibold text-gray-900">
 				Valor aplicado × saldo bruto
 			</h2>
@@ -529,7 +529,7 @@
 			{/if}
 		</div>
 
-		<div class="rounded-lg border border-gray-200 bg-white p-4">
+		<div class="rounded-lg border border-gray-200 bg-surface p-4">
 			<h2 class="text-sm font-semibold text-gray-900">Rentabilidade vs CDI</h2>
 			{#if perf}
 				<div class="mt-3 grid gap-4 sm:grid-cols-3">
@@ -626,7 +626,7 @@
 			{/if}
 		</div>
 
-		<div class="rounded-lg border border-gray-200 bg-white p-4">
+		<div class="rounded-lg border border-gray-200 bg-surface p-4">
 			<h2 class="mb-2 text-sm font-semibold text-gray-900">
 				Renda passiva mensal
 			</h2>

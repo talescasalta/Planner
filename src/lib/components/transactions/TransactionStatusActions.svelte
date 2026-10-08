@@ -43,7 +43,7 @@
 			title: 'Voltar para revisão',
 			icon: Undo2,
 			color:
-				'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 disabled:text-gray-300'
+				'bg-surface text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 disabled:text-gray-300'
 		}
 	} as const;
 

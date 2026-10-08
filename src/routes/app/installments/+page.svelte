@@ -53,7 +53,7 @@
 
 	{#if months.length === 0}
 		<div
-			class="bg-white p-6 rounded-lg shadow text-sm text-gray-500 text-center"
+			class="bg-surface p-6 rounded-lg shadow text-sm text-gray-500 text-center"
 		>
 			Nenhuma parcela futura encontrada. Importe faturas de cartão com compras
 			parceladas (descrições como <span class="font-mono">1/6</span> ou
@@ -61,7 +61,7 @@
 		</div>
 	{:else}
 		{#each months as month (month.month)}
-			<section class="bg-white rounded-lg shadow overflow-hidden">
+			<section class="bg-surface rounded-lg shadow overflow-hidden">
 				<header
 					class="flex items-baseline justify-between px-4 py-2 bg-gray-50 border-b border-gray-100"
 				>

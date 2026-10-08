@@ -834,7 +834,7 @@
 					<li>
 						<a
 							href={resolve(chip.href as `/app/transactions?${string}`)}
-							class="inline-flex min-h-8 items-center gap-1 rounded-full bg-primary-soft px-3 text-xs font-medium text-primary hover:bg-indigo-100"
+							class="inline-flex min-h-8 items-center gap-1 rounded-full bg-primary-soft px-3 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
 							aria-label="Remover filtro {chip.label}"
 						>
 							{chip.label}
@@ -1303,7 +1303,7 @@
 												<button
 													type="button"
 													onclick={cancelCreateSubcategory}
-													class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
+													class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-surface text-gray-600 hover:bg-gray-50"
 													title="Cancelar"
 													aria-label="Cancelar criação de subcategoria"
 												>
@@ -1452,7 +1452,7 @@
 			<ul class="space-y-3">
 				{#each visibleTransactions as tx (tx.id)}
 					<li
-						class="space-y-2 rounded-lg bg-white p-3 shadow {savingIds[tx.id]
+						class="space-y-2 rounded-lg bg-surface p-3 shadow {savingIds[tx.id]
 							? 'bg-indigo-50/40'
 							: ''} {displayedRetainedIds.has(tx.id) ? 'opacity-60' : ''}"
 					>
@@ -1518,7 +1518,7 @@
 			<div class="flex gap-2">
 				{#if data.page > 0}
 					<a
-						class="px-3 py-2 border rounded-md bg-white hover:bg-gray-50"
+						class="px-3 py-2 border rounded-md bg-surface hover:bg-gray-50"
 						href={resolve(
 							transactionsHref({
 								page: data.page - 1
@@ -1528,7 +1528,7 @@
 				{/if}
 				{#if data.hasMore}
 					<a
-						class="px-3 py-2 border rounded-md bg-white hover:bg-gray-50"
+						class="px-3 py-2 border rounded-md bg-surface hover:bg-gray-50"
 						href={resolve(
 							transactionsHref({
 								page: data.page + 1
@@ -1738,7 +1738,7 @@
 			)}
 			class={`inline-flex w-full justify-center rounded-md border px-3 py-2 text-sm font-medium ${
 				hasActiveFilters()
-					? 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+					? 'border-gray-300 bg-surface text-gray-700 hover:bg-gray-50'
 					: 'pointer-events-none border-gray-200 bg-gray-50 text-gray-400'
 			}`}
 		>

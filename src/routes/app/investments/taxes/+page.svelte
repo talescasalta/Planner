@@ -54,7 +54,7 @@
 
 	{#if data.months.length === 0}
 		<div
-			class="rounded-lg border border-gray-200 bg-white p-8 text-center text-sm text-gray-500"
+			class="rounded-lg border border-gray-200 bg-surface p-8 text-center text-sm text-gray-500"
 		>
 			Nenhuma venda tributável encontrada.
 			<a
@@ -65,7 +65,7 @@
 			> para calcular a apuração.
 		</div>
 	{:else}
-		<div class="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+		<div class="overflow-x-auto rounded-lg border border-gray-200 bg-surface">
 			<table class="w-full text-left text-sm">
 				<thead>
 					<tr class="border-b bg-gray-50 text-xs text-gray-500">
@@ -155,7 +155,7 @@
 
 		{#if data.carryforward && (data.carryforward.fii > 0 || data.carryforward.acoes > 0 || data.carryforward.etf_rv > 0)}
 			<div
-				class="rounded border border-gray-200 bg-white p-3 text-xs text-gray-600"
+				class="rounded border border-gray-200 bg-surface p-3 text-xs text-gray-600"
 			>
 				Prejuízo acumulado a compensar:
 				{#each Object.entries(data.carryforward).filter(([, value]) => value > 0) as [bucket, value] (bucket)}
@@ -167,7 +167,7 @@
 		{/if}
 	{/if}
 
-	<div class="rounded-lg border border-gray-200 bg-white p-4">
+	<div class="rounded-lg border border-gray-200 bg-surface p-4">
 		<h2 class="text-sm font-semibold text-gray-900">Custo inicial manual</h2>
 		<p class="mt-1 text-xs text-gray-500">
 			Para ativos comprados antes do histórico disponível na B3: informe

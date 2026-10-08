@@ -49,7 +49,7 @@
 </script>
 
 {#if positions.length > 0}
-	<div class="rounded-lg border border-gray-200 bg-white p-4">
+	<div class="rounded-lg border border-gray-200 bg-surface p-4">
 		<div class="flex flex-wrap items-baseline justify-between gap-2">
 			<h2 class="text-sm font-semibold text-gray-900">Taxa de carrego</h2>
 			{#if pending.length > 0}

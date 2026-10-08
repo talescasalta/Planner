@@ -84,7 +84,7 @@
 	{:else if view === 'dashboard-empty'}
 		<DashboardPage data={dashboardEmptyData} form={null} />
 	{:else if view === 'chart'}
-		<div class="rounded-lg bg-white p-4 shadow">
+		<div class="rounded-lg bg-surface p-4 shadow">
 			<AppliedVsGrossChart data={appliedVsGrossData} />
 		</div>
 	{:else if view === 'new-transaction'}

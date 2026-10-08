@@ -41,7 +41,7 @@
 {#if open}
 	<button
 		type="button"
-		class="fixed inset-0 z-30 bg-gray-900/30"
+		class="fixed inset-0 z-30 bg-black/40"
 		aria-label="Fechar"
 		tabindex="-1"
 		onclick={onClose}
@@ -51,7 +51,7 @@
 		bind:this={panel}
 		use:trapFocus
 		tabindex="-1"
-		class="fixed inset-x-0 bottom-0 z-40 flex max-h-[85vh] flex-col rounded-t-2xl bg-white shadow-xl outline-none sm:inset-y-0 sm:right-0 sm:left-auto sm:max-h-none sm:w-full sm:max-w-md sm:rounded-none"
+		class="fixed inset-x-0 bottom-0 z-40 flex max-h-[85vh] flex-col rounded-t-2xl bg-surface shadow-xl outline-none sm:inset-y-0 sm:right-0 sm:left-auto sm:max-h-none sm:w-full sm:max-w-md sm:rounded-none"
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby={titleId}

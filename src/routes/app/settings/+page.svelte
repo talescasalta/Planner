@@ -12,7 +12,7 @@
 <div class="max-w-2xl mx-auto space-y-6">
 	<h2 class="text-xl font-semibold text-gray-900">Configurações</h2>
 
-	<div class="bg-white p-6 rounded-lg shadow space-y-4">
+	<div class="bg-surface p-6 rounded-lg shadow space-y-4">
 		<h3 class="text-sm font-semibold text-gray-900">Perfil</h3>
 		<div>
 			<p class="text-sm text-gray-600">Email</p>
@@ -36,7 +36,7 @@
 				saving = false;
 			};
 		}}
-		class="bg-white p-6 rounded-lg shadow space-y-3"
+		class="bg-surface p-6 rounded-lg shadow space-y-3"
 	>
 		<h3 class="text-sm font-semibold text-gray-900">
 			Nomes nas suas transferências
@@ -66,7 +66,7 @@
 		</div>
 		{#if form?.message}
 			<p
-				class={`text-sm ${form.success ? 'text-green-700' : 'text-red-700'}`}
+				class={`text-sm ${form.success ? 'text-income' : 'text-red-700'}`}
 				role="status"
 			>
 				{form.message}
@@ -81,7 +81,7 @@
 		</button>
 	</form>
 
-	<div class="bg-white p-6 rounded-lg shadow space-y-4">
+	<div class="bg-surface p-6 rounded-lg shadow space-y-4">
 		<h3 class="text-sm font-semibold text-gray-900">Grupos</h3>
 		<p class="text-sm text-gray-600">
 			Grupos permitem que múltiplos usuários compartilhem e visualizem as mesmas
