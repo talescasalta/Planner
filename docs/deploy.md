@@ -1,5 +1,7 @@
 # Publicando a sua instância (Supabase + Vercel)
 
+> Vai pedir para um agente de IA fazer isso? Aponte-o para o [AGENTS.md](../AGENTS.md), que tem o mesmo roteiro por linha de comando.
+
 Este guia coloca o Planner no ar, com banco no Supabase e app na Vercel. Os planos gratuitos das duas plataformas são suficientes para uso de uma casa.
 
 Cada instância é independente: os seus dados ficam no **seu** projeto Supabase, e ninguém mais tem acesso a eles.
@@ -45,6 +47,8 @@ No GitHub, clique em **Fork**. Trabalhar no seu fork permite receber atualizaç�
 
    `SUPABASE_DB_URL` não é necessária na Vercel. Ela só é usada pela CLI do Supabase na sua máquina.
 
+   As chaves do Supabase são lidas durante o build. Se faltar alguma, o deploy falha com uma mensagem como `"SUPABASE_SECRET_KEY" is not exported by "$env/static/private"`: cadastre a variável e faça um **Redeploy**.
+
 3. Clique em **Deploy**. Quando terminar, copie a URL de produção e confira se `PUBLIC_APP_URL` está igual a ela. Se mudou, ajuste a variável e faça um **Redeploy**.
 
 ## 4. URLs de login no Supabase
@@ -55,6 +59,13 @@ Em **Authentication → URL Configuration**:
 - **Redirect URLs**: adicione `https://<seu-app>.vercel.app/**`
 
 Sem isso, os links de confirmação de e-mail e de recuperação de senha voltam para o endereço errado.
+
+### E-mail de confirmação
+
+O e-mail padrão de um projeto Supabase só entrega mensagens para os membros da equipe do projeto, com limite de poucos envios por hora. Sem ajuste, quem se cadastra no app e não é da equipe espera por um e-mail de confirmação que nunca chega. Escolha uma saída:
+
+- **Mais simples:** em **Authentication → Sign In / Providers → Email**, desligue **Confirm email**. Como o cadastro vai ser fechado no passo 6, o risco é pequeno.
+- **Mais completa:** em **Authentication → Emails → SMTP Settings**, configure um SMTP próprio (o [Resend](https://resend.com) tem plano gratuito) e deixe a confirmação ligada. Isso também melhora os e-mails de recuperação de senha.
 
 ## 5. Tarefas agendadas (crons)
 

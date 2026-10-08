@@ -1,5 +1,7 @@
 # Rodando o Planner na sua máquina
 
+> Vai pedir para um agente de IA fazer isso? Aponte-o para o [AGENTS.md](../AGENTS.md).
+
 Este guia monta uma cópia completa do Planner no seu computador, com banco, login e e-mails locais. Leva uns 15 minutos. Não é preciso ter conta na Vercel nem projeto no Supabase em nuvem.
 
 ## Pré-requisitos
@@ -33,7 +35,7 @@ Publishable key: sb_publishable_...
 Secret key: sb_secret_...
 ```
 
-As versões mais antigas da CLI chamam essas chaves de `anon key` e `service_role key`. Se precisar ver os valores de novo, rode `npx supabase status`.
+As versões mais antigas da CLI chamam essas chaves de `anon key` e `service_role key`. Para ver os valores de novo, rode `npx supabase status`; com `npx supabase status -o env`, eles saem no formato de variáveis.
 
 ## 3. Criar o `.env`
 
