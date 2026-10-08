@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dateShort, money } from '$lib/format';
 	import { enhance } from '$app/forms';
 	import type { Transaction, Category, FinancialProfile } from '$lib/types/app';
 
@@ -65,10 +66,7 @@
 						<div>
 							<p class="text-sm font-medium text-gray-900">{tx.description}</p>
 							<p class="text-xs text-gray-500">
-								{tx.date} — {tx.amount.toLocaleString('pt-BR', {
-									style: 'currency',
-									currency: tx.currency ?? 'BRL'
-								})}
+								{dateShort(tx.date)} — {money(tx.amount, tx.currency ?? 'BRL')}
 							</p>
 						</div>
 						<div class="text-right">
@@ -146,7 +144,7 @@
 						<div class="flex items-end gap-3">
 							<button
 								type="submit"
-								class="ml-auto px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700"
+								class="ml-auto px-3 py-1.5 text-sm font-medium text-white bg-primary rounded hover:bg-primary-hover"
 								>Confirmar</button
 							>
 						</div>

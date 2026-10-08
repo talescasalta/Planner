@@ -149,7 +149,7 @@
 			<button
 				type="submit"
 				disabled={asking}
-				class="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+				class="rounded bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
 			>
 				{asking ? 'Pensando…' : 'Enviar'}
 			</button>

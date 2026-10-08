@@ -75,7 +75,7 @@
 		<button
 			type="submit"
 			disabled={saving}
-			class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+			class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-indigo-300"
 		>
 			{saving ? 'Salvando...' : 'Salvar nomes'}
 		</button>

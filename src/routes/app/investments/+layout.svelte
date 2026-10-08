@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { resolve } from '$app/paths';
 	import {
+		brl,
 		brlCompact,
 		cdiClass,
 		dateBr,
@@ -10,7 +11,7 @@
 		percentOfCdi,
 		signedBrl,
 		signedPct
-	} from '$lib/investments/format';
+	} from '$lib/format';
 	import type { LayoutData } from './$types';
 
 	let {
@@ -58,10 +59,7 @@
 					<dt class="text-xs text-gray-500">Patrimônio</dt>
 					<dd
 						class="font-semibold text-gray-900"
-						title={overview.totalValue.toLocaleString('pt-BR', {
-							style: 'currency',
-							currency: 'BRL'
-						})}
+						title={brl(overview.totalValue)}
 					>
 						{brlCompact(overview.totalValue)}
 					</dd>

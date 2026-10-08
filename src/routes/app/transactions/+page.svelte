@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { brl, formatMonthLong, money } from '$lib/format';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import {
@@ -193,23 +194,6 @@
 			bulkSubcategoryId = '';
 		}
 	});
-
-	function formatCurrency(value: number) {
-		return value.toLocaleString('pt-BR', {
-			style: 'currency',
-			currency: 'BRL'
-		});
-	}
-
-	function formatMonth(month: string) {
-		if (month === 'all') return 'Todos os meses';
-		const [year, monthNumber] = month.split('-').map(Number);
-		if (!year || !monthNumber) return month || 'Sem mês';
-		return new Date(year, monthNumber - 1, 1).toLocaleDateString('pt-BR', {
-			month: 'long',
-			year: 'numeric'
-		});
-	}
 
 	function monthHref(month: string) {
 		return transactionsHref({ month, page: 0 });
@@ -583,7 +567,7 @@
 						{/if}
 						<option value="all">Todos os meses</option>
 						{#each monthOptions as month (month)}
-							<option value={month}>{formatMonth(month)}</option>
+							<option value={month}>{formatMonthLong(month)}</option>
 						{/each}
 					</select>
 				</div>
@@ -627,43 +611,43 @@
 				<div>
 					<p class="text-xs text-gray-500">Despesas</p>
 					<p class="font-semibold text-red-700">
-						{formatCurrency(summary.expenses)}
+						{brl(summary.expenses)}
 					</p>
 				</div>
 				<div>
 					<p class="text-xs text-gray-500">Créditos</p>
 					<p class="font-semibold text-green-700">
-						{formatCurrency(summary.credits)}
+						{brl(summary.credits)}
 					</p>
 				</div>
 				<div>
 					<p class="text-xs text-gray-500">Saldo</p>
 					<p class="font-semibold text-gray-900">
-						{formatCurrency(summary.balance)}
+						{brl(summary.balance)}
 					</p>
 				</div>
 				<div>
 					<p class="text-xs text-gray-500">Aportes</p>
 					<p class="font-semibold text-amber-700">
-						{formatCurrency(summary.contributions)}
+						{brl(summary.contributions)}
 					</p>
 				</div>
 				<div>
 					<p class="text-xs text-gray-500">Resgates</p>
 					<p class="font-semibold text-emerald-700">
-						{formatCurrency(summary.redemptions)}
+						{brl(summary.redemptions)}
 					</p>
 				</div>
 				<div>
 					<p class="text-xs text-gray-500">Proventos</p>
 					<p class="font-semibold text-emerald-700">
-						{formatCurrency(summary.investmentIncome)}
+						{brl(summary.investmentIncome)}
 					</p>
 				</div>
 				<div>
 					<p class="text-xs text-gray-500">Transferências</p>
 					<p class="font-semibold text-sky-700">
-						{formatCurrency(summary.transfers)}
+						{brl(summary.transfers)}
 					</p>
 				</div>
 			</div>
@@ -688,7 +672,7 @@
 				onsubmit={(event) => {
 					if (
 						!confirm(
-							`Excluir todas as transações de ${formatMonth(selectedMonth)}?`
+							`Excluir todas as transações de ${formatMonthLong(selectedMonth)}?`
 						)
 					)
 						event.preventDefault();
@@ -869,7 +853,7 @@
 					<button
 						type="submit"
 						disabled={!bulkHasChange || bulkApplying}
-						class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300 sm:min-h-0"
+						class="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-indigo-300 sm:min-h-0"
 					>
 						{bulkApplying
 							? 'Aplicando...'
@@ -1187,10 +1171,7 @@
 							<td
 								class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right align-top"
 							>
-								{tx.amount.toLocaleString('pt-BR', {
-									style: 'currency',
-									currency: tx.currency ?? 'BRL'
-								})}
+								{money(tx.amount, tx.currency ?? 'BRL')}
 							</td>
 							<td class="px-4 py-3 whitespace-nowrap text-sm align-top">
 								{@render flowBadge(tx)}
@@ -1264,7 +1245,7 @@
 							<span
 								class="shrink-0 text-sm font-semibold {tx.amount < 0
 									? 'text-red-700'
-									: 'text-green-700'}">{formatCurrency(tx.amount)}</span
+									: 'text-green-700'}">{brl(tx.amount)}</span
 							>
 						</div>
 						<p

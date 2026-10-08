@@ -3,6 +3,9 @@ import {
 	brlCompact,
 	cdiClass,
 	dateBr,
+	dateShort,
+	formatMonthLong,
+	money,
 	gainClass,
 	monthName,
 	dayShort,
@@ -65,5 +68,34 @@ describe('color classes', () => {
 		expect(cdiClass(60)).toBe('text-amber-700');
 		expect(cdiClass(-5)).toBe('text-red-700');
 		expect(cdiClass(null)).toBe('text-gray-400');
+	});
+});
+
+describe('money', () => {
+	it('defaults to BRL and honors another currency', () => {
+		expect(nbsp(money(1234.5))).toBe('R$ 1.234,50');
+		expect(nbsp(money(10, 'USD'))).toBe('US$ 10,00');
+	});
+});
+
+describe('formatMonthLong', () => {
+	it('spells out a month key', () => {
+		expect(formatMonthLong('2026-09')).toBe('setembro de 2026');
+	});
+
+	it('labels the all-months and empty cases', () => {
+		expect(formatMonthLong('all')).toBe('Todos os meses');
+		expect(formatMonthLong('')).toBe('Sem mês');
+	});
+});
+
+describe('dateShort', () => {
+	it('drops the year', () => {
+		expect(dateShort('2026-09-12')).toBe('12/09');
+		expect(dateShort('2026-09-12T10:00:00Z')).toBe('12/09');
+	});
+
+	it('shows a dash when there is no date', () => {
+		expect(dateShort(null)).toBe('—');
 	});
 });

@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { Menu } from 'lucide-svelte';
 	import Sheet from '$lib/components/ui/Sheet.svelte';
+	import Toaster from '$lib/components/ui/Toaster.svelte';
 	import { NAV_ITEMS, isActive, type NavItem } from '$lib/navigation';
 
 	let { data, children } = $props();
@@ -112,6 +113,8 @@
 		</button>
 	</nav>
 </div>
+
+<Toaster />
 
 <Sheet open={moreOpen} title="Mais" onClose={() => (moreOpen = false)}>
 	<ul class="divide-y divide-gray-100">

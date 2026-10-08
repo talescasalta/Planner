@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { brl } from '$lib/format';
 	import { SvelteMap } from 'svelte/reactivity';
 
 	type Series = { id: string; name: string };
@@ -42,10 +43,7 @@
 	}
 
 	function fmtFull(value: number) {
-		return value.toLocaleString('pt-BR', {
-			style: 'currency',
-			currency: 'BRL'
-		});
+		return brl(value);
 	}
 
 	function shortMonth(month: string) {

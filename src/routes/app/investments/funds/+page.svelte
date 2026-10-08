@@ -140,7 +140,7 @@
 							<p class="mt-1 text-gray-500">CNPJ lido do print: {fund.cnpj}</p>
 							<button
 								type="button"
-								class="mt-2 rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700"
+								class="mt-2 rounded bg-primary px-2 py-1 text-xs text-white hover:bg-primary-hover"
 								onclick={() => useExtracted(fund, fund.cnpj ?? '', '')}
 							>
 								Usar no formulário
@@ -179,7 +179,7 @@
 							</p>
 							<button
 								type="button"
-								class="mt-2 rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700"
+								class="mt-2 rounded bg-primary px-2 py-1 text-xs text-white hover:bg-primary-hover"
 								onclick={() => useExtracted(fund, '', '')}
 							>
 								Usar os valores no formulário
@@ -297,7 +297,7 @@
 				<button
 					type="submit"
 					disabled={submitting}
-					class="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+					class="rounded bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
 				>
 					{submitting ? 'Buscando cota na CVM…' : 'Cadastrar'}
 				</button>

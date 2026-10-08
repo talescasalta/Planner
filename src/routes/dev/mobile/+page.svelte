@@ -2,7 +2,13 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import AppLayout from '../../app/+layout.svelte';
+	import Button from '$lib/components/ui/Button.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import Sheet from '$lib/components/ui/Sheet.svelte';
+	import StatTile from '$lib/components/ui/StatTile.svelte';
+	import { brl } from '$lib/format';
+	import { toast } from '$lib/toast.svelte';
 	import CategoriesPage from '../../app/categories/+page.svelte';
 	import RulesPage from '../../app/rules/+page.svelte';
 	import InstallmentsPage from '../../app/installments/+page.svelte';
@@ -28,6 +34,7 @@
 	const VIEWS = [
 		'layout',
 		'sheet',
+		'ui',
 		'categories',
 		'rules',
 		'installments',
@@ -38,6 +45,7 @@
 
 	const view = $derived(page.url.searchParams.get('view') ?? 'layout');
 	let sheetOpen = $state(true);
+	let confirmOpen = $state(false);
 </script>
 
 <AppLayout data={layoutData}>
@@ -75,10 +83,69 @@
 		<NewTransactionPage data={newTransactionData} />
 	{:else if view === 'imports'}
 		<ImportsPage data={importsData} form={importsForm} />
+	{:else if view === 'ui'}
+		<div class="space-y-6">
+			<Card title="Botões" subtitle="primary, secondary, ghost, danger e sm">
+				<div class="flex flex-wrap gap-2">
+					<Button>Primário</Button>
+					<Button variant="secondary">Secundário</Button>
+					<Button variant="ghost">Fantasma</Button>
+					<Button variant="danger">Perigo</Button>
+					<Button size="sm">Pequeno</Button>
+					<Button disabled>Desativado</Button>
+					<Button href={resolve('/dev/mobile') + '?view=ui'}>Link</Button>
+				</div>
+			</Card>
+			<div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+				<StatTile label="Despesas" value={brl(4321.5)} tone="expense">
+					{#snippet hint()}12% a mais que o mês anterior{/snippet}
+				</StatTile>
+				<StatTile label="Receitas" value={brl(8000)} tone="income" />
+				<StatTile label="Saldo" value={brl(3678.5)} />
+				<StatTile
+					label="Revisão"
+					value="7"
+					href={resolve('/dev/mobile') + '?view=ui'}
+				/>
+			</div>
+			<Card title="Diálogo e avisos">
+				{#snippet actions()}
+					<Button size="sm" variant="secondary">Ação</Button>
+				{/snippet}
+				<div class="flex flex-wrap gap-2">
+					<Button variant="danger" onclick={() => (confirmOpen = true)}
+						>Abrir confirmação</Button
+					>
+					<Button variant="secondary" onclick={() => toast.success('Salvo')}
+						>Toast de sucesso</Button
+					>
+					<Button
+						variant="secondary"
+						onclick={() => toast.error('Não foi possível salvar')}
+						>Toast de erro</Button
+					>
+					<Button
+						variant="secondary"
+						onclick={() =>
+							toast.info('Transação excluída', {
+								action: { label: 'Desfazer', onClick: () => {} }
+							})}>Toast com ação</Button
+					>
+				</div>
+			</Card>
+			<ConfirmDialog
+				open={confirmOpen}
+				title="Excluir 12 transações?"
+				message="Todas as transações de setembro de 2026 serão removidas."
+				confirmLabel="Excluir"
+				onConfirm={() => (confirmOpen = false)}
+				onCancel={() => (confirmOpen = false)}
+			/>
+		</div>
 	{:else if view === 'sheet'}
 		<button
 			type="button"
-			class="min-h-11 rounded bg-indigo-600 px-4 text-sm text-white"
+			class="min-h-11 rounded bg-primary px-4 text-sm text-white"
 			onclick={() => (sheetOpen = true)}>Abrir folha</button
 		>
 		<Sheet open={sheetOpen} title="Exemplo" onClose={() => (sheetOpen = false)}>

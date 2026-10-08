@@ -6,7 +6,7 @@
 	import AssetDetailPanel from '$lib/components/investments/AssetDetailPanel.svelte';
 	import CarryRateCard from '$lib/components/investments/CarryRateCard.svelte';
 	import { CLASS_COLORS, classColor } from '$lib/investments/classes';
-	import { brl, dateBr } from '$lib/investments/format';
+	import { brl, dateBr } from '$lib/format';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -161,7 +161,7 @@
 						<p class="mt-1 text-xs text-gray-600">{step.body}</p>
 						{#if step.href}
 							<a
-								class="mt-3 inline-block rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+								class="mt-3 inline-block rounded bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-hover"
 								href={resolve(step.href)}
 							>
 								Abrir

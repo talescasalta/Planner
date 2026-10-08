@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatMonthLong, money } from '$lib/format';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import {
@@ -131,19 +132,6 @@
 			: null
 	);
 
-	function formatCurrency(value: number, currency = 'BRL') {
-		return value.toLocaleString('pt-BR', { style: 'currency', currency });
-	}
-
-	function formatMonth(month: string) {
-		const [year, monthNumber] = month.split('-').map(Number);
-		if (!year || !monthNumber) return month || 'Sem mês';
-		return new Date(year, monthNumber - 1, 1).toLocaleDateString('pt-BR', {
-			month: 'long',
-			year: 'numeric'
-		});
-	}
-
 	function buildHref(
 		params: Partial<{
 			month: string;
@@ -220,7 +208,7 @@
 				Visão geral
 			</p>
 			<h2 class="mt-1 text-2xl font-semibold text-gray-950">
-				{selectedMonth ? formatMonth(selectedMonth) : 'Sem dados'}
+				{selectedMonth ? formatMonthLong(selectedMonth) : 'Sem dados'}
 			</h2>
 		</div>
 
@@ -236,7 +224,7 @@
 					<option value="">Sem dados</option>
 				{/if}
 				{#each monthOptions as month (month)}
-					<option value={month}>{formatMonth(month)}</option>
+					<option value={month}>{formatMonthLong(month)}</option>
 				{/each}
 			</select>
 
@@ -330,7 +318,7 @@
 			<div class="flex items-end gap-2">
 				<button
 					type="submit"
-					class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+					class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-hover"
 					>Aplicar</button
 				>
 				{#if hasActiveSecondaryFilter}
@@ -363,7 +351,7 @@
 				<div class="mt-4 flex flex-wrap gap-3">
 					<a
 						href={resolve('/app/imports')}
-						class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+						class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
 						>Importar fatura</a
 					>
 					<a
@@ -382,18 +370,18 @@
 			>
 				<div class="flex items-center justify-between">
 					<p class="text-sm font-medium text-gray-500">Despesas</p>
-					<CircleDollarSign class="h-5 w-5 text-rose-600" />
+					<CircleDollarSign class="h-5 w-5 text-expense" />
 				</div>
 				<p class="mt-3 text-2xl font-semibold text-gray-950">
-					{formatCurrency(summary.expenses)}
+					{money(summary.expenses)}
 				</p>
 				{#if summary.refunds > 0}
 					<p class="mt-1 text-xs text-gray-500">
-						Já descontados {formatCurrency(summary.refunds)} de reembolsos
+						Já descontados {money(summary.refunds)} de reembolsos
 					</p>
 				{/if}
 				<p
-					class={`mt-1 flex items-center gap-1 text-xs ${expenseDelta <= 0 ? 'text-emerald-700' : 'text-rose-700'}`}
+					class={`mt-1 flex items-center gap-1 text-xs ${expenseDelta <= 0 ? 'text-income' : 'text-expense'}`}
 				>
 					{#if expenseDelta <= 0}
 						<ArrowDownRight class="h-3.5 w-3.5" />
@@ -415,12 +403,12 @@
 					<ArrowUpRight class="h-5 w-5 text-emerald-600" />
 				</div>
 				<p class="mt-3 text-2xl font-semibold text-gray-950">
-					{formatCurrency(summary.credits)}
+					{money(summary.credits)}
 				</p>
 				<p class="mt-1 text-xs text-gray-500">
 					Saldo: <span
-						class={summary.balance >= 0 ? 'text-emerald-700' : 'text-rose-700'}
-						>{formatCurrency(summary.balance)}</span
+						class={summary.balance >= 0 ? 'text-income' : 'text-expense'}
+						>{money(summary.balance)}</span
 					>
 				</p>
 			</a>
@@ -461,7 +449,7 @@
 					<PiggyBank class="h-5 w-5 text-emerald-600" />
 				</div>
 				<p
-					class={`mt-3 text-2xl font-semibold ${currentSavings?.rate != null && currentSavings.rate < 0 ? 'text-rose-700' : 'text-gray-950'}`}
+					class={`mt-3 text-2xl font-semibold ${currentSavings?.rate != null && currentSavings.rate < 0 ? 'text-expense' : 'text-gray-950'}`}
 				>
 					{currentSavings?.rate != null
 						? formatPercent(currentSavings.rate)
@@ -473,7 +461,7 @@
 					transferências ficam fora.
 				</p>
 				<p class="mt-2 text-xs text-gray-600">
-					Poupança do mês: {formatCurrency(
+					Poupança do mês: {money(
 						(currentSavings?.credits ?? 0) - (currentSavings?.expenses ?? 0)
 					)}
 				</p>
@@ -481,30 +469,27 @@
 					<a
 						class="hover:text-indigo-700"
 						href={resolve(transactionHref('contribution'))}
-						>Aportes: {formatCurrency(data.investmentFlows.contributions)}</a
+						>Aportes: {money(data.investmentFlows.contributions)}</a
 					>
 					·
 					<a
 						class="hover:text-indigo-700"
 						href={resolve(transactionHref('redemption'))}
-						>Resgates: {formatCurrency(data.investmentFlows.redemptions)}</a
+						>Resgates: {money(data.investmentFlows.redemptions)}</a
 					>
-					· Líquido: {formatCurrency(data.investmentFlows.net)}
+					· Líquido: {money(data.investmentFlows.net)}
 				</p>
 				<p class="mt-1 text-xs text-gray-600">
 					<a
 						class="hover:text-indigo-700"
 						href={resolve(transactionHref('investment_income'))}
-						>Proventos: {formatCurrency(
-							data.investmentFlows.investmentIncome
-						)}</a
+						>Proventos: {money(data.investmentFlows.investmentIncome)}</a
 					>
 					· Capital novo investido:
 					<span
 						class={data.investmentFlows.newCapital < 0
-							? 'text-rose-700'
-							: 'text-gray-900'}
-						>{formatCurrency(data.investmentFlows.newCapital)}</span
+							? 'text-expense'
+							: 'text-gray-900'}>{money(data.investmentFlows.newCapital)}</span
 					>
 				</p>
 				<p class="mt-1 text-xs text-gray-500">
@@ -534,10 +519,10 @@
 					<span class="text-sm font-medium text-gray-500">fixos</span>
 				</p>
 				<div class="mt-2 flex h-2 overflow-hidden rounded bg-gray-100">
-					<div class="h-2 bg-[#2a78d6]" style={`width: ${fixedShare}%`}></div>
+					<div class="h-2 bg-primary" style={`width: ${fixedShare}%`}></div>
 				</div>
 				<p class="mt-1 text-xs text-gray-500">
-					{formatCurrency(fixedVsVariable.fixedTotal)} recorrentes/parcelas · {formatCurrency(
+					{money(fixedVsVariable.fixedTotal)} recorrentes/parcelas · {money(
 						fixedVsVariable.variableTotal
 					)} variáveis
 				</p>
@@ -546,7 +531,7 @@
 						{#each fixedVsVariable.topFixed.slice(0, 3) as item (item.name)}
 							<li class="flex justify-between gap-2">
 								<span class="truncate">{item.name}</span><span class="shrink-0"
-									>{formatCurrency(item.total)}</span
+									>{money(item.total)}</span
 								>
 							</li>
 						{/each}
@@ -561,19 +546,19 @@
 						<CalendarClock class="h-5 w-5 text-amber-600" />
 					</div>
 					<p class="mt-3 text-2xl font-semibold text-gray-950">
-						{formatCurrency(projection.projected)}
+						{money(projection.projected)}
 					</p>
 					<p class="mt-1 text-xs text-gray-500">nesse ritmo até o fim do mês</p>
 					{#if projection.percentVsBaseline != null && projection.baseline != null}
 						<p
-							class={`mt-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${projection.percentVsBaseline > 5 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}
+							class={`mt-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${projection.percentVsBaseline > 5 ? 'bg-rose-50 text-expense' : 'bg-emerald-50 text-income'}`}
 						>
 							{#if projection.percentVsBaseline > 0}
 								<ArrowUpRight class="h-3.5 w-3.5" />
 							{:else}
 								<ArrowDownRight class="h-3.5 w-3.5" />
 							{/if}
-							{Math.abs(projection.percentVsBaseline)}% vs média de {formatCurrency(
+							{Math.abs(projection.percentVsBaseline)}% vs média de {money(
 								projection.baseline
 							)}
 						</p>
@@ -587,13 +572,13 @@
 					<ReceiptText class="h-5 w-5 text-violet-600" />
 				</div>
 				<p class="mt-3 text-2xl font-semibold text-gray-950">
-					{formatCurrency(installmentForecast.totalCommitted)}
+					{money(installmentForecast.totalCommitted)}
 				</p>
 				<p class="mt-1 text-xs text-gray-500">já comprometidos em parcelas</p>
 				{#if installmentForecast.months.length > 0}
 					<p class="mt-2 text-xs text-gray-500">
 						Próximo mês: <span class="font-medium text-gray-800"
-							>{formatCurrency(installmentForecast.months[0].total)}</span
+							>{money(installmentForecast.months[0].total)}</span
 						>
 						({installmentForecast.months[0].count}
 						{installmentForecast.months[0].count === 1
@@ -619,7 +604,7 @@
 					</p>
 				</div>
 				<p class="text-lg font-semibold text-gray-900">
-					{formatCurrency(totalExpenses)}
+					{money(totalExpenses)}
 				</p>
 			</div>
 			<div
@@ -658,7 +643,7 @@
 								</p>
 								<p class="mt-0.5 text-xs text-gray-500">
 									{drillDownTx.length}
-									{drillDownTx.length === 1 ? 'transação' : 'transações'} · {formatCurrency(
+									{drillDownTx.length === 1 ? 'transação' : 'transações'} · {money(
 										drillDownTotal
 									)}
 								</p>
@@ -701,7 +686,7 @@
 
 			<div class="rounded-lg bg-white p-5 shadow">
 				<h3 class="text-sm font-semibold text-gray-900">
-					Fora do normal em {formatMonth(selectedMonth)}
+					Fora do normal em {formatMonthLong(selectedMonth)}
 				</h3>
 				<p class="text-xs text-gray-500">
 					Comparado à média dos meses anteriores
@@ -714,15 +699,13 @@
 									{item.name}
 								</p>
 								<p class="text-[11px] text-gray-500">
-									{formatCurrency(item.current)} vs média {formatCurrency(
-										item.baseline
-									)}
+									{money(item.current)} vs média {money(item.baseline)}
 								</p>
 							</div>
 							<span
-								class={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${item.delta > 0 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}
+								class={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${item.delta > 0 ? 'bg-rose-50 text-expense' : 'bg-emerald-50 text-income'}`}
 							>
-								{item.delta > 0 ? '+' : '−'}{formatCurrency(
+								{item.delta > 0 ? '+' : '−'}{money(
 									Math.abs(item.delta)
 								)}{item.deltaPercent != null
 									? ` (${item.delta > 0 ? '+' : '−'}${Math.abs(item.deltaPercent)}%)`
@@ -755,10 +738,10 @@
 						<div>
 							<div class="flex items-center justify-between gap-3 text-sm">
 								<span class="capitalize text-gray-700"
-									>{formatMonth(m.month)}</span
+									>{formatMonthLong(m.month)}</span
 								>
 								<span class="font-medium text-gray-950"
-									>{formatCurrency(m.total)}
+									>{money(m.total)}
 									<span class="text-xs font-normal text-gray-500"
 										>· {m.count} {m.count === 1 ? 'parcela' : 'parcelas'}</span
 									></span
@@ -785,7 +768,7 @@
 					<div>
 						<h3 class="text-sm font-semibold text-gray-900">Insights do mês</h3>
 						<p class="text-xs text-gray-500">
-							Resumo gerado por IA a partir dos números de {formatMonth(
+							Resumo gerado por IA a partir dos números de {formatMonthLong(
 								selectedMonth
 							)}
 						</p>
@@ -795,7 +778,7 @@
 						<button
 							type="submit"
 							disabled={generatingInsights || !selectedMonth}
-							class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+							class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-indigo-300"
 						>
 							{#if generatingInsights}
 								<span
@@ -824,7 +807,7 @@
 							{/each}
 						</ul>
 					{:else if form?.message && !form?.insights}
-						<p class="text-sm text-rose-700">{form.message}</p>
+						<p class="text-sm text-expense">{form.message}</p>
 					{:else if !generatingInsights}
 						<p class="text-xs text-gray-500">
 							Clique em "Gerar insights" para um resumo do que mudou neste mês:
@@ -869,12 +852,9 @@
 										</p>
 									</td>
 									<td
-										class={`px-3 py-2.5 text-right text-sm font-medium ${transaction.amount < 0 ? 'text-rose-700' : 'text-emerald-700'}`}
+										class={`px-3 py-2.5 text-right text-sm font-medium ${transaction.amount < 0 ? 'text-expense' : 'text-income'}`}
 									>
-										{formatCurrency(
-											transaction.amount,
-											transaction.currency ?? 'BRL'
-										)}
+										{money(transaction.amount, transaction.currency ?? 'BRL')}
 									</td>
 								</tr>
 							{/each}
@@ -901,8 +881,7 @@
 						<div>
 							<div class="flex items-center justify-between gap-3 text-sm">
 								<span class="truncate text-gray-700">{row.name}</span>
-								<span class="font-medium text-gray-950"
-									>{formatCurrency(row.total)}</span
+								<span class="font-medium text-gray-950">{money(row.total)}</span
 								>
 							</div>
 							<div class="mt-1 flex items-center gap-2">
@@ -931,8 +910,7 @@
 						<div>
 							<div class="flex items-center justify-between gap-3 text-sm">
 								<span class="truncate text-gray-700">{row.name}</span>
-								<span class="font-medium text-gray-950"
-									>{formatCurrency(row.total)}</span
+								<span class="font-medium text-gray-950">{money(row.total)}</span
 								>
 							</div>
 							<div class="mt-1 flex items-center gap-2">
@@ -975,9 +953,9 @@
 							<p class="text-[11px] text-gray-500">{tx.date}</p>
 						</div>
 						<span
-							class={`shrink-0 text-sm font-medium ${tx.amount < 0 ? 'text-rose-700' : 'text-emerald-700'}`}
+							class={`shrink-0 text-sm font-medium ${tx.amount < 0 ? 'text-expense' : 'text-income'}`}
 						>
-							{formatCurrency(tx.amount, tx.currency ?? 'BRL')}
+							{money(tx.amount, tx.currency ?? 'BRL')}
 						</span>
 					</a>
 				</li>
@@ -997,7 +975,7 @@
 >
 	<p class="mb-2 text-xs text-gray-500">
 		{drillDownTx.length}
-		{drillDownTx.length === 1 ? 'transação' : 'transações'} · {formatCurrency(
+		{drillDownTx.length === 1 ? 'transação' : 'transações'} · {money(
 			drillDownTotal
 		)}
 	</p>

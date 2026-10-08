@@ -100,7 +100,7 @@
 			<div class="flex justify-end">
 				<button
 					type="submit"
-					class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700"
+					class="px-4 py-2 text-sm font-medium text-white bg-primary rounded hover:bg-primary-hover"
 					>Criar categoria</button
 				>
 			</div>
@@ -149,7 +149,7 @@
 			<div class="flex justify-end">
 				<button
 					type="submit"
-					class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700"
+					class="px-4 py-2 text-sm font-medium text-white bg-primary rounded hover:bg-primary-hover"
 					>Criar subcategoria</button
 				>
 			</div>

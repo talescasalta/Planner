@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { money } from '$lib/format';
 	import { ChevronDown } from 'lucide-svelte';
 	import type { TreemapSelection } from './CategoryTreemap.svelte';
 
@@ -40,7 +41,7 @@
 	let max = $derived(Math.max(1, ...nodes.map((node) => node.total)));
 
 	function fmt(value: number) {
-		return value.toLocaleString('pt-BR', { style: 'currency', currency });
+		return money(value, currency);
 	}
 
 	function widthOf(value: number, limit: number) {
