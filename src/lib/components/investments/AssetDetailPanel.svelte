@@ -129,13 +129,13 @@
 	<!-- Backdrop -->
 	<button
 		type="button"
-		class="fixed inset-0 z-30 bg-gray-900/30"
+		class="fixed inset-0 z-30 bg-black/40"
 		aria-label="Fechar detalhe do ativo"
 		onclick={onClose}
 	></button>
 
 	<div
-		class="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col overflow-y-auto bg-white shadow-xl"
+		class="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col overflow-y-auto bg-surface shadow-xl"
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="asset-detail-title"

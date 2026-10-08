@@ -48,7 +48,7 @@
 		method="POST"
 		action="?/create"
 		use:enhance
-		class="bg-white p-4 rounded-lg shadow space-y-3"
+		class="bg-surface p-4 rounded-lg shadow space-y-3"
 	>
 		<h3 class="text-sm font-semibold text-gray-900">Nova regra</h3>
 		<div class="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -161,14 +161,14 @@
 			>
 		</div>
 		{#if form?.success}
-			<p class="text-sm text-green-600">Regra criada.</p>
+			<p class="text-sm text-income">Regra criada.</p>
 		{/if}
 		{#if form && !form.success}
 			<p class="text-sm text-red-600">{form.message}</p>
 		{/if}
 	</form>
 
-	<div class="hidden overflow-x-auto rounded-lg bg-white shadow sm:block">
+	<div class="hidden overflow-x-auto rounded-lg bg-surface shadow sm:block">
 		<table class="min-w-full divide-y divide-gray-200 text-sm">
 			<thead class="bg-gray-50">
 				<tr>
@@ -229,7 +229,7 @@
 
 	<ul class="space-y-3 sm:hidden">
 		{#each rules as rule (rule.id)}
-			<li class="space-y-2 rounded-lg bg-white p-4 shadow">
+			<li class="space-y-2 rounded-lg bg-surface p-4 shadow">
 				<div class="flex items-start justify-between gap-3">
 					<p class="min-w-0 font-mono text-xs break-all">{rule.pattern}</p>
 					{@render activeBadge(rule)}

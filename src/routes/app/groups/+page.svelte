@@ -135,7 +135,7 @@
 			method="POST"
 			action="?/create"
 			use:enhance
-			class="rounded-lg bg-white p-5 shadow"
+			class="rounded-lg bg-surface p-5 shadow"
 		>
 			<label for="group_name" class="block text-sm font-medium text-gray-700"
 				>Nome do grupo</label
@@ -159,7 +159,7 @@
 	{/if}
 
 	{#if groups.length === 0 && !showCreateForm}
-		<div class="rounded-lg bg-white p-8 text-center shadow">
+		<div class="rounded-lg bg-surface p-8 text-center shadow">
 			<Users class="mx-auto h-10 w-10 text-gray-300" />
 			<p class="mt-3 text-sm text-gray-700">
 				Você ainda não pertence a nenhum grupo.
@@ -181,7 +181,7 @@
 				: (sortMode[group.id] ?? '') === 'paid_asc'
 					? 'Menos pagou'
 					: 'Nome'}
-		<section class="space-y-4 rounded-lg bg-white p-5 shadow">
+		<section class="space-y-4 rounded-lg bg-surface p-5 shadow">
 			<header class="flex flex-wrap items-end justify-between gap-3">
 				<div>
 					<h3 class="text-lg font-semibold text-gray-950">{group.name}</h3>
@@ -204,7 +204,7 @@
 						<select
 							id={`month-${group.id}`}
 							name={`month_${group.id}`}
-							class="rounded-md border-gray-300 bg-white px-3 py-1.5 text-sm shadow-sm"
+							class="rounded-md border-gray-300 bg-surface px-3 py-1.5 text-sm shadow-sm"
 							onchange={(event) => event.currentTarget.form?.requestSubmit()}
 						>
 							{#each group.activity.monthOptions as month (month)}
@@ -288,7 +288,7 @@
 					<div class="flex justify-end">
 						<button
 							type="submit"
-							class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
+							class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700"
 							>Salvar rendas</button
 						>
 					</div>

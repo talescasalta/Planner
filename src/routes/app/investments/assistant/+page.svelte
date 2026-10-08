@@ -43,7 +43,7 @@
 	</div>
 
 	{#if history.length === 0}
-		<div class="rounded-lg border border-gray-200 bg-white p-4">
+		<div class="rounded-lg border border-gray-200 bg-surface p-4">
 			<p class="text-xs text-gray-500">Por exemplo:</p>
 			<ul class="mt-2 space-y-1">
 				{#each examples as example (example)}
@@ -65,7 +65,7 @@
 		<div
 			class={turn.role === 'user'
 				? 'ml-8 rounded-lg bg-blue-50 p-3 text-sm text-blue-950'
-				: 'mr-8 rounded-lg border border-gray-200 bg-white p-3 text-sm whitespace-pre-line text-gray-800'}
+				: 'mr-8 rounded-lg border border-gray-200 bg-surface p-3 text-sm whitespace-pre-line text-gray-800'}
 		>
 			{turn.content}
 		</div>
@@ -134,7 +134,7 @@
 				await update({ reset: false });
 			};
 		}}
-		class="rounded-lg border border-gray-200 bg-white p-3"
+		class="rounded-lg border border-gray-200 bg-surface p-3"
 	>
 		<input type="hidden" name="history" value={JSON.stringify(history)} />
 		<textarea

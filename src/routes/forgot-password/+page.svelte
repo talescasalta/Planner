@@ -40,7 +40,7 @@
 
 		{#if form?.message}
 			<p
-				class={`text-sm text-center ${form.success ? 'text-green-700' : 'text-red-600'}`}
+				class={`text-sm text-center ${form.success ? 'text-income' : 'text-red-600'}`}
 			>
 				{form.message}
 			</p>

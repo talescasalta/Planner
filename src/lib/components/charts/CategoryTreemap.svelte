@@ -245,7 +245,7 @@
 								height={h}
 								fill={color}
 								fill-opacity={groupSelected ? 0.22 : 0.12}
-								stroke={groupSelected ? '#0f172a' : color}
+								stroke={groupSelected ? 'var(--color-text)' : color}
 								stroke-opacity={groupSelected ? 1 : 0.5}
 								stroke-width={groupSelected ? 2 : 1}
 								rx="5"
@@ -294,7 +294,7 @@
 								height={h}
 								fill={color}
 								fill-opacity={sel ? 0.95 : 0.82}
-								stroke={sel ? '#0f172a' : 'white'}
+								stroke={sel ? 'var(--color-text)' : 'var(--color-surface)'}
 								stroke-width={sel ? 2 : 1}
 								rx="2"
 							/>
@@ -330,15 +330,15 @@
 
 		{#if hovered}
 			<div
-				class="pointer-events-none absolute z-10 max-w-xs rounded-md bg-gray-900/95 px-3 py-2 text-xs text-white shadow-lg"
+				class="pointer-events-none absolute z-10 max-w-xs rounded-md bg-black/90 px-3 py-2 text-xs text-white shadow-lg"
 				style={`left:${Math.min(hovered.x + 12, containerWidth - 200)}px; top:${Math.max(hovered.y - 12, 0)}px`}
 			>
-				<p class="text-[10px] uppercase tracking-wide text-gray-300">
+				<p class="text-[10px] uppercase tracking-wide text-slate-300">
 					{hovered.categoryName}
 				</p>
 				<p class="mt-0.5 font-medium">{hovered.leafName}</p>
 				<p class="mt-1 text-sm font-semibold">{fmt(hovered.value)}</p>
-				<p class="text-[11px] text-gray-300">
+				<p class="text-[11px] text-slate-300">
 					{hovered.share.toFixed(1)}% do total
 				</p>
 			</div>

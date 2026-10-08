@@ -146,7 +146,7 @@
 
 <div class="mx-auto max-w-7xl space-y-6 p-4">
 	{#if data.positions.length === 0}
-		<div class="rounded-lg border border-gray-200 bg-white p-6">
+		<div class="rounded-lg border border-gray-200 bg-surface p-6">
 			<h2 class="text-base font-semibold text-gray-900">
 				Comece pela carga inicial
 			</h2>
@@ -205,7 +205,7 @@
 						type="submit"
 						disabled={refreshing}
 						title="Busca agora as cotações da bolsa e do Tesouro Direto e recalcula CDB, LCA e LCI na curva. Fundos seguem com a cota diária da CVM."
-						class="inline-flex items-center gap-1.5 rounded border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+						class="inline-flex items-center gap-1.5 rounded border border-gray-300 bg-surface px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
 					>
 						<svg
 							class={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`}
@@ -246,7 +246,7 @@
 		{/if}
 
 		<div class="grid gap-4 sm:grid-cols-3">
-			<div class="rounded-lg border border-gray-200 bg-white p-4">
+			<div class="rounded-lg border border-gray-200 bg-surface p-4">
 				<p class="text-xs text-gray-500">Patrimônio total</p>
 				<p class="mt-1 text-2xl font-semibold text-gray-900">
 					{brl(total)}
@@ -257,7 +257,7 @@
 					</p>
 				{/if}
 			</div>
-			<div class="rounded-lg border border-gray-200 bg-white p-4">
+			<div class="rounded-lg border border-gray-200 bg-surface p-4">
 				<p class="text-xs text-gray-500">Posições</p>
 				<p class="mt-1 text-2xl font-semibold text-gray-900">
 					{positions.length}
@@ -267,7 +267,7 @@
 					{allocation.length === 1 ? 'classe' : 'classes'}
 				</p>
 			</div>
-			<div class="rounded-lg border border-gray-200 bg-white p-4">
+			<div class="rounded-lg border border-gray-200 bg-surface p-4">
 				<p class="text-xs text-gray-500">
 					Renda passiva recorrente (último mês com dados)
 				</p>
@@ -279,7 +279,7 @@
 
 		<CarryRateCard positions={carryPositions} message={form?.message ?? null} />
 
-		<div class="rounded-lg border border-gray-200 bg-white p-4">
+		<div class="rounded-lg border border-gray-200 bg-surface p-4">
 			<div class="mb-2 flex flex-wrap items-baseline justify-between gap-2">
 				<h2 class="text-sm font-semibold text-gray-900">Alocação por classe</h2>
 				<p class="text-xs text-gray-500">
@@ -304,7 +304,7 @@
 			{/if}
 		</div>
 
-		<div class="rounded-lg border border-gray-200 bg-white p-4">
+		<div class="rounded-lg border border-gray-200 bg-surface p-4">
 			<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
 				<h2 class="text-sm font-semibold text-gray-900">Posições</h2>
 				<div class="flex flex-wrap items-center gap-2">

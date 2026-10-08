@@ -6,9 +6,9 @@
 
 	type Variant = 'cell' | 'chip' | 'touch';
 	const SELECT_CLASS: Record<Variant, string> = {
-		cell: 'rounded border-gray-300 bg-white px-1.5 py-1 text-xs',
-		chip: 'rounded border-gray-300 bg-white px-1 py-0.5 text-[11px]',
-		touch: 'min-h-11 w-full rounded border-gray-300 bg-white px-2 text-sm'
+		cell: 'rounded border-gray-300 bg-surface px-1.5 py-1 text-xs',
+		chip: 'rounded border-gray-300 bg-surface px-1 py-0.5 text-[11px]',
+		touch: 'min-h-11 w-full rounded border-gray-300 bg-surface px-2 text-sm'
 	};
 	const DELETE_CLASS: Record<Variant, string> = {
 		cell: 'text-sm text-red-600 hover:text-red-800',
@@ -52,7 +52,7 @@
 	</div>
 
 	{#if form?.message}
-		<p class={`text-sm ${form.success ? 'text-green-600' : 'text-red-600'}`}>
+		<p class={`text-sm ${form.success ? 'text-income' : 'text-red-600'}`}>
 			{form.message}
 		</p>
 	{/if}
@@ -62,7 +62,7 @@
 			method="POST"
 			action="?/create_category"
 			use:enhance
-			class="bg-white p-4 rounded-lg shadow space-y-3"
+			class="bg-surface p-4 rounded-lg shadow space-y-3"
 		>
 			<h3 class="text-sm font-semibold text-gray-900">
 				Nova categoria pessoal
@@ -110,7 +110,7 @@
 			method="POST"
 			action="?/create_subcategory"
 			use:enhance
-			class="bg-white p-4 rounded-lg shadow space-y-3"
+			class="bg-surface p-4 rounded-lg shadow space-y-3"
 		>
 			<h3 class="text-sm font-semibold text-gray-900">
 				Nova subcategoria pessoal
@@ -156,7 +156,7 @@
 		</form>
 	</div>
 
-	<div class="hidden overflow-x-auto rounded-lg bg-white shadow sm:block">
+	<div class="hidden overflow-x-auto rounded-lg bg-surface shadow sm:block">
 		<table class="min-w-full divide-y divide-gray-200 text-sm">
 			<thead class="bg-gray-50">
 				<tr>
@@ -213,7 +213,7 @@
 
 	<ul class="space-y-3 sm:hidden">
 		{#each parentCategories as category (category.id)}
-			<li class="space-y-3 rounded-lg bg-white p-4 shadow">
+			<li class="space-y-3 rounded-lg bg-surface p-4 shadow">
 				<div class="flex items-start justify-between gap-3">
 					<div class="min-w-0">
 						<p class="font-medium text-gray-900">{category.name}</p>
@@ -242,7 +242,7 @@
 	</ul>
 
 	{#if hiddenCategories.length > 0}
-		<div class="bg-white rounded-lg shadow overflow-x-auto">
+		<div class="bg-surface rounded-lg shadow overflow-x-auto">
 			<table class="min-w-full divide-y divide-gray-200 text-sm">
 				<thead class="bg-gray-50">
 					<tr>
