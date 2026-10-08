@@ -256,6 +256,18 @@
 			</button>
 		</form>
 	</div>
+	<p class="text-sm text-gray-600">
+		Envie o CSV exportado pelo banco (os do Nubank e do Itaú são reconhecidos
+		direto), o PDF do extrato, um print da fatura ou cole o texto. PDFs, prints
+		e CSVs de outros bancos são lidos com IA. Reimportar o mesmo arquivo não
+		duplica nada.
+		<a
+			class="text-primary underline"
+			href="https://github.com/talescasalta/Planner/blob/main/docs/primeiro-uso.md#3-importar-a-primeira-fatura"
+			target="_blank"
+			rel="noreferrer">Guia de importação</a
+		>
+	</p>
 
 	{#if form?.success && form?.message && !form?.preview}
 		<div

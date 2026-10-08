@@ -1,4 +1,8 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+	import { Repeat } from 'lucide-svelte';
+	import Button from '$lib/components/ui/Button.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import type { FutureInstallmentsSummary } from '$lib/types/installments';
 
 	let { data }: { data: FutureInstallmentsSummary } = $props();
@@ -52,13 +56,15 @@
 	</p>
 
 	{#if months.length === 0}
-		<div
-			class="bg-surface p-6 rounded-lg shadow text-sm text-gray-500 text-center"
+		<EmptyState
+			icon={Repeat}
+			title="Nenhuma parcela futura"
+			description="As parcelas aparecem aqui quando você importa faturas de cartão com compras parceladas, com descrições como 1/6 ou Parcela 4/8."
 		>
-			Nenhuma parcela futura encontrada. Importe faturas de cartão com compras
-			parceladas (descrições como <span class="font-mono">1/6</span> ou
-			<span class="font-mono">Parcela 4/8</span>) para vê-las aqui.
-		</div>
+			{#snippet actions()}
+				<Button href={resolve('/app/imports')}>Importar fatura</Button>
+			{/snippet}
+		</EmptyState>
 	{:else}
 		{#each months as month (month.month)}
 			<section class="bg-surface rounded-lg shadow overflow-hidden">

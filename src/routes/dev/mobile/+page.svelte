@@ -20,7 +20,8 @@
 	import {
 		appliedVsGrossData,
 		dashboardData,
-		dashboardEmptyData
+		dashboardEmptyData,
+		dashboardNewData
 	} from './dashboard-fixture';
 	import {
 		importsData,
@@ -41,6 +42,8 @@
 		'ui',
 		'dashboard',
 		'dashboard-empty',
+		'dashboard-new',
+		'empty-states',
 		'categories',
 		'rules',
 		'installments',
@@ -83,6 +86,16 @@
 		<DashboardPage data={dashboardData} form={null} />
 	{:else if view === 'dashboard-empty'}
 		<DashboardPage data={dashboardEmptyData} form={null} />
+	{:else if view === 'dashboard-new'}
+		<DashboardPage data={dashboardNewData} form={null} />
+	{:else if view === 'empty-states'}
+		<div class="space-y-10">
+			<TransactionsPage
+				data={{ ...transactionsData, transactions: [], monthOptions: [] }}
+			/>
+			<InstallmentsPage data={{ ...installmentsData, months: [] }} />
+			<RulesPage data={{ ...rulesData, rules: [] }} />
+		</div>
 	{:else if view === 'chart'}
 		<div class="rounded-lg bg-surface p-4 shadow">
 			<AppliedVsGrossChart data={appliedVsGrossData} />

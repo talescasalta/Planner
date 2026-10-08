@@ -185,6 +185,22 @@ export const dashboardEmptyData = {
 	byPayer: []
 } as unknown as PageData;
 
+// A fresh instance: group created, nothing imported yet.
+export const dashboardNewData = {
+	...dashboardEmptyData,
+	summary: { ...summary, count: 0, needsReview: 0, uncategorized: 0 },
+	monthOptions: [],
+	selectedMonth: '',
+	reviewCount: 0,
+	onboarding: {
+		hasGroup: true,
+		hasOwnNames: false,
+		transactionCount: 0,
+		memberCount: 1,
+		membersWithIncome: 0
+	}
+} as unknown as PageData;
+
 export const appliedVsGrossData = [
 	'2026-01',
 	'2026-02',
