@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { brl, formatMonthLong, money } from '$lib/format';
+	import { brl, dateShort, formatMonthLong, money } from '$lib/format';
+	import { ConfirmSubmit } from '$lib/confirm-submit.svelte';
+	import { toast } from '$lib/toast.svelte';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import {
@@ -7,12 +9,16 @@
 		ArrowLeftRight,
 		ArrowUp,
 		ArrowUpDown,
+		MoreHorizontal,
+		Pencil,
 		Plus,
 		Search,
 		SlidersHorizontal,
 		X
 	} from 'lucide-svelte';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
+	import Button from '$lib/components/ui/Button.svelte';
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import Sheet from '$lib/components/ui/Sheet.svelte';
 	import TransactionStatusActions from '$lib/components/transactions/TransactionStatusActions.svelte';
 	import type { TransactionsPageData } from '$lib/types/page-data';
@@ -49,15 +55,154 @@
 	// Per-row save state, keyed by transaction id, so saving one row never
 	// unlocks another that is still in flight.
 	let savingIds = $state<Record<string, boolean>>({});
-	// Per-row error message shown when a row's auto-save is rejected by the server.
-	let rowErrors = $state<Record<string, string>>({});
+
 	let statusChangingId = $state<string | null>(null);
 	// Row currently showing the inline "create subcategory" input instead of the select.
 	let creatingSubcategoryForId = $state<string | null>(null);
 
-	// Below sm the bulk bar pins above the bottom navigation while rows are selected.
-	const BULK_BAR_FIXED =
-		'fixed inset-x-0 bottom-16 z-20 max-h-[60vh] overflow-y-auto rounded-none border-x-0 shadow-lg sm:static sm:max-h-none sm:overflow-visible sm:rounded-lg sm:border-x sm:shadow-sm';
+	// Row whose classification selects are open; every other row shows a chip.
+	let editingId = $state<string | null>(null);
+	// The bulk-classify fields stay folded until "Classificar" is pressed.
+	let bulkOpen = $state(false);
+	let menuOpen = $state(false);
+	const confirmer = new ConfirmSubmit();
+	let canDeleteMonth = $derived(
+		!!selectedMonth && selectedMonth !== 'all' && summary.count > 0
+	);
+
+	const STATUS_LABELS: Record<string, string> = {
+		needs_review: 'Revisar',
+		confirmed: 'Confirmado',
+		ignored: 'Ignorado'
+	};
+	const DIRECTION_LABELS: Record<string, string> = {
+		in: 'Só receitas',
+		out: 'Só despesas'
+	};
+	const FLOW_LABELS: Record<string, string> = {
+		spending: 'Despesas e reembolsos',
+		expense: 'Despesas',
+		refund: 'Reembolsos',
+		income: 'Receitas',
+		contribution: 'Aportes',
+		redemption: 'Resgates',
+		investment_income: 'Proventos',
+		transfer: 'Transferências'
+	};
+
+	// One removable chip per active filter; each link drops just that filter.
+	const isSet = (value: string | undefined) => !!value && value !== 'all';
+	const nameOf = (list: { id: string; name: string }[], id: string) =>
+		list.find((item) => item.id === id)?.name ?? id;
+
+	let activeChips = $derived.by(() => {
+		const specs: {
+			key: string;
+			on: boolean;
+			label: string;
+			clears: Parameters<typeof transactionsHref>[0];
+		}[] = [
+			{
+				key: 'source',
+				on: isSet(filters.sourceType),
+				label: sourceTypeText(filters.sourceType),
+				clears: { sourceType: 'all' }
+			},
+			{
+				key: 'account',
+				on: isSet(filters.account),
+				label:
+					filters.account === '__none__'
+						? 'Sem conta informada'
+						: (filters.account ?? ''),
+				clears: { account: 'all' }
+			},
+			{
+				key: 'profile',
+				on: !!filters.profileId,
+				label: nameOf(profiles, filters.profileId),
+				clears: { profileId: '' }
+			},
+			{
+				key: 'category',
+				on: !!filters.categoryId,
+				label: nameOf(categories, filters.categoryId),
+				clears: { categoryId: '', subcategoryId: '' }
+			},
+			{
+				key: 'subcategory',
+				on: !!filters.subcategoryId,
+				label: nameOf(categories, filters.subcategoryId),
+				clears: { subcategoryId: '' }
+			},
+			{
+				key: 'status',
+				on: isSet(filters.status),
+				label: STATUS_LABELS[filters.status] ?? filters.status,
+				clears: { status: 'all' }
+			},
+			{
+				key: 'direction',
+				on: isSet(filters.direction),
+				label: DIRECTION_LABELS[filters.direction] ?? filters.direction,
+				clears: { direction: 'all' }
+			},
+			{
+				key: 'flow',
+				on: isSet(filters.flow),
+				label: FLOW_LABELS[filters.flow] ?? filters.flow,
+				clears: { flow: 'all' }
+			}
+		];
+		return specs
+			.filter((spec) => spec.on)
+			.map(({ key, label, clears }) => ({
+				key,
+				label,
+				href: transactionsHref({ ...clears, page: 0 })
+			}));
+	});
+
+	type EnhanceInput = { cancel: () => void; formElement: HTMLFormElement };
+
+	function askDeleteSelected({ cancel, formElement }: EnhanceInput) {
+		const count = selectedForDelete.length;
+		confirmer.guard(cancel, formElement, {
+			title: `Excluir ${count} ${count === 1 ? 'transação' : 'transações'}?`,
+			message:
+				'As transações selecionadas serão removidas e não há como desfazer.'
+		});
+	}
+
+	function askDeleteMonth({ cancel, formElement }: EnhanceInput) {
+		menuOpen = false;
+		confirmer.guard(cancel, formElement, {
+			title: `Excluir o mês ${formatMonthLong(selectedMonth)}?`,
+			message: `${summary.count} ${summary.count === 1 ? 'transação será removida' : 'transações serão removidas'}${hasActiveFilters() ? ' (só as do filtro atual)' : ''}. Não há como desfazer.`
+		});
+	}
+
+	// Both delete actions answer with a redirect back to the list.
+	function deleteEnhance(done: string) {
+		return async ({
+			result,
+			update
+		}: {
+			result: { type: string; data?: Record<string, unknown> };
+			update: () => Promise<void>;
+		}) => {
+			await update();
+			if (result.type === 'redirect' || result.type === 'success') {
+				selectedForDelete = [];
+				toast.success(done);
+			} else if (result.type === 'failure' || result.type === 'error') {
+				const message = result.data?.message;
+				toast.error(
+					typeof message === 'string' ? message : 'Não foi possível excluir.'
+				);
+			}
+		};
+	}
 
 	let filtersOpen = $state(false);
 	let searchTerm = $state('');
@@ -218,6 +363,7 @@
 			status?: string;
 			direction?: string;
 			flow?: string;
+			profileId?: string;
 			page?: number;
 		} = {}
 	) {
@@ -232,6 +378,7 @@
 			status: filters.status,
 			direction: filters.direction,
 			flow: filters.flow,
+			profileId: filters.profileId,
 			page: data.page,
 			...overrides
 		};
@@ -239,7 +386,7 @@
 		setQueryParam(params, 'month', view.month);
 		setQueryParam(params, 'source_type', view.sourceType, 'all');
 		setQueryParam(params, 'account', view.account, 'all');
-		setQueryParam(params, 'profile_id', filters.profileId);
+		setQueryParam(params, 'profile_id', view.profileId);
 		setQueryParam(params, 'category_id', view.categoryId);
 		setQueryParam(params, 'subcategory_id', view.subcategoryId);
 		setQueryParam(params, 'status', view.status, 'all');
@@ -409,7 +556,6 @@
 			submitter instanceof HTMLButtonElement &&
 			submitter.formAction.includes('create_subcategory');
 		savingIds[tx.id] = true;
-		delete rowErrors[tx.id];
 
 		// Snapshot what was submitted while the form still exists in the DOM:
 		// after update() the row may have been filtered out and unmounted.
@@ -437,10 +583,12 @@
 				// Don't reload (nothing changed server-side); revert and surface the error.
 				revertRowControls(formElement, tx);
 				const message = result.data?.message;
-				rowErrors[tx.id] =
+				toast.error(
 					typeof message === 'string'
 						? message
-						: 'Não foi possível salvar. Tente novamente.';
+						: 'Não foi possível salvar. Tente novamente.'
+				);
+
 				delete savingIds[tx.id];
 				requestAnimationFrame(() => window.scrollTo({ top: scrollY }));
 				return;
@@ -450,6 +598,9 @@
 			// confirmed while filtering by "a revisar"), keep an updated copy in
 			// place instead of letting it vanish from under the user.
 			if (result.type === 'success') {
+				toast.success(
+					isCreatingSubcategory ? 'Subcategoria criada' : 'Classificação salva'
+				);
 				retainAfterSave(tx, previousIndex, {
 					category_id: submittedCategoryId,
 					subcategory_id: submittedSubcategoryId,
@@ -487,12 +638,19 @@
 		}) => {
 			await update();
 			bulkApplying = false;
+			if (result.type === 'failure') {
+				toast.error('Não foi possível aplicar a classificação.');
+			}
 			if (result.type === 'success') {
 				// Retained snapshots of bulk-edited rows are stale now; drop them.
 				retainedRows = retainedRows.filter(
 					(r) => !selectedForDelete.includes(r.tx.id)
 				);
+				toast.success(
+					`Classificação aplicada a ${selectedForDelete.length} transações`
+				);
 				selectedForDelete = [];
+				bulkOpen = false;
 				bulkCategoryId = KEEP;
 				bulkSubcategoryId = '';
 				bulkOwnerId = KEEP;
@@ -519,6 +677,7 @@
 		}) => {
 			await update();
 			if (result.type === 'success') {
+				toast.success('Status atualizado');
 				retainAfterSave(tx, previousIndex, { review_status: nextStatus });
 			}
 			requestAnimationFrame(() => {
@@ -530,192 +689,237 @@
 </script>
 
 <div class="space-y-4">
-	<div
-		class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
-	>
-		<h2 class="text-xl font-semibold text-gray-900">Transações</h2>
-		<a
-			href={resolve('/app/transactions/new')}
-			class="inline-flex items-center self-start px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 lg:self-auto"
-		>
-			Nova transação
-		</a>
+	<div class="flex items-center justify-between gap-3">
+		<h2 class="text-xl font-semibold text-text">Transações</h2>
+		<div class="relative flex items-center gap-2">
+			<Button href={resolve('/app/transactions/new')} variant="secondary"
+				>Nova transação</Button
+			>
+			{#if canDeleteMonth}
+				<button
+					type="button"
+					aria-label="Mais ações"
+					aria-haspopup="menu"
+					aria-expanded={menuOpen}
+					onclick={() => (menuOpen = !menuOpen)}
+					class="inline-flex min-h-11 min-w-11 items-center justify-center rounded border border-border bg-surface text-neutral-flow hover:bg-canvas md:min-h-10 md:min-w-10"
+				>
+					<MoreHorizontal class="h-5 w-5" />
+				</button>
+				{#if menuOpen}
+					<button
+						type="button"
+						class="fixed inset-0 z-30 cursor-default"
+						aria-label="Fechar menu"
+						tabindex="-1"
+						onclick={() => (menuOpen = false)}
+					></button>
+					<div
+						role="menu"
+						class="absolute top-full right-0 z-40 mt-1 w-56 rounded-md border border-border bg-surface py-1 shadow-lg"
+					>
+						<button
+							type="submit"
+							role="menuitem"
+							form="delete-month-form"
+							class="flex min-h-11 w-full items-center px-3 text-left text-sm text-danger hover:bg-canvas md:min-h-9"
+							>Excluir mês da fatura</button
+						>
+					</div>
+				{/if}
+			{/if}
+		</div>
 	</div>
 
-	<div class="bg-white shadow rounded-lg p-4 space-y-4">
-		<div
-			class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"
+	{#if canDeleteMonth}
+		<form
+			id="delete-month-form"
+			method="POST"
+			action="?/delete_month"
+			use:enhance={(input) => {
+				askDeleteMonth(input);
+				return deleteEnhance('Mês excluído');
+			}}
 		>
-			<div class="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end">
-				<div>
-					<label
-						for="month-filter"
-						class="block text-xs font-medium uppercase tracking-wider text-gray-500"
-						>Mês da fatura</label
-					>
-					<select
-						id="month-filter"
-						class="mt-1 w-56 rounded-md border-gray-300 shadow-sm text-sm px-3 py-2"
-						value={selectedMonth}
-						onchange={(event) => {
-							const value = event.currentTarget.value;
-							window.location.href = monthHref(value);
-						}}
-					>
-						{#if !selectedMonth}
-							<option value="">Sem meses</option>
-						{/if}
-						<option value="all">Todos os meses</option>
-						{#each monthOptions as month (month)}
-							<option value={month}>{formatMonthLong(month)}</option>
-						{/each}
-					</select>
-				</div>
+			<input type="hidden" name="reference_month" value={selectedMonth} />
+			<input
+				type="hidden"
+				name="source_type_filter"
+				value={filters.sourceType}
+			/>
+			<input type="hidden" name="account_filter" value={filters.account} />
+			<input type="hidden" name="profile_id_filter" value={filters.profileId} />
+			<input
+				type="hidden"
+				name="category_id_filter"
+				value={filters.categoryId}
+			/>
+			<input
+				type="hidden"
+				name="subcategory_id_filter"
+				value={filters.subcategoryId}
+			/>
+			<input type="hidden" name="status_filter" value={filters.status} />
+			<input type="hidden" name="direction_filter" value={filters.direction} />
+			<input type="hidden" name="flow_filter" value={filters.flow} />
+		</form>
+	{/if}
 
-				<div class="flex-1">
-					<label
-						for="tx-search"
-						class="block text-xs font-medium uppercase tracking-wider text-gray-500"
-						>Buscar</label
-					>
-					<div class="relative mt-1">
-						<Search
-							class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-						/>
-						<input
-							id="tx-search"
-							type="search"
-							bind:value={searchTerm}
-							placeholder="Descrição, categoria, subcategoria..."
-							class="w-full rounded-md border-gray-300 pl-8 pr-8 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-						/>
-						{#if searchTerm}
-							<button
-								type="button"
-								onclick={() => (searchTerm = '')}
-								class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-								aria-label="Limpar busca"
-							>
-								<X class="h-4 w-4" />
-							</button>
-						{/if}
-					</div>
-				</div>
-			</div>
-
-			<div class="grid grid-cols-2 md:grid-cols-8 gap-3 text-sm">
-				<div>
-					<p class="text-xs text-gray-500">Transações</p>
-					<p class="font-semibold text-gray-900">{summary.count}</p>
-				</div>
-				<div>
-					<p class="text-xs text-gray-500">Despesas</p>
-					<p class="font-semibold text-red-700">
-						{brl(summary.expenses)}
-					</p>
-				</div>
-				<div>
-					<p class="text-xs text-gray-500">Créditos</p>
-					<p class="font-semibold text-green-700">
-						{brl(summary.credits)}
-					</p>
-				</div>
-				<div>
-					<p class="text-xs text-gray-500">Saldo</p>
-					<p class="font-semibold text-gray-900">
-						{brl(summary.balance)}
-					</p>
-				</div>
-				<div>
-					<p class="text-xs text-gray-500">Aportes</p>
-					<p class="font-semibold text-amber-700">
-						{brl(summary.contributions)}
-					</p>
-				</div>
-				<div>
-					<p class="text-xs text-gray-500">Resgates</p>
-					<p class="font-semibold text-emerald-700">
-						{brl(summary.redemptions)}
-					</p>
-				</div>
-				<div>
-					<p class="text-xs text-gray-500">Proventos</p>
-					<p class="font-semibold text-emerald-700">
-						{brl(summary.investmentIncome)}
-					</p>
-				</div>
-				<div>
-					<p class="text-xs text-gray-500">Transferências</p>
-					<p class="font-semibold text-sky-700">
-						{brl(summary.transfers)}
-					</p>
-				</div>
-			</div>
-		</div>
-
-		<div class="hidden gap-3 sm:grid md:grid-cols-4 xl:grid-cols-7">
-			{@render filterFields('')}
-		</div>
-		<button
-			type="button"
-			class="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:hidden"
-			onclick={() => (filtersOpen = true)}
-		>
-			<SlidersHorizontal class="h-4 w-4" />
-			{filtersButtonLabel()}
-		</button>
-
-		{#if selectedMonth && selectedMonth !== 'all' && summary.count > 0}
-			<form
-				method="POST"
-				action="?/delete_month"
-				onsubmit={(event) => {
-					if (
-						!confirm(
-							`Excluir todas as transações de ${formatMonthLong(selectedMonth)}?`
-						)
-					)
-						event.preventDefault();
-				}}
-				class="flex justify-end"
-			>
-				<input type="hidden" name="reference_month" value={selectedMonth} />
-				<input
-					type="hidden"
-					name="source_type_filter"
-					value={filters.sourceType}
-				/>
-				<input type="hidden" name="account_filter" value={filters.account} />
-				<input
-					type="hidden"
-					name="profile_id_filter"
-					value={filters.profileId}
-				/>
-				<input
-					type="hidden"
-					name="category_id_filter"
-					value={filters.categoryId}
-				/>
-				<input
-					type="hidden"
-					name="subcategory_id_filter"
-					value={filters.subcategoryId}
-				/>
-				<input type="hidden" name="status_filter" value={filters.status} />
-				<input
-					type="hidden"
-					name="direction_filter"
-					value={filters.direction}
-				/>
-				<input type="hidden" name="flow_filter" value={filters.flow} />
-				<button
-					type="submit"
-					class="px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100"
+	<div class="space-y-3 rounded-lg bg-surface p-4 shadow">
+		<div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+			<div>
+				<label
+					for="month-filter"
+					class="block text-xs font-medium tracking-wider text-text-muted uppercase"
+					>Mês da fatura</label
 				>
-					Excluir mês da fatura
-				</button>
-			</form>
+				<select
+					id="month-filter"
+					class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm sm:w-56"
+					value={selectedMonth}
+					onchange={(event) => {
+						const value = event.currentTarget.value;
+						window.location.href = monthHref(value);
+					}}
+				>
+					{#if !selectedMonth}
+						<option value="">Sem meses</option>
+					{/if}
+					<option value="all">Todos os meses</option>
+					{#each monthOptions as month (month)}
+						<option value={month}>{formatMonthLong(month)}</option>
+					{/each}
+				</select>
+			</div>
+
+			<div class="flex-1">
+				<label
+					for="tx-search"
+					class="block text-xs font-medium tracking-wider text-text-muted uppercase"
+					>Buscar</label
+				>
+				<div class="relative mt-1">
+					<Search
+						class="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-gray-400"
+					/>
+					<input
+						id="tx-search"
+						type="search"
+						bind:value={searchTerm}
+						placeholder="Descrição, categoria, subcategoria..."
+						class="w-full rounded-md border-gray-300 py-2 pr-8 pl-8 text-sm shadow-sm focus:border-primary focus:ring-primary"
+					/>
+					{#if searchTerm}
+						<button
+							type="button"
+							onclick={() => (searchTerm = '')}
+							class="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+							aria-label="Limpar busca"
+						>
+							<X class="h-4 w-4" />
+						</button>
+					{/if}
+				</div>
+			</div>
+
+			<Button variant="secondary" onclick={() => (filtersOpen = true)}>
+				<SlidersHorizontal class="h-4 w-4" />
+				{filtersButtonLabel()}
+			</Button>
+		</div>
+
+		{#if activeChips.length > 0}
+			<ul class="flex flex-wrap items-center gap-2" aria-label="Filtros ativos">
+				{#each activeChips as chip (chip.key)}
+					<li>
+						<a
+							href={resolve(chip.href as `/app/transactions?${string}`)}
+							class="inline-flex min-h-8 items-center gap-1 rounded-full bg-primary-soft px-3 text-xs font-medium text-primary hover:bg-indigo-100"
+							aria-label="Remover filtro {chip.label}"
+						>
+							{chip.label}
+							<X class="h-3 w-3" />
+						</a>
+					</li>
+				{/each}
+				<li>
+					<a
+						href={resolve(
+							transactionsHref({
+								sourceType: 'all',
+								account: 'all',
+								profileId: '',
+								categoryId: '',
+								subcategoryId: '',
+								status: 'all',
+								direction: 'all',
+								flow: 'all',
+								page: 0
+							}) as `/app/transactions?${string}`
+						)}
+						class="text-xs text-text-muted underline hover:text-gray-700"
+						>Limpar filtros</a
+					>
+				</li>
+			</ul>
 		{/if}
+
+		<dl class="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
+			<div class="flex items-baseline gap-1.5">
+				<dt class="text-xs text-text-muted">Transações</dt>
+				<dd class="font-semibold text-text tabular-nums">{summary.count}</dd>
+			</div>
+			<div class="flex items-baseline gap-1.5">
+				<dt class="text-xs text-text-muted">Despesas</dt>
+				<dd class="font-semibold text-expense tabular-nums">
+					{brl(summary.expenses)}
+				</dd>
+			</div>
+			<div class="flex items-baseline gap-1.5">
+				<dt class="text-xs text-text-muted">Créditos</dt>
+				<dd class="font-semibold text-income tabular-nums">
+					{brl(summary.credits)}
+				</dd>
+			</div>
+			<div class="flex items-baseline gap-1.5">
+				<dt class="text-xs text-text-muted">Saldo</dt>
+				<dd class="font-semibold text-text tabular-nums">
+					{brl(summary.balance)}
+				</dd>
+			</div>
+		</dl>
+		<details>
+			<summary
+				class="inline-flex min-h-8 cursor-pointer items-center text-xs text-primary"
+				>Mais totais</summary
+			>
+			<dl class="mt-2 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+				<div>
+					<dt class="text-xs text-text-muted">Aportes</dt>
+					<dd class="font-semibold text-neutral-flow tabular-nums">
+						{brl(summary.contributions)}
+					</dd>
+				</div>
+				<div>
+					<dt class="text-xs text-text-muted">Resgates</dt>
+					<dd class="font-semibold text-neutral-flow tabular-nums">
+						{brl(summary.redemptions)}
+					</dd>
+				</div>
+				<div>
+					<dt class="text-xs text-text-muted">Proventos</dt>
+					<dd class="font-semibold text-neutral-flow tabular-nums">
+						{brl(summary.investmentIncome)}
+					</dd>
+				</div>
+				<div>
+					<dt class="text-xs text-text-muted">Transferências</dt>
+					<dd class="font-semibold text-neutral-flow tabular-nums">
+						{brl(summary.transfers)}
+					</dd>
+				</div>
+			</dl>
+		</details>
 	</div>
 
 	{#if transactions.length === 0}
@@ -725,13 +929,9 @@
 			id="transactions-delete-selected-form"
 			method="POST"
 			action="?/delete_selected"
-			onsubmit={(event) => {
-				if (
-					!confirm(
-						`Excluir ${selectedForDelete.length} transações selecionadas?`
-					)
-				)
-					event.preventDefault();
+			use:enhance={(input) => {
+				askDeleteSelected(input);
+				return deleteEnhance('Transações excluídas');
 			}}
 		>
 			{#each selectedForDelete as id (id)}
@@ -761,120 +961,120 @@
 			<input type="hidden" name="flow_filter" value={filters.flow} />
 		</form>
 
-		<div
-			class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm lg:flex-row lg:items-end lg:justify-between {selectedForDelete.length >
-			0
-				? BULK_BAR_FIXED
-				: ''}"
-		>
-			<div class="flex items-center gap-3">
-				<p class="text-sm font-medium text-gray-700">
-					{selectedForDelete.length} selecionadas
-				</p>
-				{#if selectedForDelete.length > 0}
-					<button
-						type="button"
-						onclick={() => (selectedForDelete = [])}
-						class="text-xs text-gray-500 underline hover:text-gray-700"
-					>
-						limpar seleção
-					</button>
-				{/if}
-			</div>
-
-			{#if selectedForDelete.length > 0}
-				<form
-					method="POST"
-					action="?/bulk_apply_classification"
-					use:enhance={bulkApplyEnhance}
-					data-sveltekit-noscroll
-					class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end"
+		{#if selectedForDelete.length > 0}
+			<div class="fixed inset-x-0 bottom-16 z-20 px-3 md:bottom-4">
+				<div
+					class="mx-auto max-w-7xl rounded-lg border border-border bg-surface shadow-lg"
+					role="region"
+					aria-label="Ações para as transações selecionadas"
 				>
-					{#each selectedForDelete as id (id)}
-						<input type="hidden" name="transaction_id" value={id} />
-					{/each}
-					<label class="text-xs font-medium text-gray-600">
-						Categoria
-						<select
-							name="category_id"
-							bind:value={bulkCategoryId}
-							onchange={() => (bulkSubcategoryId = '')}
-							class="mt-1 block w-full rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm sm:w-40"
+					{#if bulkOpen}
+						<form
+							method="POST"
+							action="?/bulk_apply_classification"
+							use:enhance={bulkApplyEnhance}
+							data-sveltekit-noscroll
+							class="flex max-h-[50vh] flex-col gap-2 overflow-y-auto border-b border-border p-3 sm:flex-row sm:flex-wrap sm:items-end"
 						>
-							<option value={KEEP}>— manter —</option>
-							<option value="">Sem categoria</option>
-							{#each parentCategories as cat (cat.id)}
-								<option value={cat.id}>{cat.name}</option>
+							{#each selectedForDelete as id (id)}
+								<input type="hidden" name="transaction_id" value={id} />
 							{/each}
-						</select>
-					</label>
-					<label class="text-xs font-medium text-gray-600">
-						Subcategoria
-						<select
-							name="subcategory_id"
-							bind:value={bulkSubcategoryId}
-							disabled={!bulkCategoryRealId}
-							class="mt-1 block w-full rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm sm:w-40 disabled:bg-gray-100"
+							<label class="text-xs font-medium text-gray-600">
+								Categoria
+								<select
+									name="category_id"
+									bind:value={bulkCategoryId}
+									onchange={() => (bulkSubcategoryId = '')}
+									class="mt-1 block w-full rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm sm:w-40"
+								>
+									<option value={KEEP}>— manter —</option>
+									<option value="">Sem categoria</option>
+									{#each parentCategories as cat (cat.id)}
+										<option value={cat.id}>{cat.name}</option>
+									{/each}
+								</select>
+							</label>
+							<label class="text-xs font-medium text-gray-600">
+								Subcategoria
+								<select
+									name="subcategory_id"
+									bind:value={bulkSubcategoryId}
+									disabled={!bulkCategoryRealId}
+									class="mt-1 block w-full rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100 sm:w-40"
+								>
+									<option value="">Sem subcategoria</option>
+									{#each bulkSubcategories as sub (sub.id)}
+										<option value={sub.id}>{sub.name}</option>
+									{/each}
+								</select>
+							</label>
+							<label class="text-xs font-medium text-gray-600">
+								Atribuir a
+								<select
+									name="owner_profile_id"
+									bind:value={bulkOwnerId}
+									class="mt-1 block w-full rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm sm:w-40"
+								>
+									<option value={KEEP}>— manter —</option>
+									<option value="">Sem atribuição</option>
+									{#each profiles as p (p.id)}
+										<option value={p.id}>{p.name}</option>
+									{/each}
+								</select>
+							</label>
+							<label class="text-xs font-medium text-gray-600">
+								Tratamento financeiro
+								<select
+									name="financial_treatment_override"
+									bind:value={bulkTreatment}
+									class="mt-1 block w-full rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm sm:w-40"
+								>
+									<option value={KEEP}>— manter —</option>
+									<option value="">Automático (herdar)</option>
+									{#each TREATMENT_OPTIONS as option (option.value)}
+										<option value={option.value}>{option.label}</option>
+									{/each}
+								</select>
+							</label>
+							<Button type="submit" disabled={!bulkHasChange || bulkApplying}>
+								{bulkApplying
+									? 'Aplicando...'
+									: `Aplicar a ${selectedForDelete.length}`}
+							</Button>
+						</form>
+					{/if}
+					<div class="flex flex-wrap items-center gap-2 p-3">
+						<p class="mr-auto text-sm font-medium text-gray-700">
+							{selectedForDelete.length}
+							{selectedForDelete.length === 1 ? 'selecionada' : 'selecionadas'}
+						</p>
+						<Button
+							size="sm"
+							variant="secondary"
+							onclick={() => (bulkOpen = !bulkOpen)}>Classificar</Button
 						>
-							<option value="">Sem subcategoria</option>
-							{#each bulkSubcategories as sub (sub.id)}
-								<option value={sub.id}>{sub.name}</option>
-							{/each}
-						</select>
-					</label>
-					<label class="text-xs font-medium text-gray-600">
-						Atribuir a
-						<select
-							name="owner_profile_id"
-							bind:value={bulkOwnerId}
-							class="mt-1 block w-full rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm sm:w-40"
+						<Button
+							size="sm"
+							variant="danger"
+							type="submit"
+							form="transactions-delete-selected-form">Excluir</Button
 						>
-							<option value={KEEP}>— manter —</option>
-							<option value="">Sem atribuição</option>
-							{#each profiles as p (p.id)}
-								<option value={p.id}>{p.name}</option>
-							{/each}
-						</select>
-					</label>
-					<label class="text-xs font-medium text-gray-600">
-						Tratamento financeiro
-						<select
-							name="financial_treatment_override"
-							bind:value={bulkTreatment}
-							class="mt-1 block w-full rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm sm:w-40"
+						<Button
+							size="sm"
+							variant="ghost"
+							onclick={() => {
+								selectedForDelete = [];
+								bulkOpen = false;
+							}}>Cancelar</Button
 						>
-							<option value={KEEP}>— manter —</option>
-							<option value="">Automático (herdar)</option>
-							{#each TREATMENT_OPTIONS as option (option.value)}
-								<option value={option.value}>{option.label}</option>
-							{/each}
-						</select>
-					</label>
-					<button
-						type="submit"
-						disabled={!bulkHasChange || bulkApplying}
-						class="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-indigo-300 sm:min-h-0"
-					>
-						{bulkApplying
-							? 'Aplicando...'
-							: `Aplicar a ${selectedForDelete.length}`}
-					</button>
-				</form>
-			{/if}
-
-			<button
-				type="submit"
-				form="transactions-delete-selected-form"
-				disabled={selectedForDelete.length === 0}
-				class="min-h-11 px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100 disabled:opacity-50 disabled:hover:bg-red-50 sm:min-h-0 sm:self-start lg:self-auto"
-			>
-				Excluir selecionadas
-			</button>
-		</div>
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		<div class="hidden overflow-x-auto sm:block">
 			<table
-				class="min-w-full divide-y divide-gray-200 bg-white shadow rounded-lg"
+				class="min-w-full divide-y divide-border rounded-lg bg-surface shadow"
 			>
 				<thead class="bg-gray-50">
 					<tr>
@@ -954,12 +1154,15 @@
 							</td>
 							<td
 								class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 align-top"
-								>{tx.date}</td
+								>{dateShort(tx.date)}</td
 							>
-							<td class="px-4 py-3 text-sm text-gray-900 align-top">
+							<td
+								class="min-w-[16rem] px-4 py-3 text-sm text-gray-900 align-top"
+							>
 								<a
 									href={resolve(`/app/transactions/${tx.id}`)}
-									class="hover:text-indigo-600">{tx.description}</a
+									title={tx.description}
+									class="line-clamp-2 hover:text-primary">{tx.description}</a
 								>
 								<form
 									method="POST"
@@ -1053,103 +1256,133 @@
 										value={filters.flow}
 									/>
 								</form>
-								<div class="flex flex-col gap-1">
-									<select
-										name="category_id"
-										form={`tx-form-${tx.id}`}
-										value={tx.category_id ?? ''}
-										disabled={savingIds[tx.id]}
-										onchange={onRowCategoryChange}
-										aria-label="Categoria"
-										class="block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
-									>
-										<option value="">Sem categoria</option>
-										{#each parentCategories as cat (cat.id)}
-											<option value={cat.id}>{cat.name}</option>
-										{/each}
-									</select>
-									{#if creatingSubcategoryForId === tx.id}
-										<div class="flex w-40 gap-1">
-											<input
-												type="hidden"
-												name="subcategory_id"
-												value={tx.subcategory_id ?? ''}
-												form={`tx-form-${tx.id}`}
-											/>
-											<input
-												name="new_subcategory_name"
-												form={`tx-form-${tx.id}`}
-												type="text"
-												bind:value={newSubcategoryName}
-												placeholder="Nova subcategoria"
-												class="block min-w-0 flex-1 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
-											/>
-											<button
-												type="submit"
-												form={`tx-form-${tx.id}`}
-												formaction="?/create_subcategory"
-												disabled={!newSubcategoryName.trim() ||
-													savingIds[tx.id]}
-												class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-green-600 text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-												title="Criar subcategoria"
-												aria-label="Criar subcategoria"
-											>
-												<Plus class="h-4 w-4" />
-											</button>
-											<button
-												type="button"
-												onclick={cancelCreateSubcategory}
-												class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
-												title="Cancelar"
-												aria-label="Cancelar criação de subcategoria"
-											>
-												<X class="h-4 w-4" />
-											</button>
-										</div>
-									{:else}
+								{#if editingId === tx.id}
+									<div class="flex flex-col gap-1">
 										<select
-											name="subcategory_id"
+											name="category_id"
 											form={`tx-form-${tx.id}`}
-											value={tx.subcategory_id ?? ''}
-											disabled={savingIds[tx.id] || !tx.category_id}
-											onchange={(event) => onRowSubcategoryChange(event, tx.id)}
-											aria-label="Subcategoria"
+											value={tx.category_id ?? ''}
+											disabled={savingIds[tx.id]}
+											onchange={onRowCategoryChange}
+											aria-label="Categoria"
 											class="block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
 										>
-											<option value="">Sem subcategoria</option>
-											{#each rowSubcategories(tx.category_id) as sub (sub.id)}
-												<option value={sub.id}>{sub.name}</option>
+											<option value="">Sem categoria</option>
+											{#each parentCategories as cat (cat.id)}
+												<option value={cat.id}>{cat.name}</option>
 											{/each}
-											{#if tx.category_id}
-												<option value={NEW_SUBCATEGORY}>+ Criar nova…</option>
-											{/if}
 										</select>
-									{/if}
-									<select
-										name="financial_treatment_override"
-										form={`tx-form-${tx.id}`}
-										value={tx.financial_treatment_override ?? ''}
-										disabled={savingIds[tx.id]}
-										onchange={submitRowForm}
-										aria-label="Tratamento financeiro"
-										class="block w-40 rounded-md border-gray-300 px-2 py-1 text-xs shadow-sm disabled:bg-gray-100"
+										{#if creatingSubcategoryForId === tx.id}
+											<div class="flex w-40 gap-1">
+												<input
+													type="hidden"
+													name="subcategory_id"
+													value={tx.subcategory_id ?? ''}
+													form={`tx-form-${tx.id}`}
+												/>
+												<input
+													name="new_subcategory_name"
+													form={`tx-form-${tx.id}`}
+													type="text"
+													bind:value={newSubcategoryName}
+													placeholder="Nova subcategoria"
+													class="block min-w-0 flex-1 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm"
+												/>
+												<button
+													type="submit"
+													form={`tx-form-${tx.id}`}
+													formaction="?/create_subcategory"
+													disabled={!newSubcategoryName.trim() ||
+														savingIds[tx.id]}
+													class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-green-600 text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+													title="Criar subcategoria"
+													aria-label="Criar subcategoria"
+												>
+													<Plus class="h-4 w-4" />
+												</button>
+												<button
+													type="button"
+													onclick={cancelCreateSubcategory}
+													class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
+													title="Cancelar"
+													aria-label="Cancelar criação de subcategoria"
+												>
+													<X class="h-4 w-4" />
+												</button>
+											</div>
+										{:else}
+											<select
+												name="subcategory_id"
+												form={`tx-form-${tx.id}`}
+												value={tx.subcategory_id ?? ''}
+												disabled={savingIds[tx.id] || !tx.category_id}
+												onchange={(event) =>
+													onRowSubcategoryChange(event, tx.id)}
+												aria-label="Subcategoria"
+												class="block w-40 rounded-md border-gray-300 px-2 py-1 text-sm shadow-sm disabled:bg-gray-100"
+											>
+												<option value="">Sem subcategoria</option>
+												{#each rowSubcategories(tx.category_id) as sub (sub.id)}
+													<option value={sub.id}>{sub.name}</option>
+												{/each}
+												{#if tx.category_id}
+													<option value={NEW_SUBCATEGORY}>+ Criar nova…</option>
+												{/if}
+											</select>
+										{/if}
+										<select
+											name="financial_treatment_override"
+											form={`tx-form-${tx.id}`}
+											value={tx.financial_treatment_override ?? ''}
+											disabled={savingIds[tx.id]}
+											onchange={submitRowForm}
+											aria-label="Tratamento financeiro"
+											class="block w-40 rounded-md border-gray-300 px-2 py-1 text-xs shadow-sm disabled:bg-gray-100"
+										>
+											<option value="">Automático</option>
+											{#each TREATMENT_OPTIONS as option (option.value)}
+												<option value={option.value}>{option.label}</option>
+											{/each}
+										</select>
+										{#if suggestionLabel(tx)}
+											<span class="w-40 text-xs text-amber-700"
+												>sugerido: {suggestionLabel(tx)}</span
+											>
+										{/if}
+										<button
+											type="button"
+											onclick={() => (editingId = null)}
+											class="self-start text-xs font-medium text-primary hover:underline"
+											>Concluir</button
+										>
+									</div>
+								{:else}
+									<button
+										type="button"
+										onclick={() => (editingId = tx.id)}
+										title="Editar classificação"
+										class="inline-flex min-h-8 max-w-52 items-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-left text-sm hover:border-border hover:bg-canvas"
 									>
-										<option value="">Automático</option>
-										{#each TREATMENT_OPTIONS as option (option.value)}
-											<option value={option.value}>{option.label}</option>
-										{/each}
-									</select>
-									{#if suggestionLabel(tx)}
-										<span class="w-40 text-xs text-amber-700"
-											>sugerido: {suggestionLabel(tx)}</span
+										<span
+											class="truncate {suggestionLabel(tx)
+												? 'text-amber-700'
+												: tx.category_display_name
+													? 'text-gray-800'
+													: 'text-text-muted'}"
 										>
-									{/if}
-									{#if rowErrors[tx.id]}
-										<span class="w-40 text-xs text-red-600" role="alert"
-											>{rowErrors[tx.id]}</span
-										>
-									{/if}
-								</div>
+											{#if suggestionLabel(tx)}
+												sugerido: {suggestionLabel(tx)}
+											{:else if tx.category_display_name}
+												{tx.category_display_name}{tx.subcategory_display_name
+													? ` › ${tx.subcategory_display_name}`
+													: ''}
+											{:else}
+												Sem categoria
+											{/if}
+										</span>
+										<Pencil class="h-3 w-3 shrink-0 text-gray-400" />
+									</button>
+								{/if}
 							</td>
 							<td class="px-4 py-3 text-sm align-top">
 								<select
@@ -1169,7 +1402,10 @@
 							</td>
 
 							<td
-								class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right align-top"
+								class="px-4 py-3 whitespace-nowrap text-sm font-medium text-right tabular-nums align-top {tx.amount <
+								0
+									? 'text-expense'
+									: 'text-income'}"
 							>
 								{money(tx.amount, tx.currency ?? 'BRL')}
 							</td>
@@ -1231,7 +1467,7 @@
 									aria-label="Selecionar transação"
 								/>
 							</label>
-							<span>{tx.date}</span>
+							<span>{dateShort(tx.date)}</span>
 							{#if tx.source_name}
 								<span class="truncate">· {tx.source_name}</span>
 							{/if}
@@ -1243,9 +1479,10 @@
 								>{tx.description}</a
 							>
 							<span
-								class="shrink-0 text-sm font-semibold {tx.amount < 0
-									? 'text-red-700'
-									: 'text-green-700'}">{brl(tx.amount)}</span
+								class="shrink-0 text-sm font-semibold tabular-nums {tx.amount <
+								0
+									? 'text-expense'
+									: 'text-income'}">{brl(tx.amount)}</span
 							>
 						</div>
 						<p
@@ -1274,9 +1511,6 @@
 					</li>
 				{/each}
 			</ul>
-			{#if selectedForDelete.length > 0}
-				<div class="h-64" aria-hidden="true"></div>
-			{/if}
 		</div>
 
 		<div class="flex items-center justify-between text-sm text-gray-600">
@@ -1304,6 +1538,9 @@
 				{/if}
 			</div>
 		</div>
+		{#if selectedForDelete.length > 0}
+			<div class={bulkOpen ? 'h-96' : 'h-28'} aria-hidden="true"></div>
+		{/if}
 	{/if}
 </div>
 
@@ -1530,6 +1767,15 @@
 		<span class="mt-1 block text-xs text-gray-400">Fora do filtro atual</span>
 	{/if}
 {/snippet}
+
+<ConfirmDialog
+	open={confirmer.pending !== null}
+	title={confirmer.pending?.title ?? ''}
+	message={confirmer.pending?.message ?? ''}
+	confirmLabel="Excluir"
+	onConfirm={() => confirmer.confirm()}
+	onCancel={() => confirmer.cancel()}
+/>
 
 <Sheet open={filtersOpen} title="Filtros" onClose={() => (filtersOpen = false)}>
 	<div class="grid gap-3">
