@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { X } from 'lucide-svelte';
 	import type { Snippet } from 'svelte';
+	import { FOCUSABLE, trapFocus } from '$lib/focus';
 
 	let {
 		open,
@@ -17,8 +18,6 @@
 	} = $props();
 
 	const titleId = `sheet-title-${Math.random().toString(36).slice(2, 8)}`;
-	const FOCUSABLE =
-		'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 	let panel: HTMLDivElement | undefined = $state();
 
 	$effect(() => {
@@ -50,6 +49,7 @@
 
 	<div
 		bind:this={panel}
+		use:trapFocus
 		tabindex="-1"
 		class="fixed inset-x-0 bottom-0 z-40 flex max-h-[85vh] flex-col rounded-t-2xl bg-white shadow-xl outline-none sm:inset-y-0 sm:right-0 sm:left-auto sm:max-h-none sm:w-full sm:max-w-md sm:rounded-none"
 		role="dialog"

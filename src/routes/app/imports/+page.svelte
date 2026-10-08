@@ -502,7 +502,7 @@
 
 		<button
 			type="submit"
-			class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+			class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-hover"
 			>Visualizar</button
 		>
 		{#if form && !form.success}

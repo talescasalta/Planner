@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { brl, dateBr } from '$lib/investments/format';
+	import { brl, dateBr } from '$lib/format';
 
 	// Bank-issued paper (LCA, LCI, CDB) has no published quote. B3 restates its
 	// accrued price on every position export and then says nothing until the
@@ -158,7 +158,7 @@
 							{/if}
 							<button
 								type="submit"
-								class="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+								class="rounded bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-hover"
 							>
 								Salvar
 							</button>

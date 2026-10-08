@@ -8,7 +8,7 @@
 		monthShort,
 		signedBrl,
 		signedPct
-	} from '$lib/investments/format';
+	} from '$lib/format';
 
 	// Side panel with everything about one holding: current position, cost,
 	// a year of prices, month-by-month return and the latest events. Fetched

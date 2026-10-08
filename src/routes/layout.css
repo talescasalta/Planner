@@ -8,3 +8,25 @@
 		font-size: 16px;
 	}
 }
+
+/* Semantic tokens: screens use these instead of raw palette colors, so a
+   theme change is one edit here. */
+@theme {
+	--color-primary: var(--color-indigo-600);
+	--color-primary-hover: var(--color-indigo-700);
+	--color-primary-soft: var(--color-indigo-50);
+	--color-income: var(--color-emerald-700);
+	--color-expense: var(--color-rose-700);
+	--color-warning: var(--color-amber-600);
+	--color-danger: var(--color-red-600);
+	--color-neutral-flow: var(--color-gray-600);
+	--color-surface: var(--color-white);
+	--color-canvas: var(--color-gray-50);
+	--color-border: var(--color-gray-200);
+	--color-text: var(--color-gray-900);
+	--color-text-muted: var(--color-gray-500);
+}
+
+.tabular-nums {
+	font-variant-numeric: tabular-nums;
+}

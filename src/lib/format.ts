@@ -1,6 +1,5 @@
-// Number and date formatting shared by the investment pages, so a gain reads
-// the same everywhere: signed, colored by direction, compact where space is
-// short.
+// Number and date formatting shared across the app, so a value reads the same
+// everywhere: signed, colored by direction, compact where space is short.
 
 const brlFull = new Intl.NumberFormat('pt-BR', {
 	style: 'currency',
@@ -22,6 +21,11 @@ const brlCompactFormat = new Intl.NumberFormat('pt-BR', {
 
 export function brl(value: number): string {
 	return brlFull.format(value);
+}
+
+// Amount in a given currency ("US$ 10,00"); BRL when the row has none.
+export function money(value: number, currency = 'BRL'): string {
+	return value.toLocaleString('pt-BR', { style: 'currency', currency });
 }
 
 // "+R$ 1.234,56" / "-R$ 1.234,56": a gain never reads like a balance.
@@ -69,6 +73,18 @@ export function monthName(key: string): string {
 		.replace(/^./, (c) => c.toUpperCase());
 }
 
+// "agosto de 2026" from "2026-08". "all" and empty keys get a label of their
+// own, so filter dropdowns can pass the raw value.
+export function formatMonthLong(key: string): string {
+	if (key === 'all') return 'Todos os meses';
+	const [year, month] = key.split('-').map(Number);
+	if (!year || !month) return key || 'Sem mês';
+	return new Date(year, month - 1, 1).toLocaleDateString('pt-BR', {
+		month: 'long',
+		year: 'numeric'
+	});
+}
+
 // "Ago/26" for tight spaces. Built by hand: Intl gives "ago. de 26" here.
 const MONTHS_SHORT = [
 	'Jan',
@@ -102,6 +118,13 @@ export function dateBr(iso: string | null | undefined): string {
 	if (!iso) return '—';
 	const [year, month, day] = iso.slice(0, 10).split('-');
 	return `${day}/${month}/${year}`;
+}
+
+// "12/09" from "2026-09-12", for tables where the year is implied.
+export function dateShort(iso: string | null | undefined): string {
+	if (!iso) return '—';
+	const [, month, day] = iso.slice(0, 10).split('-');
+	return `${day}/${month}`;
 }
 
 // Text color for a signed amount: green up, red down, muted for zero/unknown.

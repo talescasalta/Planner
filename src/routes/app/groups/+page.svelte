@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatMonthLong, money } from '$lib/format';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { flowKindLabel } from '$lib/financial-labels';
@@ -60,21 +61,8 @@
 		txAmountSort = { ...txAmountSort, [groupId]: next };
 	}
 
-	function formatCurrency(value: number, currency = 'BRL') {
-		return value.toLocaleString('pt-BR', { style: 'currency', currency });
-	}
-
 	function splitMethodLabel(method: string) {
 		return method === 'equal' ? '50/50' : 'Por renda';
-	}
-
-	function formatMonth(month: string) {
-		const [year, monthNumber] = month.split('-').map(Number);
-		if (!year || !monthNumber) return month || 'Sem mês';
-		return new Date(year, monthNumber - 1, 1).toLocaleDateString('pt-BR', {
-			month: 'long',
-			year: 'numeric'
-		});
 	}
 
 	function sortedContributions(
@@ -116,7 +104,7 @@
 		</div>
 		<button
 			type="button"
-			class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
+			class="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-hover"
 			onclick={() => (showCreateForm = !showCreateForm)}
 		>
 			{#if showCreateForm}
@@ -223,7 +211,7 @@
 								<option
 									value={month}
 									selected={month === group.activity.selectedMonth}
-									>{formatMonth(month)}</option
+									>{formatMonthLong(month)}</option
 								>
 							{/each}
 						</select>
@@ -245,7 +233,7 @@
 						Despesas
 					</p>
 					<p class="mt-1 text-lg font-semibold text-rose-800">
-						{formatCurrency(group.activity.summary.expenses)}
+						{money(group.activity.summary.expenses)}
 					</p>
 				</div>
 				<div class="rounded-md bg-emerald-50 p-3">
@@ -253,7 +241,7 @@
 						Receitas
 					</p>
 					<p class="mt-1 text-lg font-semibold text-emerald-800">
-						{formatCurrency(group.activity.summary.credits)}
+						{money(group.activity.summary.credits)}
 					</p>
 				</div>
 				<div class="rounded-md bg-gray-50 p-3">
@@ -261,7 +249,7 @@
 					<p
 						class={`mt-1 text-lg font-semibold ${group.activity.summary.balance >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}
 					>
-						{formatCurrency(group.activity.summary.balance)}
+						{money(group.activity.summary.balance)}
 					</p>
 				</div>
 			</div>
@@ -357,7 +345,7 @@
 										<span
 											class={`text-sm font-semibold tabular-nums ${c.net_total >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}
 										>
-											{c.net_total >= 0 ? 'Recebe ' : 'Paga '}{formatCurrency(
+											{c.net_total >= 0 ? 'Recebe ' : 'Paga '}{money(
 												Math.abs(c.net_total)
 											)}
 										</span>
@@ -366,17 +354,17 @@
 								<div class="mt-1 grid grid-cols-3 gap-2 text-xs text-gray-500">
 									<span
 										>Pagou <strong class="font-semibold text-gray-700"
-											>{formatCurrency(c.expense_total)}</strong
+											>{money(c.expense_total)}</strong
 										></span
 									>
 									<span
 										>Deveria <strong class="font-semibold text-gray-700"
-											>{formatCurrency(c.owed_total)}</strong
+											>{money(c.owed_total)}</strong
 										></span
 									>
 									<span
 										>Renda <strong class="font-semibold text-gray-700"
-											>{formatCurrency(c.monthly_income)}</strong
+											>{money(c.monthly_income)}</strong
 										></span
 									>
 								</div>
@@ -409,7 +397,7 @@
 									<li>
 										<span class="font-medium">{transfer.from_name}</span> paga
 										<span class="font-semibold tabular-nums"
-											>{formatCurrency(transfer.amount)}</span
+											>{money(transfer.amount)}</span
 										>
 										para <span class="font-medium">{transfer.to_name}</span>
 									</li>
@@ -457,7 +445,7 @@
 						/>
 						<button
 							type="submit"
-							class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+							class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary-hover"
 							>Adicionar</button
 						>
 					</form>
@@ -678,7 +666,7 @@
 											<td
 												class={`whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums ${tx.amount < 0 ? 'text-rose-700' : 'text-emerald-700'}`}
 											>
-												{formatCurrency(tx.amount, tx.currency ?? 'BRL')}
+												{money(tx.amount, tx.currency ?? 'BRL')}
 											</td>
 										</tr>
 									{/each}

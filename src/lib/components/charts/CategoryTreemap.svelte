@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { money } from '$lib/format';
 	import {
 		hierarchy,
 		treemap,
@@ -117,7 +118,7 @@
 	} | null>(null);
 
 	function fmt(value: number) {
-		return value.toLocaleString('pt-BR', { style: 'currency', currency });
+		return money(value, currency);
 	}
 
 	type TreeNode = HierarchyNode<TreeDatum>;

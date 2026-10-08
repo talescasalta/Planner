@@ -16,7 +16,7 @@
 		signedBrl,
 		signedPct,
 		signedQuantity
-	} from '$lib/investments/format';
+	} from '$lib/format';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -181,7 +181,7 @@
 					type="button"
 					onclick={() => (selected[periodKind] = index)}
 					class={index === selected[periodKind]
-						? 'rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white'
+						? 'rounded bg-primary px-3 py-1.5 text-sm font-medium text-white'
 						: 'rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50'}
 				>
 					<span class="sm:hidden">{periodShort(m.key)}</span>

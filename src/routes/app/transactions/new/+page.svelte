@@ -223,7 +223,7 @@
 			>
 			<button
 				type="submit"
-				class="min-h-11 rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 sm:min-h-0"
+				class="min-h-11 rounded-md border border-transparent bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-hover sm:min-h-0"
 			>
 				Registrar transações
 			</button>

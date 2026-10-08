@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { money } from '$lib/format';
 	import { scaleBand } from 'd3-scale';
 	import { Axis, Chart, Spline, Svg } from 'layerchart';
 
@@ -23,7 +24,7 @@
 	}
 
 	function fmtFull(value: number) {
-		return value.toLocaleString('pt-BR', { style: 'currency', currency });
+		return money(value, currency);
 	}
 
 	function shortMonth(month: string) {
