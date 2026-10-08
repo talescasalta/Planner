@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { matchTransferPairs, type PairRow } from './transfer-pairs';
 
-const NAMES = ['Tales Casalta', 'Tales C'];
+const NAMES = ['Maria Silva', 'Maria S'];
 
 function row(overrides: Partial<PairRow> & { id: string }): PairRow {
 	return {
 		date: '2026-09-03',
 		amount: 1000,
-		description: 'PIX TRANSF Tales C03/09',
+		description: 'PIX TRANSF Maria S03/09',
 		source_name: 'Itaú conta',
 		isTransfer: false,
 		...overrides
@@ -18,7 +18,7 @@ const nubankSide = row({
 	id: 'nu',
 	amount: -1000,
 	description:
-		'Transferência enviada pelo Pix - Tales Casalta - •••.698.868-•• - ITAÚ UNIBANCO S.A.',
+		'Transferência enviada pelo Pix - Maria Silva - •••.123.456-•• - ITAÚ UNIBANCO S.A.',
 	source_name: 'Nubank conta'
 });
 
@@ -40,15 +40,15 @@ describe('matchTransferPairs', () => {
 			date: '2026-09-15',
 			description: 'SISPAG CARE PLUS'
 		});
-		const toGloria = row({
+		const toJulia = row({
 			id: 'gl',
 			amount: -1222.44,
 			date: '2026-09-15',
-			description: 'Transferência enviada pelo Pix - Gloria Menz Ferreira',
+			description: 'Transferência enviada pelo Pix - Julia Costa Pereira',
 			source_name: 'Nubank conta'
 		});
 
-		expect(matchTransferPairs([careplus], [toGloria], NAMES)).toEqual([]);
+		expect(matchTransferPairs([careplus], [toJulia], NAMES)).toEqual([]);
 	});
 
 	it('needs the same amount with the opposite sign within two days', () => {

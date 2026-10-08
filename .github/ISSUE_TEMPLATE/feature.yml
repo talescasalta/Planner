@@ -1,0 +1,19 @@
+name: Ideia ou melhoria
+description: Sugira um recurso novo ou uma melhoria
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Qual problema isso resolve
+      description: Conte a situação do dia a dia em que você sentiu falta disso.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Como você imagina
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas que você considerou

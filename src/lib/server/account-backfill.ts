@@ -14,7 +14,7 @@ export const ACCOUNT_NAMES = {
 // "REND PAGO APLIC AUT MAIS"); the screenshots of the same app title-case them,
 // so matching is case-insensitive.
 const ITAU_DESCRIPTION =
-	/^(PIX TRANSF|PIX QRS|DA |REND PAGO|SISPAG|DEV PIX|TED |INT |CARE PLUS|CLEUSA|PAY2ALL|SECR\.? DA RECEITA)/i;
+	/^(PIX TRANSF|PIX QRS|DA |REND PAGO|SISPAG|DEV PIX|TED |INT |CARE PLUS|PAY2ALL|SECR\.? DA RECEITA)/i;
 
 const NUBANK_DESCRIPTION =
 	/^(Transfer[eê]ncia (enviada|recebida)|Cr[eé]dito em conta|Pagamento de boleto|Compra no d[eé]bito|Resgate|Aplica[cç][aã]o|Compra de ETF|Reembolso recebido|Estorno|Pagamento de fatura|D[eé]bito em conta|Cobran[cç]a de investimentos)/i;

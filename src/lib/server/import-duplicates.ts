@@ -2,7 +2,7 @@ import { foldForMatch } from './own-names';
 
 // The same bank movement often reaches the app twice through different
 // sources: a screenshot of the app and the statement PDF describe one Pix
-// differently ("Cleusa Braga" vs "PIX TRANSF CLEUSA 13/06"), so the content
+// differently ("Joana Ramos" vs "PIX TRANSF JOANA 13/06"), so the content
 // key of the import never matches. These rows are told apart from a repeat of
 // a real purchase by what they share: the amount, the account and (within a
 // day) the date -- while the description reads differently.

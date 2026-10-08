@@ -20,18 +20,17 @@ describe('accountForTransaction', () => {
 
 	it('recognizes Itaú statement lines in capitals and title case', () => {
 		for (const description of [
-			'PIX TRANSF CLEUSA 29/09',
-			'DA COMGAS 24082732',
+			'PIX TRANSF JOANA 29/09',
+			'DA COMGAS 11111111',
 			'REND PAGO APLIC AUT MAIS',
 			'Rend Pago Aplic Aut Mais',
 			'SISPAG CARE PLUS',
 			'Care Plus Medicina Assistencial Lt...',
-			'Da Vivo p-13439017434',
+			'Da Vivo p-33333333000',
 			'DEV PIX ENJOEI16/09',
 			'PIX TRANSF SECR. D30/06',
 			'Secr. Da Receita Federal - Lote 202...',
-			'Pay2all Instituicao De Pagamento ...',
-			'Cleusa Braga'
+			'Pay2all Instituicao De Pagamento ...'
 		]) {
 			expect(bank(description), description).toBe(ACCOUNT_NAMES.itau);
 		}
@@ -39,10 +38,10 @@ describe('accountForTransaction', () => {
 
 	it('recognizes Nubank account lines', () => {
 		for (const description of [
-			'Transferência enviada pelo Pix - Tales Casalta - •••.698.868-••',
+			'Transferência enviada pelo Pix - Maria Silva - •••.123.456-••',
 			'Transferência Recebida - NU ASSET MANAGEMENT LTDA',
 			'Crédito em conta',
-			'Pagamento de boleto efetuado - COND EDIF MAISON',
+			'Pagamento de boleto efetuado - COND EDIF EXEMPLO',
 			'Compra de ETF - HGBR11',
 			'Cobrança de investimentos - Tesouro',
 			'Reembolso recebido pelo Pix - RE PETIT'

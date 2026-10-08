@@ -1,14 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { actions as loginActions } from '../../routes/login/+page.server';
+import {
+	actions as loginActions,
+	load as loadLogin
+} from '../../routes/login/+page.server';
 import { actions as forgotPasswordActions } from '../../routes/forgot-password/+page.server';
 import { actions as resetPasswordActions } from '../../routes/reset-password/+page.server';
 import { GET as confirmAuth } from '../../routes/auth/confirm/+server';
 
-const { redirectMock } = vi.hoisted(() => ({
-	redirectMock: vi.fn()
+const { redirectMock, envMock } = vi.hoisted(() => ({
+	redirectMock: vi.fn(),
+	envMock: {} as Record<string, string | undefined>
 }));
 
 vi.mock('@sveltejs/kit', () => ({ redirect: redirectMock }));
+vi.mock('$env/dynamic/private', () => ({ env: envMock }));
 vi.mock('$lib/server/public-url', () => ({
 	publicUrl: (origin: string, path: string) => `${origin}${path}`
 }));
@@ -34,7 +39,17 @@ function authClient(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-beforeEach(() => redirectMock.mockClear());
+function loginLoadEvent() {
+	const safeGetSession = vi
+		.fn()
+		.mockResolvedValue({ session: null, user: null, profile: null });
+	return { locals: { safeGetSession } } as never;
+}
+
+beforeEach(() => {
+	redirectMock.mockClear();
+	delete envMock.SIGNUP_ENABLED;
+});
 
 describe('authentication actions', () => {
 	it('rejects weak signup passwords before calling Supabase Auth', async () => {
@@ -54,6 +69,39 @@ describe('authentication actions', () => {
 			message: 'A senha precisa ter pelo menos 8 caracteres.'
 		});
 		expect(auth.signUp).not.toHaveBeenCalled();
+	});
+
+	it('refuses email sign-ups when SIGNUP_ENABLED is false', async () => {
+		envMock.SIGNUP_ENABLED = 'false';
+		const auth = authClient();
+		const result = await loginActions.default({
+			request: requestWith({
+				action: 'signup',
+				email: 'a@example.com',
+				password: 'long-enough-password'
+			}),
+			url: new URL('https://planner.test/login'),
+			locals: { supabase: { auth } }
+		} as never);
+
+		expect(result).toMatchObject({
+			success: false,
+			message: 'O cadastro está desativado nesta instância.'
+		});
+		expect(auth.signUp).not.toHaveBeenCalled();
+		expect(await loadLogin(loginLoadEvent())).toMatchObject({
+			signupEnabled: false
+		});
+	});
+
+	it('keeps sign-up open unless SIGNUP_ENABLED is false', async () => {
+		expect(await loadLogin(loginLoadEvent())).toMatchObject({
+			signupEnabled: true
+		});
+		envMock.SIGNUP_ENABLED = 'true';
+		expect(await loadLogin(loginLoadEvent())).toMatchObject({
+			signupEnabled: true
+		});
 	});
 
 	it('returns password login failures without redirecting', async () => {

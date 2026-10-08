@@ -172,10 +172,10 @@ describe('statement cleanup', () => {
 	it('cleans verbose Pix descriptions before classification and deduplication', () => {
 		const csv = [
 			'Data,Valor,Identificador,Descrição',
-			'01/05/2026,-416.27,abc,Transferência enviada pelo Pix - AGORA SOU MAE - 16.624.250/0001-32 - PAGSEGURO INTERNET IP S.A. (0290) Agência: 1 Conta: 5832849-3',
-			'02/05/2026,240.00,def,Transferência recebida pelo Pix - GLORIA MENZ FERREIRA - •••.632.580-•• - BCO DO BRASIL S.A. (0001) Agência: 1899 Conta: 24544-5',
+			'01/05/2026,-416.27,abc,Transferência enviada pelo Pix - AGORA SOU MAE - 16.624.250/0001-32 - PAGSEGURO INTERNET IP S.A. (0290) Agência: 1 Conta: 9876543-2',
+			'02/05/2026,240.00,def,Transferência recebida pelo Pix - JULIA COSTA PEREIRA - •••.987.654-•• - BCO DO BRASIL S.A. (0001) Agência: 1234 Conta: 12345-6',
 			'08/05/2026,-4470.01,ghi,Pagamento de boleto efetuado - GRPQA',
-			'09/05/2026,-2.00,jkl,Compra no débito - IFD*Gilceia Caetano De'
+			'09/05/2026,-2.00,jkl,Compra no débito - IFD*Padaria Bom Pao'
 		].join('\n');
 
 		const rows = parseCsvBuffer(bufferOf(csv), nubankBankMapping, {
@@ -184,9 +184,9 @@ describe('statement cleanup', () => {
 
 		expect(rows.map((r) => r.clean_description)).toEqual([
 			'PIX ENVIADO - AGORA SOU MAE',
-			'PIX RECEBIDO - GLORIA MENZ FERREIRA',
+			'PIX RECEBIDO - JULIA COSTA PEREIRA',
 			'BOLETO - GRPQA',
-			'DEBITO - IFD*GILCEIA CAETANO DE'
+			'DEBITO - IFD*PADARIA BOM PAO'
 		]);
 	});
 

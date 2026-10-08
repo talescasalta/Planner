@@ -1,6 +1,19 @@
 import { redirect } from '@sveltejs/kit';
-import type { Actions } from './$types';
+import { env } from '$env/dynamic/private';
+import type { Actions, PageServerLoad } from './$types';
 import { publicUrl } from '$lib/server/public-url';
+
+// A public instance can close sign-up once the household has its accounts.
+// Supabase Auth's own "Allow new users to sign up" switch is what also stops
+// new Google logins; this one hides the form and refuses email sign-ups.
+function signupEnabled() {
+	return env.SIGNUP_ENABLED?.trim().toLowerCase() !== 'false';
+}
+
+export const load: PageServerLoad = async ({ locals: { safeGetSession } }) => {
+	const { session, user, profile } = await safeGetSession();
+	return { session, user, profile, signupEnabled: signupEnabled() };
+};
 
 export const actions: Actions = {
 	default: async ({ request, url, locals: { supabase } }) => {
@@ -32,6 +45,13 @@ export const actions: Actions = {
 		}
 
 		if (action === 'signup') {
+			if (!signupEnabled()) {
+				return {
+					success: false,
+					message: 'O cadastro está desativado nesta instância.'
+				};
+			}
+
 			if (!password || password.length < 8) {
 				return {
 					success: false,
