@@ -107,7 +107,7 @@
 				href={resolve(tab.href)}
 				aria-current={isActive(tab.href) ? 'page' : undefined}
 				class={isActive(tab.href)
-					? 'border-b-2 border-blue-600 px-3 py-2 text-sm font-medium whitespace-nowrap text-blue-700'
+					? 'border-b-2 border-primary px-3 py-2 text-sm font-medium whitespace-nowrap text-primary'
 					: 'border-b-2 border-transparent px-3 py-2 text-sm whitespace-nowrap text-gray-600 hover:border-gray-300 hover:text-gray-900'}
 			>
 				{tab.label}
