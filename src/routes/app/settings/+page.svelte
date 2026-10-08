@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 
 	let { data, form } = $props();
 	let user = $derived(data.user);
@@ -60,7 +61,7 @@
 			>
 			<p class="mt-1 text-xs text-gray-500">
 				Inclua a forma abreviada que o banco usa: o Nubank mostra o nome
-				completo e o Itaú corta ("Tales C"). Deixe vazio para não sugerir
+				completo e o Itaú corta ("Maria S"). Deixe vazio para não sugerir
 				transferências.
 			</p>
 		</div>
@@ -93,18 +94,12 @@
 				Como adicionar alguém ao seu grupo:
 			</p>
 			<ol class="text-xs text-gray-600 space-y-1 list-decimal list-inside">
+				<li>A pessoa cria a própria conta no app, sem criar um grupo dela.</li>
 				<li>
-					A pessoa precisa criar uma conta no app (receber um convite por email
-					ou se cadastrar).
-				</li>
-				<li>
-					No painel do Supabase, vá em <strong
-						>Table Editor → household_members</strong
-					>.
-				</li>
-				<li>
-					Adicione uma nova linha com o <code>household_id</code> do seu grupo e
-					o <code>user_id</code> da pessoa.
+					Em <a href={resolve('/app/groups')} class="text-primary underline"
+						>Grupos</a
+					>, um administrador do grupo usa <strong>Adicionar membro</strong> com o
+					email dessa conta.
 				</li>
 				<li>Agora ambos verão as mesmas transações, categorias e regras.</li>
 			</ol>

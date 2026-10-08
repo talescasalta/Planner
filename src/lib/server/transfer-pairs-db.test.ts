@@ -58,7 +58,7 @@ const itauRow = {
 	id: 'itau',
 	date: '2026-09-03',
 	amount: 1000,
-	description: 'PIX TRANSF Tales C03/09',
+	description: 'PIX TRANSF Maria S03/09',
 	source_name: 'Itaú conta'
 };
 const nubankRow = {
@@ -66,7 +66,7 @@ const nubankRow = {
 	id: 'nu',
 	date: '2026-09-03',
 	amount: -1000,
-	description: 'Transferência enviada pelo Pix - Tales Casalta',
+	description: 'Transferência enviada pelo Pix - Maria Silva',
 	source_name: 'Nubank conta'
 };
 
@@ -91,7 +91,7 @@ function fakeDb(ownNames: string[]) {
 
 describe('suggestTransferPairs', () => {
 	it('marks both sides of a pair as a transfer awaiting review', async () => {
-		const { db, updates } = fakeDb(['Tales Casalta', 'Tales C']);
+		const { db, updates } = fakeDb(['Maria Silva', 'Maria S']);
 
 		const count = await suggestTransferPairs(db, 'household-a', ['itau']);
 
@@ -149,7 +149,7 @@ describe('suggestTransferPairs', () => {
 	});
 
 	it('skips the lookup when nothing was inserted', async () => {
-		const { db, updates } = fakeDb(['Tales C']);
+		const { db, updates } = fakeDb(['Maria S']);
 
 		await expect(suggestTransferPairs(db, 'household-a', [])).resolves.toBe(0);
 		expect(updates).toEqual([]);

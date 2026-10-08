@@ -1,5 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { filterCategoriesForUser } from './gabarito';
+import { filterCategoriesForUser, loadGabarito } from './gabarito';
 
 type Category = {
 	id: string;
@@ -82,5 +83,30 @@ describe('filterCategoriesForUser', () => {
 
 		expect(visibleIds).toContain('food');
 		expect(visibleIds).toContain('bakery');
+	});
+});
+
+describe('seed_default_categories', () => {
+	// The seed must create exactly the pairs the CSV makes visible: anything
+	// else is a hidden row, anything missing is a category nobody can pick.
+	it('seeds the same category pairs as the gabarito CSV', () => {
+		const dir = 'supabase/migrations';
+		const latest = readdirSync(dir)
+			.filter((name) => name.endsWith('.sql'))
+			.sort()
+			.map((name) => readFileSync(`${dir}/${name}`, 'utf8'))
+			.filter((sql) => sql.includes('FUNCTION public.seed_default_categories'))
+			.at(-1);
+		const body = latest?.split('$$')[1] ?? '';
+		const seeded = new Set(
+			[...body.matchAll(/\('([^']+)', '([^']+)'\)/g)].map(
+				([, parent, child]) => `${parent}|${child}`
+			)
+		);
+		const csv = new Set(
+			loadGabarito().map((e) => `${e.categoria}|${e.subcategoria}`)
+		);
+
+		expect([...seeded].sort()).toEqual([...csv].sort());
 	});
 });

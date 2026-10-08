@@ -43,9 +43,9 @@ export function parseOwnNames(input: string): OwnNamesParse {
 	return { names };
 }
 
-// True when the description carries one of the names as whole words: "Tales C"
-// matches "PIX TRANSF Tales C03/09" (a digit follows) but not "Tales Cardoso",
-// and "Tales Casalta" matches inside a longer Nubank line.
+// True when the description carries one of the names as whole words: "Maria S"
+// matches "PIX TRANSF Maria S03/09" (a digit follows) but not "Maria Santos",
+// and "Maria Silva" matches inside a longer Nubank line.
 export function mentionsOwnName(
 	description: string,
 	names: readonly string[]

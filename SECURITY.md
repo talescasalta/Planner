@@ -2,6 +2,12 @@
 
 Este projeto concentra dados financeiros reais da família. **Segurança tem prioridade sobre conveniência e velocidade de entrega.** Este documento define o modelo de ameaças, as regras inegociáveis e o checklist que toda mudança deve seguir.
 
+## Reportando uma vulnerabilidade
+
+Não abra uma issue pública. Use o [reporte privado do GitHub](https://github.com/talescasalta/Planner/security/advisories/new) com os passos para reproduzir e o impacto esperado. A correção é combinada em privado e publicada depois do fix.
+
+Este documento trata do código. Cada instância é operada por quem a publicou: uma falha de configuração na instância de outra pessoa (chaves expostas, cadastro aberto) deve ser reportada a ela.
+
 ## Modelo de ameaças
 
 Dados protegidos: transações bancárias e de cartão, rendas, perfis financeiros e regras de classificação de cada _household_ (casal/grupo).

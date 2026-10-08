@@ -1,0 +1,43 @@
+name: Bug
+description: Algo não funciona como deveria
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Não cole dados reais** (extratos, nomes, CPFs, números de conta). Troque por valores fictícios.
+        Vulnerabilidades de segurança não devem ser reportadas aqui: veja o SECURITY.md.
+  - type: textarea
+    id: what
+    attributes:
+      label: O que aconteceu
+      description: O que você fez, o que esperava e o que aconteceu de fato.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Como reproduzir
+      placeholder: |
+        1. Vá em Importar
+        2. Envie um CSV com...
+        3. ...
+  - type: dropdown
+    id: where
+    attributes:
+      label: Onde roda a sua instância
+      options:
+        - Local (npm run dev)
+        - Vercel + Supabase
+        - Outro
+  - type: input
+    id: version
+    attributes:
+      label: Versão ou commit
+      description: A versão do package.json ou o hash do commit.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs ou prints
+      description: Erros do terminal, do console do navegador ou dos logs da Vercel, sem dados pessoais.
+      render: text

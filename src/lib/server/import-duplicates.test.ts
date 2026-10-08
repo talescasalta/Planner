@@ -16,11 +16,11 @@ function existing(
 	return {
 		date: '2026-06-15',
 		amount: -500,
-		description: 'Cleusa Braga',
-		clean_description: 'CLEUSA BRAGA',
+		description: 'Joana Ramos',
+		clean_description: 'JOANA RAMOS',
 		source_name: 'Itaú conta',
 		source_type: 'bank_account',
-		import_dedup_key: '2026-06-15|CLEUSA BRAGA|-500.00|BRL',
+		import_dedup_key: '2026-06-15|JOANA RAMOS|-500.00|BRL',
 		review_status: 'confirmed',
 		...overrides
 	};
@@ -32,8 +32,8 @@ function row(
 	return {
 		date: '2026-06-15',
 		amount: -500,
-		description: 'PIX TRANSF CLEUSA 13/06',
-		clean_description: 'PIX TRANSF CLEUSA',
+		description: 'PIX TRANSF JOANA 13/06',
+		clean_description: 'PIX TRANSF JOANA',
 		...overrides
 	};
 }
@@ -137,8 +137,8 @@ describe('findPossibleDuplicates', () => {
 				row({
 					dedup_key: 'k1',
 					date: '2026-06-16',
-					description: 'Cleusa Braga',
-					clean_description: 'CLEUSA BRAGA'
+					description: 'Joana Ramos',
+					clean_description: 'JOANA RAMOS'
 				})
 			],
 			[existing({ id: 'e1' })],
@@ -184,10 +184,10 @@ describe('planImport', () => {
 		expect(plan.possible).toEqual([
 			{
 				date: '2026-06-15',
-				description: 'PIX TRANSF CLEUSA 13/06',
+				description: 'PIX TRANSF JOANA 13/06',
 				amount: -500,
 				existing_date: '2026-06-15',
-				existing_description: 'Cleusa Braga'
+				existing_description: 'Joana Ramos'
 			}
 		]);
 	});

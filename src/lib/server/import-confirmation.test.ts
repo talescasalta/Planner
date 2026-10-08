@@ -195,15 +195,15 @@ describe('PDF statement import', () => {
 	it('extracts the text layer and forwards it to the AI extraction', async () => {
 		vi.mocked(isPdf).mockReturnValue(true);
 		vi.mocked(extractTextFromPdf).mockResolvedValue({
-			text: '12/08/2026 PIX TRANSF ROSANGE12/08 -53,50'.padEnd(200, ' .'),
+			text: '12/08/2026 PIX TRANSF FERNAND12/08 -53,50'.padEnd(200, ' .'),
 			pages: 3
 		});
 		vi.mocked(extractRowsFromText).mockResolvedValue({
 			rows: [
 				{
 					date: '2026-08-12',
-					description: 'PIX TRANSF ROSANGE12/08',
-					clean_description: 'PIX TRANSF ROSANGE',
+					description: 'PIX TRANSF FERNAND12/08',
+					clean_description: 'PIX TRANSF FERNAND',
 					amount: -53.5,
 					currency: 'BRL'
 				}

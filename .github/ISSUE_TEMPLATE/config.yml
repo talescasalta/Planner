@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Vulnerabilidade de segurança
+    url: https://github.com/talescasalta/Planner/security/advisories/new
+    about: Reporte em privado. Não abra uma issue pública.
+  - name: Como instalar e usar
+    url: https://github.com/talescasalta/Planner/tree/main/docs
+    about: Guias de setup local, deploy, IA e primeiros passos.

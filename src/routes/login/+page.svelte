@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
-	import type { ActionData } from './$types';
+	import type { ActionData, PageData } from './$types';
 
-	let { form }: { form: ActionData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let isSignUp = $state(false);
 </script>
 
@@ -83,15 +83,17 @@
 			</form>
 		{/if}
 
-		<div class="text-center">
-			<button
-				type="button"
-				class="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
-				onclick={() => (isSignUp = !isSignUp)}
-			>
-				{isSignUp ? 'Já tem conta? Entrar' : 'Não tem conta? Cadastrar'}
-			</button>
-		</div>
+		{#if data.signupEnabled}
+			<div class="text-center">
+				<button
+					type="button"
+					class="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+					onclick={() => (isSignUp = !isSignUp)}
+				>
+					{isSignUp ? 'Já tem conta? Entrar' : 'Não tem conta? Cadastrar'}
+				</button>
+			</div>
+		{/if}
 
 		{#if !isSignUp}
 			<div class="text-center">

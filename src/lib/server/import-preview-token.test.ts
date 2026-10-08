@@ -14,7 +14,7 @@ const payload = {
 	rows: [
 		{
 			date: '2026-09-01',
-			description: 'DA VIVO-SP 13439017',
+			description: 'DA VIVO-SP 33333333',
 			clean_description: 'DA VIVO-SP',
 			amount: -100,
 			currency: 'BRL'
