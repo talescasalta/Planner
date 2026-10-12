@@ -68,7 +68,7 @@ O módulo lê as planilhas da [Área do Investidor da B3](https://www.investidor
    - **Movimentação**: o arquivo principal, que vale importar todo mês;
    - **Posição**: de vez em quando, para conferir se a carteira bate;
    - **Negociação**: opcional, com o detalhe das compras e vendas.
-2. Em **Investimentos → Importar**, envie os arquivos. O tipo é detectado sozinho e reenvios não duplicam.
+2. Em **Investimentos → Importar**, envie os arquivos, até 6 de uma vez. O tipo de cada um é detectado sozinho, reenvios não duplicam e, quando há posição e movimentação juntas, a movimentação entra primeiro para a conferência bater. Se a última movimentação importada tiver mais de 35 dias, a página **Investimentos** mostra um aviso com o atalho para importar.
 3. **Renda fixa bancária (CDB, LCA, LCI):** a B3 não informa a taxa contratada. Na página **Investimentos**, preencha a **taxa de carrego** de cada título no quadro de mesmo nome (por exemplo, 95% do CDI), senão o rendimento não é calculado.
 4. **Ativos que chegaram por transferência de corretora:** a movimentação não traz o custo de compra. Em **Investimentos → IR**, preencha o **Custo inicial manual** (quantidade e custo total na data de corte), senão o preço médio e o IR ficam errados.
 

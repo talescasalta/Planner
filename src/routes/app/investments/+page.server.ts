@@ -14,6 +14,7 @@ import { supabaseAdmin } from '$lib/server/supabase';
 import { refreshInvestmentQuotes } from '$lib/server/investment-quotes';
 import { syncCdiRates } from '$lib/server/investment-cdi';
 import { classLabel } from '$lib/investments/classes';
+import { importFreshness } from '$lib/server/investment-freshness';
 
 // Bank-issued paper has no public quote: without a declared carry rate it can
 // only be carried at the last B3 value, which freezes it out of every measured
@@ -29,7 +30,8 @@ export const load: PageServerLoad = async ({
 		owners: [],
 		currentUserId: '',
 		lastSnapshotDate: null,
-		unknownEventTypes: []
+		unknownEventTypes: [],
+		freshness: null
 	};
 	const { user } = await safeGetSession();
 	if (!user) return empty;
@@ -37,7 +39,23 @@ export const load: PageServerLoad = async ({
 	const householdId = await getUserHouseholdId(supabase, user.id);
 	if (!householdId) return empty;
 
-	const rows = await loadInvestmentRows(supabase, householdId);
+	const [rows, { data: importRows }] = await Promise.all([
+		loadInvestmentRows(supabase, householdId),
+		supabase
+			.from('transaction_imports')
+			.select('source_type, created_at')
+			.eq('household_id', householdId)
+			.in('source_type', ['b3_posicao', 'b3_negociacao', 'b3_movimentacao'])
+			.neq('status', 'failed')
+			.order('created_at', { ascending: false })
+			.limit(50)
+	]);
+	const freshness = importFreshness(
+		(importRows ?? []).map((row) => ({
+			sourceType: row.source_type as string,
+			createdAt: row.created_at as string
+		}))
+	);
 	const assetById = new Map(rows.assets.map((asset) => [asset.id, asset]));
 
 	const taxReport = computeTaxReport(
@@ -96,7 +114,8 @@ export const load: PageServerLoad = async ({
 		owners: [...new Set(rows.assets.map((asset) => asset.owner_user_id))],
 		currentUserId: user.id,
 		lastSnapshotDate: lastSnapshotDate(rows.snapshots),
-		unknownEventTypes: [...unknownTypes]
+		unknownEventTypes: [...unknownTypes],
+		freshness
 	};
 };
 
