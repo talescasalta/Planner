@@ -172,6 +172,28 @@
 			</ol>
 		</div>
 	{:else}
+		{#if data.freshness?.stale}
+			<div
+				class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+			>
+				<p>
+					{#if data.freshness.daysSinceMovimentacao === null}
+						A movimentação da B3 ainda não foi importada: proventos e
+						transferências não aparecem.
+					{:else}
+						A última movimentação da B3 foi importada há
+						{data.freshness.daysSinceMovimentacao} dias. Proventos e eventos recentes
+						podem estar faltando.
+					{/if}
+				</p>
+				<a
+					class="rounded bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-hover"
+					href={resolve('/app/investments/import')}
+				>
+					Importar agora
+				</a>
+			</div>
+		{/if}
 		<div class="flex flex-wrap items-end justify-between gap-3">
 			<p class="text-sm text-gray-600">
 				{#if data.lastSnapshotDate}
