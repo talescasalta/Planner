@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/server/llm', () => ({ callLlm: vi.fn() }));
+vi.mock('$lib/server/supabase', () => ({ supabaseAdmin: { from: vi.fn() } }));
 
 import { parseRendeExtraction } from './wise-print-extract';
 

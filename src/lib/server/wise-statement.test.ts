@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { strToU8, zipSync } from 'fflate';
+
+vi.mock('$lib/server/supabase', () => ({ supabaseAdmin: { from: vi.fn() } }));
+
 import { parseWiseStatement } from './wise-statement';
 
 // Shape of the CSV Wise exports (Extratos → CSV). Values are fictitious.
