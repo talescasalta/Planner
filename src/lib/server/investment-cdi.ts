@@ -7,7 +7,7 @@ import type { CdiRate } from './investment-returns';
 // dia"). Free, unauthenticated, and complete back to 1986 — the one piece of
 // this feature that needs no workaround.
 
-const SGS_URL = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados';
+const CDI_SERIES = 12;
 
 function toBrDate(iso: string): string {
 	const [year, month, day] = iso.split('-');
@@ -29,12 +29,15 @@ export function parseSgsRows(body: unknown): CdiRate[] {
 	return rates;
 }
 
-export async function fetchCdiRates(
+// Any SGS series as dated rows. The PTAX series (see fx-rates) share this
+// endpoint and its quirks.
+export async function fetchSgsSeries(
+	series: number,
 	from: string,
 	to: string,
 	fetcher: typeof fetch = fetch
 ): Promise<CdiRate[]> {
-	const url = `${SGS_URL}?formato=json&dataInicial=${toBrDate(from)}&dataFinal=${toBrDate(to)}`;
+	const url = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.${series}/dados?formato=json&dataInicial=${toBrDate(from)}&dataFinal=${toBrDate(to)}`;
 	const response = await fetcher(url, {
 		headers: { accept: 'application/json' }
 	});
@@ -50,6 +53,14 @@ export async function fetchCdiRates(
 	}
 	if (!response.ok) throw new Error(`BCB SGS respondeu ${response.status}`);
 	return parseSgsRows(await response.json());
+}
+
+export function fetchCdiRates(
+	from: string,
+	to: string,
+	fetcher: typeof fetch = fetch
+): Promise<CdiRate[]> {
+	return fetchSgsSeries(CDI_SERIES, from, to, fetcher);
 }
 
 // Only fetches what is missing: the series is immutable once published, so a

@@ -10,6 +10,8 @@ import {
 } from './investment-accrual';
 import { recentYearEnds } from './investment-monthly';
 import { brazilToday } from './brazil-date';
+import { isForeignCurrency, loadFxFor, type ForeignCurrency } from './fx-rates';
+import { foreignQuoteSeries } from './investment-foreign';
 
 // Daily quote refresh so patrimony stays current without monthly posição
 // uploads: Yahoo Finance covers B3-listed tickers (ETF/FII/ações), the Tesouro
@@ -49,6 +51,7 @@ interface QuoteAsset {
 	index_type: string | null;
 	index_percent: number | null;
 	index_spread: number | null;
+	currency: string;
 }
 
 export interface QuoteRefreshSummary {
@@ -56,6 +59,7 @@ export interface QuoteRefreshSummary {
 	tickerQuotes: number;
 	tesouroQuotes: number;
 	curvaQuotes: number;
+	foreignQuotes: number;
 	fundsRequested: number;
 	fundQuotes: number;
 	upserted: number;
@@ -251,6 +255,7 @@ interface QuoteUpsert {
 	quote_date: string;
 	price: number;
 	source: string;
+	native_price?: number;
 }
 
 async function collectTickerUpserts(
@@ -397,12 +402,16 @@ async function collectCurvaUpserts(
 	summary: QuoteRefreshSummary,
 	today: string
 ): Promise<QuoteUpsert[]> {
-	const accruable = assets.filter((asset) =>
-		isAccruable({
-			indexType: asset.index_type ?? '',
-			percent: asset.index_percent,
-			spread: asset.index_spread
-		})
+	// A foreign holding also declares a rate, but it accrues in its own
+	// currency and is converted after (see collectForeignUpserts).
+	const accruable = assets.filter(
+		(asset) =>
+			asset.currency === 'BRL' &&
+			isAccruable({
+				indexType: asset.index_type ?? '',
+				percent: asset.index_percent,
+				spread: asset.index_spread
+			})
 	);
 	if (accruable.length === 0) return [];
 
@@ -474,6 +483,71 @@ function curvaPoints(
 	return [...accrualSeries(latest, rate, rates, today), ...backward];
 }
 
+// Holdings quoted abroad: the native quota is carried forward from the last
+// one Wise stated, at the rate Wise shows, and converted at each day's PTAX.
+async function collectForeignUpserts(
+	assets: QuoteAsset[],
+	summary: QuoteRefreshSummary,
+	today: string
+): Promise<QuoteUpsert[]> {
+	const foreign = assets.filter((asset) => isForeignCurrency(asset.currency));
+	if (foreign.length === 0) return [];
+
+	const { data: anchorRows, error } = await supabaseAdmin
+		.from('investment_quotes')
+		.select('asset_id, quote_date, native_price')
+		.in(
+			'asset_id',
+			foreign.map((asset) => asset.id)
+		)
+		.eq('source', 'wise')
+		.not('native_price', 'is', null)
+		.order('quote_date', { ascending: false });
+	if (error) {
+		summary.errors.push(`exterior: ${error.message}`);
+		return [];
+	}
+	const anchors = new Map<string, { date: string; nativePrice: number }>();
+	for (const row of anchorRows ?? []) {
+		if (anchors.has(row.asset_id as string)) continue;
+		anchors.set(row.asset_id as string, {
+			date: row.quote_date as string,
+			nativePrice: Number(row.native_price)
+		});
+	}
+	const anchored = foreign.filter((asset) => anchors.has(asset.id));
+	if (anchored.length === 0) return [];
+
+	const oldest = [...anchors.values()].reduce(
+		(first, anchor) => (anchor.date < first ? anchor.date : first),
+		today
+	);
+	const { rates, errors } = await loadFxFor(
+		anchored.map((asset) => asset.currency as ForeignCurrency),
+		oldest,
+		today
+	);
+	summary.errors.push(...errors);
+
+	const upserts = anchored.flatMap((asset) =>
+		foreignQuoteSeries(
+			anchors.get(asset.id)!,
+			asset.index_type === 'pre' ? asset.index_percent : null,
+			rates.get(asset.currency as ForeignCurrency) ?? [],
+			today
+		).map((quote) => ({
+			household_id: asset.household_id,
+			asset_id: asset.id,
+			quote_date: quote.date,
+			price: quote.price,
+			native_price: quote.nativePrice,
+			source: 'exterior'
+		}))
+	);
+	summary.foreignQuotes = upserts.length;
+	return upserts;
+}
+
 export interface QuoteRefreshOptions {
 	// Restricts the run to one household, for the refresh button.
 	householdId?: string;
@@ -492,6 +566,7 @@ export async function refreshInvestmentQuotes(
 		tickerQuotes: 0,
 		tesouroQuotes: 0,
 		curvaQuotes: 0,
+		foreignQuotes: 0,
 		fundsRequested: 0,
 		fundQuotes: 0,
 		upserted: 0,
@@ -501,7 +576,7 @@ export async function refreshInvestmentQuotes(
 	let query = supabaseAdmin
 		.from('investment_assets')
 		.select(
-			'id, household_id, asset_class, ticker, product_key, maturity_date, issue_date, index_type, index_percent, index_spread'
+			'id, household_id, asset_class, ticker, product_key, maturity_date, issue_date, index_type, index_percent, index_spread, currency'
 		);
 	if (householdId) query = query.eq('household_id', householdId);
 	const { data, error } = await query;
@@ -522,6 +597,7 @@ export async function refreshInvestmentQuotes(
 		...(await collectTickerUpserts(assets, summary, fetcher)),
 		...(await collectTesouroUpserts(assets, summary, fetcher)),
 		...(await collectCurvaUpserts(assets, summary, brazilToday())),
+		...(await collectForeignUpserts(assets, summary, brazilToday())),
 		...fundUpserts
 	];
 

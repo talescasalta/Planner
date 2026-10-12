@@ -177,6 +177,7 @@ function refreshMessage(summary: {
 	tickerQuotes: number;
 	tesouroQuotes: number;
 	curvaQuotes: number;
+	foreignQuotes: number;
 }): string {
 	const parts: string[] = [];
 	if (summary.tickerQuotes > 0)
@@ -184,6 +185,7 @@ function refreshMessage(summary: {
 	if (summary.tesouroQuotes > 0)
 		parts.push(`${summary.tesouroQuotes} títulos do Tesouro`);
 	if (summary.curvaQuotes > 0) parts.push('renda fixa bancária na curva');
+	if (summary.foreignQuotes > 0) parts.push('saldo no exterior pela PTAX');
 	return parts.length > 0
 		? `Preços atualizados: ${parts.join(', ')}.`
 		: 'Nenhum preço novo encontrado.';

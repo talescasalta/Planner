@@ -28,6 +28,7 @@
 		{ href: '/app/investments/returns', label: 'Rendimento' },
 		{ href: '/app/investments/taxes', label: 'IR' },
 		{ href: '/app/investments/funds', label: 'Fundos' },
+		{ href: '/app/investments/exterior', label: 'Exterior' },
 		{ href: '/app/investments/import', label: 'Importar' },
 		{ href: '/app/investments/assistant', label: 'Assistente' }
 	] as const;

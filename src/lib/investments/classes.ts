@@ -11,6 +11,7 @@ export type AssetClass =
 	| 'tesouro'
 	| 'cdb'
 	| 'lca_lci'
+	| 'exterior'
 	| 'outro';
 
 export const CLASS_LABELS: Record<AssetClass, string> = {
@@ -22,6 +23,7 @@ export const CLASS_LABELS: Record<AssetClass, string> = {
 	tesouro: 'Tesouro Direto',
 	cdb: 'CDB/RDB',
 	lca_lci: 'LCA/LCI',
+	exterior: 'Exterior',
 	outro: 'Outros'
 };
 
@@ -34,6 +36,7 @@ export const CLASS_COLORS: Record<AssetClass, string> = {
 	fundo: '#f59e0b',
 	fii: '#f97316',
 	acao: '#ec4899',
+	exterior: '#84cc16',
 	outro: '#64748b'
 };
 
