@@ -90,6 +90,8 @@ INSERT INTO public.investment_darf_status (id, household_id, owner_user_id, refe
 INSERT INTO public.cdi_daily_rates (rate_date, rate) VALUES
 	('2026-08-03', 0.051660),
 	('2026-08-04', 0.051660);
+INSERT INTO public.fx_daily_rates (currency, rate_date, rate) VALUES
+	('USD', '2026-08-03', 5.4321);
 
 -- Tabela interna deny-all: linhas existem, mas nenhuma role da API pode vê-las.
 INSERT INTO public.classification_rate_limits (user_id) VALUES
@@ -104,7 +106,7 @@ INSERT INTO public.classification_rate_limits (user_id) VALUES
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
 
-SELECT plan(61);
+SELECT plan(63);
 
 -- ============================================================
 -- 1. anon não lê nada (todas as 18 tabelas públicas)
@@ -131,6 +133,7 @@ SELECT is_empty('SELECT id FROM public.investment_events', 'anon não lê invest
 SELECT is_empty('SELECT id FROM public.investment_quotes', 'anon não lê investment_quotes');
 SELECT is_empty('SELECT id FROM public.investment_darf_status', 'anon não lê investment_darf_status');
 SELECT is_empty('SELECT rate_date FROM public.cdi_daily_rates', 'anon não lê cdi_daily_rates');
+SELECT is_empty('SELECT rate_date FROM public.fx_daily_rates', 'anon não lê fx_daily_rates');
 
 SELECT throws_ok(
 	$$INSERT INTO public.transactions (household_id, date, description, amount, created_by_user_id)
@@ -169,6 +172,7 @@ SELECT results_eq('SELECT id FROM public.investment_quotes', ARRAY['aaaaaaaa-000
 SELECT results_eq('SELECT id FROM public.investment_darf_status', ARRAY['aaaaaaaa-0000-0000-0000-00000000000e'::uuid], 'A vê só DARFs do household A');
 -- Referência pública, de propósito: a série do CDI é a mesma para todos.
 SELECT isnt_empty('SELECT rate_date FROM public.cdi_daily_rates', 'membro lê a série pública de CDI');
+SELECT isnt_empty('SELECT rate_date FROM public.fx_daily_rates', 'membro lê a série pública de PTAX');
 
 -- Escrita cruzada: A tentando alcançar o household B
 SELECT throws_ok(

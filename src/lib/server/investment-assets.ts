@@ -14,9 +14,17 @@ export type AssetClass =
 	| 'tesouro'
 	| 'cdb'
 	| 'lca_lci'
+	| 'exterior'
 	| 'outro';
 
-export type TaxBucket = 'fii' | 'acoes' | 'etf_rv' | 'retido_fonte' | 'isento';
+export type TaxBucket =
+	| 'fii'
+	| 'acoes'
+	| 'etf_rv'
+	| 'retido_fonte'
+	| 'isento'
+	// Income abroad: declared once a year (Lei 14.754/2023), never a DARF.
+	| 'exterior';
 
 export interface AssetSpec {
 	productKey: string;
@@ -55,6 +63,8 @@ export function defaultTaxBucket(
 			return tipo && /renda fixa/i.test(tipo) ? 'retido_fonte' : 'etf_rv';
 		case 'lca_lci':
 			return 'isento';
+		case 'exterior':
+			return 'exterior';
 		// Previdência is withheld by the insurer under the regressive table;
 		// the others by the administrator (come-cotas or on redemption).
 		case 'tesouro':

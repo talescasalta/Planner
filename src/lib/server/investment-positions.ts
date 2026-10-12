@@ -21,7 +21,7 @@ export interface EventRow {
 	quantity: number | null;
 	unit_price: number | null;
 	total_value: number | null;
-	source: 'b3_movimentacao' | 'b3_negociacao' | 'manual';
+	source: 'b3_movimentacao' | 'b3_negociacao' | 'manual' | 'wise_extrato';
 }
 
 export interface QuoteRow {

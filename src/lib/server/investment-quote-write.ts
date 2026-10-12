@@ -6,6 +6,7 @@ interface QuoteRow {
 	quote_date: string;
 	price: number;
 	source: string;
+	native_price?: number;
 }
 
 // Bound each database request and request a count instead of returning rows.
