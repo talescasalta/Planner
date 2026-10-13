@@ -82,14 +82,16 @@ Prefira as CLIs aos painéis. O passo a passo para pessoas está em [docs/deploy
    ```bash
    curl -s -X PATCH "https://api.supabase.com/v1/projects/<ref>/config/auth" \
      -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
-     -d '{"site_url":"https://<app>.vercel.app","uri_allow_list":"https://<app>.vercel.app/**","mailer_autoconfirm":true}'
+     -d '{"site_url":"https://<app>.vercel.app","uri_allow_list":"https://<app>.vercel.app/**","mailer_autoconfirm":true,"security_update_password_require_reauthentication":true,"password_min_length":8}'
    ```
 
    `mailer_autoconfirm` dispensa a confirmação por e-mail. É necessário porque o e-mail padrão de um projeto Supabase só entrega para membros da equipe do projeto, com limite de poucos envios por hora: sem isso, o cadastro de quem não é da equipe fica preso esperando um e-mail que não chega. A alternativa é configurar um SMTP próprio (Resend, por exemplo) e deixar a confirmação ligada.
 
+   `security_update_password_require_reauthentication` faz a troca de senha exigir um login recente (o link de recuperação conta como login). Sem isso, uma sessão roubada troca a senha e toma a conta de vez.
+
 4. **Verificação.** Rode `curl -s -H "Authorization: Bearer $CRON_SECRET" https://<app>.vercel.app/api/health/supabase`. O esperado é `"ok":true` e `llm.modelExplicitlyConfigured: true`. Os dois crons do `vercel.json` são registrados sozinhos no deploy de produção; peça à pessoa para conferi-los em **Settings → Cron Jobs** na Vercel.
 
-5. **Contas da casa.** Cada pessoa cria a própria conta em `/login`. Uma delas cria o grupo em **Grupos**, e convida as outras pelo e-mail; cada uma aceita o convite em **Grupos**, sem criar grupo próprio ([docs/primeiro-uso.md](docs/primeiro-uso.md)).
+5. **Contas da casa.** Cada pessoa cria a própria conta em `/login`. Uma delas cria o grupo em **Grupos** e convida as outras pelo e-mail (antes ou depois de terem conta); cada uma entra com esse e-mail e aceita o convite em **Grupos**, sem criar grupo próprio ([docs/primeiro-uso.md](docs/primeiro-uso.md)).
 
 6. **Fechar o cadastro.** Quando todos tiverem conta:
    - `PATCH .../config/auth` com `{"disable_signup":true}`, o que bloqueia também contas novas pelo Google;

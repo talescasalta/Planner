@@ -1,6 +1,7 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
 import { getUserHouseholdId } from '$lib/server/household';
+import { isHouseholdAdmin } from '$lib/server/access';
 import { parseOwnNames } from '$lib/server/own-names';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { logInternalError } from '$lib/server/errors';
@@ -10,13 +11,20 @@ export const load: PageServerLoad = async ({
 }) => {
 	const { user } = await safeGetSession();
 	const householdId = user ? await getUserHouseholdId(supabase, user.id) : null;
-	if (!householdId) return { ownNames: [] as string[] };
-	const { data } = await supabase
-		.from('households')
-		.select('own_account_names')
-		.eq('id', householdId)
-		.maybeSingle();
-	return { ownNames: (data?.own_account_names ?? []) as string[] };
+	if (!user || !householdId)
+		return { ownNames: [] as string[], isAdmin: false };
+	const [{ data }, isAdmin] = await Promise.all([
+		supabase
+			.from('households')
+			.select('own_account_names')
+			.eq('id', householdId)
+			.maybeSingle(),
+		isHouseholdAdmin(supabase, householdId, user.id)
+	]);
+	return {
+		ownNames: (data?.own_account_names ?? []) as string[],
+		isAdmin
+	};
 };
 
 export const actions: Actions = {
@@ -35,14 +43,22 @@ export const actions: Actions = {
 			});
 		}
 
+		// These names drive transfer suggestions for the whole household.
+		if (!(await isHouseholdAdmin(supabase, householdId, user.id))) {
+			return fail(403, {
+				success: false,
+				message: 'Apenas administradores do grupo podem alterar estes nomes'
+			});
+		}
+
 		const formData = await request.formData();
 		const parsed = parseOwnNames(String(formData.get('own_names') ?? ''));
 		if (parsed.error !== undefined) {
 			return fail(400, { success: false, message: parsed.error });
 		}
 
-		// households has no update policy for members; the membership was just
-		// established through the user's own client above.
+		// households has no update policy for members; the admin role was just
+		// checked through the user's own client above.
 		const { error } = await supabaseAdmin
 			.from('households')
 			.update({ own_account_names: parsed.names })

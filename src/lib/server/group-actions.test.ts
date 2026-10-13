@@ -7,7 +7,6 @@ import {
 	seedDefaultFinancialProfiles
 } from '$lib/server/household';
 import { canEditTransaction, isHouseholdAdmin } from '$lib/server/access';
-import { findAuthUserByEmail } from '$lib/server/auth-admin';
 import {
 	acceptInvitation,
 	createInvitation,
@@ -31,8 +30,10 @@ vi.mock('$lib/server/access', () => ({
 	getReadableTransactionIds: vi.fn(),
 	isHouseholdAdmin: vi.fn()
 }));
-vi.mock('$lib/server/auth-admin', () => ({ findAuthUserByEmail: vi.fn() }));
-vi.mock('$lib/server/household-invitations', () => ({
+vi.mock('$lib/server/household-invitations', async (importOriginal) => ({
+	...(await importOriginal<
+		typeof import('$lib/server/household-invitations')
+	>()),
 	acceptInvitation: vi.fn(),
 	createInvitation: vi.fn(),
 	deleteInvitation: vi.fn(),
@@ -111,12 +112,10 @@ beforeEach(() => {
 	vi.mocked(isHouseholdAdmin).mockReset();
 	vi.mocked(seedDefaultCategories).mockReset();
 	vi.mocked(seedDefaultFinancialProfiles).mockReset();
-	vi.mocked(findAuthUserByEmail).mockReset();
 	vi.mocked(canEditTransaction).mockResolvedValue(true);
 	vi.mocked(isHouseholdAdmin).mockResolvedValue(true);
 	vi.mocked(seedDefaultCategories).mockResolvedValue(undefined);
 	vi.mocked(seedDefaultFinancialProfiles).mockResolvedValue(undefined);
-	vi.mocked(findAuthUserByEmail).mockResolvedValue(null);
 	vi.mocked(acceptInvitation).mockReset();
 	vi.mocked(createInvitation).mockReset();
 	vi.mocked(deleteInvitation).mockReset();
@@ -125,9 +124,8 @@ beforeEach(() => {
 });
 
 describe('group actions', () => {
-	it('rejects income updates from a non-member before admin writes', async () => {
-		const membership = new QueryMock({ data: null, error: null });
-		const userSupabase = { from: vi.fn(() => membership) };
+	it('rejects income updates from anyone but a group admin', async () => {
+		vi.mocked(isHouseholdAdmin).mockResolvedValue(false);
 
 		const result = await actions.update_incomes(
 			event(
@@ -135,12 +133,12 @@ describe('group actions', () => {
 					group_id: 'group-a',
 					user_id: 'user-a',
 					monthly_income: '5000'
-				}),
-				userSupabase
+				})
 			)
 		);
 
 		expect(result).toMatchObject({ status: 403 });
+		expect(isHouseholdAdmin).toHaveBeenCalledWith({}, 'group-a', 'user-a');
 		expect(mockedFrom).not.toHaveBeenCalled();
 	});
 
@@ -282,7 +280,7 @@ describe('group actions', () => {
 		expect(seedDefaultCategories).not.toHaveBeenCalled();
 	});
 
-	it('rejects member additions from non-admin users before auth lookup', async () => {
+	it('rejects invitations from non-admin users', async () => {
 		vi.mocked(isHouseholdAdmin).mockResolvedValue(false);
 
 		const result = await actions.add_member(
@@ -295,28 +293,23 @@ describe('group actions', () => {
 		);
 
 		expect(result).toMatchObject({ status: 403 });
-		expect(findAuthUserByEmail).not.toHaveBeenCalled();
+		expect(createInvitation).not.toHaveBeenCalled();
 		expect(mockedFrom).not.toHaveBeenCalled();
 	});
 
-	it('invites instead of adding the member directly', async () => {
-		vi.mocked(findAuthUserByEmail).mockResolvedValue({ id: 'user-b' } as never);
-		const existing = new QueryMock({ data: null, error: null });
-
+	it('invites by e-mail instead of adding the member directly', async () => {
 		const result = await actions.add_member(
 			event(
 				requestWith({
 					group_id: 'group-a',
-					email: 'MEMBER@example.com'
-				}),
-				{ from: () => existing }
+					email: ' MEMBER@example.com '
+				})
 			)
 		);
 
 		expect(result).toMatchObject({ success: true });
 		expect(createInvitation).toHaveBeenCalledWith({
 			householdId: 'group-a',
-			userId: 'user-b',
 			email: 'member@example.com',
 			invitedByUserId: 'user-a'
 		});
@@ -325,14 +318,9 @@ describe('group actions', () => {
 	});
 
 	it('reports a pending invitation and a failed one without the raw error', async () => {
-		vi.mocked(findAuthUserByEmail).mockResolvedValue({ id: 'user-b' } as never);
-		const existing = new QueryMock({ data: null, error: null });
 		const invite = () =>
 			actions.add_member(
-				event(
-					requestWith({ group_id: 'group-a', email: 'member@example.com' }),
-					{ from: () => existing }
-				)
+				event(requestWith({ group_id: 'group-a', email: 'member@example.com' }))
 			);
 
 		vi.mocked(createInvitation).mockResolvedValue('duplicate');
@@ -345,6 +333,31 @@ describe('group actions', () => {
 		});
 	});
 
+	// Without an account lookup, a registered and an unregistered e-mail get
+	// the same answer, so inviting cannot reveal who has an account.
+	it('answers the same whether or not the e-mail has an account', async () => {
+		const invite = (email: string) =>
+			actions.add_member(event(requestWith({ group_id: 'group-a', email })));
+
+		const registered = await invite('a@example.com');
+		const unknown = await invite('nobody@example.com');
+
+		expect(mockedFrom).not.toHaveBeenCalled();
+		expect(Object.keys(unknown as object)).toEqual(
+			Object.keys(registered as object)
+		);
+		expect(unknown).toMatchObject({ success: true });
+	});
+
+	it('refuses an invalid e-mail before writing anything', async () => {
+		const result = await actions.add_member(
+			event(requestWith({ group_id: 'group-a', email: 'not-an-email' }))
+		);
+
+		expect(result).toMatchObject({ status: 400 });
+		expect(createInvitation).not.toHaveBeenCalled();
+	});
+
 	it('accepts only the invitee’s own invitation', async () => {
 		vi.mocked(acceptInvitation).mockResolvedValue('not_found');
 
@@ -352,7 +365,10 @@ describe('group actions', () => {
 			event(requestWith({ invitation_id: 'invite-1' }))
 		);
 
-		expect(acceptInvitation).toHaveBeenCalledWith('invite-1', 'user-a');
+		expect(acceptInvitation).toHaveBeenCalledWith(
+			'invite-1',
+			expect.objectContaining({ id: 'user-a', email: 'a@example.com' })
+		);
 		expect(result).toMatchObject({ status: 404 });
 	});
 
@@ -364,7 +380,7 @@ describe('group actions', () => {
 		expect(result).toMatchObject({ success: true });
 		expect(deleteInvitation).toHaveBeenCalledWith({
 			id: 'invite-1',
-			userId: 'user-a'
+			email: 'a@example.com'
 		});
 	});
 

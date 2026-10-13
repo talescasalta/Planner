@@ -11,13 +11,14 @@ import {
 	filterByReadableAccess,
 	isHouseholdAdmin
 } from '$lib/server/access';
-import { findAuthUserByEmail } from '$lib/server/auth-admin';
 import {
 	acceptInvitation,
 	createInvitation,
 	deleteInvitation,
+	isInviteEmail,
 	loadReceivedInvitations,
-	loadSentInvitations
+	loadSentInvitations,
+	normalizeInviteEmail
 } from '$lib/server/household-invitations';
 import { loadCategoriesForUser } from '$lib/server/categories';
 import { selectAllStrict } from '$lib/server/supabase-paging';
@@ -673,7 +674,7 @@ export const load: PageServerLoad = async ({
 				loadGroupDetails(group, user.id, currentUserName, url)
 			)
 		),
-		loadReceivedInvitations(user.id)
+		loadReceivedInvitations(user.email)
 	]);
 
 	return { groups: groupsWithMembers, invitations, user };
@@ -690,16 +691,13 @@ export const actions: Actions = {
 		const formError = incomeFormError(groupId, userIds, incomes);
 		if (formError) return fail(400, { success: false, message: formError });
 
-		const isMember = await supabase
-			.from('household_members')
-			.select('user_id')
-			.eq('household_id', groupId)
-			.eq('user_id', user.id)
-			.maybeSingle();
-		if (isMember.error || !isMember.data) {
+		// Incomes set how shared expenses are split, so only an admin edits
+		// them, not any member for everyone else.
+		const isAdmin = await isHouseholdAdmin(supabase, groupId, user.id);
+		if (!isAdmin) {
 			return fail(403, {
 				success: false,
-				message: 'Sem permissão para editar este grupo'
+				message: 'Apenas administradores podem editar as rendas'
 			});
 		}
 
@@ -890,56 +888,27 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const groupId = formData.get('group_id') as string;
-		const email = (formData.get('email') as string)?.trim().toLowerCase();
+		const groupId = String(formData.get('group_id') ?? '').trim();
+		const email = normalizeInviteEmail(String(formData.get('email') ?? ''));
 
 		if (!groupId || !email) {
 			return fail(400, { success: false, message: 'Dados incompletos' });
+		}
+		if (!isInviteEmail(email)) {
+			return fail(400, { success: false, message: 'E-mail inválido' });
 		}
 
 		const isAdmin = await isHouseholdAdmin(supabase, groupId, user.id);
 		if (!isAdmin) {
 			return fail(403, {
 				success: false,
-				message: 'Apenas administradores podem adicionar membros'
-			});
-		}
-
-		let targetUser;
-		try {
-			targetUser = await findAuthUserByEmail(supabaseAdmin, email);
-		} catch (e) {
-			return fail(500, {
-				success: false,
-				message: logInternalError('app/groups', e)
-			});
-		}
-
-		if (!targetUser) {
-			return fail(404, {
-				success: false,
-				message: `Usuário com email "${email}" não encontrado. A pessoa precisa criar uma conta primeiro.`
-			});
-		}
-
-		const existing = await supabase
-			.from('household_members')
-			.select('user_id')
-			.eq('household_id', groupId)
-			.eq('user_id', targetUser.id)
-			.maybeSingle();
-
-		if (existing.data) {
-			return fail(400, {
-				success: false,
-				message: 'Este usuário já é membro do grupo'
+				message: 'Apenas administradores podem convidar membros'
 			});
 		}
 
 		// The person joins only by accepting; see household-invitations.ts.
 		const created = await createInvitation({
 			householdId: groupId,
-			userId: targetUser.id,
 			email,
 			invitedByUserId: user.id
 		});
@@ -958,7 +927,8 @@ export const actions: Actions = {
 
 		return {
 			success: true,
-			message: `Convite enviado para ${email}. A pessoa entra no grupo quando aceitar em Grupos.`
+			// Same answer whether or not the e-mail has an account here.
+			message: `Convite registrado para ${email}. A pessoa entra no grupo ao aceitá-lo em Grupos, já com conta ou depois de se cadastrar com esse e-mail.`
 		};
 	},
 
@@ -971,7 +941,7 @@ export const actions: Actions = {
 		if (!invitationId)
 			return fail(400, { success: false, message: 'Convite inválido' });
 
-		const result = await acceptInvitation(invitationId, user.id);
+		const result = await acceptInvitation(invitationId, user);
 		if (result === 'not_found')
 			return fail(404, { success: false, message: 'Convite não encontrado' });
 		if (result === 'error')
@@ -993,7 +963,7 @@ export const actions: Actions = {
 
 		const deleted = await deleteInvitation({
 			id: invitationId,
-			userId: user.id
+			email: user.email ?? ''
 		});
 		if (!deleted)
 			return fail(500, {

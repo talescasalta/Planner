@@ -58,14 +58,19 @@ describe('household invitations', () => {
 		const lookup = new QueryMock({ data: null, error: null });
 		queue(lookup);
 
-		expect(await acceptInvitation('invite-1', 'user-b')).toBe('not_found');
+		expect(
+			await acceptInvitation('invite-1', {
+				id: 'user-b',
+				email: 'B@Example.com'
+			})
+		).toBe('not_found');
 		expect(lookup.calls).toContainEqual({
 			method: 'eq',
 			args: ['id', 'invite-1']
 		});
 		expect(lookup.calls).toContainEqual({
 			method: 'eq',
-			args: ['user_id', 'user-b']
+			args: ['email', 'b@example.com']
 		});
 		expect(mockedFrom).toHaveBeenCalledTimes(1);
 	});
@@ -79,14 +84,19 @@ describe('household invitations', () => {
 		const cleanup = new QueryMock({ error: null });
 		queue(lookup, member, cleanup);
 
-		expect(await acceptInvitation('invite-1', 'user-b')).toBe('accepted');
+		expect(
+			await acceptInvitation('invite-1', {
+				id: 'user-b',
+				email: 'b@example.com'
+			})
+		).toBe('accepted');
 		expect(member.calls).toContainEqual({
 			method: 'insert',
 			args: [{ household_id: 'group-a', user_id: 'user-b', role: 'member' }]
 		});
 		expect(cleanup.calls).toContainEqual({
 			method: 'eq',
-			args: ['user_id', 'user-b']
+			args: ['email', 'b@example.com']
 		});
 	});
 
@@ -102,13 +112,30 @@ describe('household invitations', () => {
 			new QueryMock({ error: { message: 'duplicate', code: '23505' } }),
 			new QueryMock({ error: null })
 		);
-		expect(await acceptInvitation('invite-1', 'user-b')).toBe('accepted');
+		expect(
+			await acceptInvitation('invite-1', {
+				id: 'user-b',
+				email: 'b@example.com'
+			})
+		).toBe('accepted');
 
 		queue(
 			found(),
 			new QueryMock({ error: { message: 'boom', code: 'XX000' } })
 		);
-		expect(await acceptInvitation('invite-1', 'user-b')).toBe('error');
+		expect(
+			await acceptInvitation('invite-1', {
+				id: 'user-b',
+				email: 'b@example.com'
+			})
+		).toBe('error');
+	});
+
+	it('finds nothing for an account without an e-mail', async () => {
+		expect(
+			await acceptInvitation('invite-1', { id: 'user-b', email: null })
+		).toBe('not_found');
+		expect(mockedFrom).not.toHaveBeenCalled();
 	});
 
 	it('maps a repeated invitation to duplicate', async () => {
@@ -117,7 +144,6 @@ describe('household invitations', () => {
 		expect(
 			await createInvitation({
 				householdId: 'group-a',
-				userId: 'user-b',
 				email: 'b@example.com',
 				invitedByUserId: 'user-a'
 			})

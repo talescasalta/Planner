@@ -320,18 +320,25 @@
 									min="0"
 									step="0.01"
 									value={member.monthly_income ?? 0}
-									class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm"
+									disabled={group.role !== 'admin'}
+									class="mt-1 w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm disabled:bg-gray-100 disabled:text-gray-600"
 								/>
 							</label>
 						{/each}
 					</div>
-					<div class="flex justify-end">
-						<button
-							type="submit"
-							class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700"
-							>Salvar rendas</button
-						>
-					</div>
+					{#if group.role === 'admin'}
+						<div class="flex justify-end">
+							<button
+								type="submit"
+								class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700"
+								>Salvar rendas</button
+							>
+						</div>
+					{:else}
+						<p class="text-xs text-gray-500">
+							Só administradores do grupo editam as rendas.
+						</p>
+					{/if}
 				</form>
 			</div>
 

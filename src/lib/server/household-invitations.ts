@@ -6,10 +6,26 @@ import { supabaseAdmin } from '$lib/server/supabase';
 // before it created one, and that group would then receive everything the
 // person imports (see getUserHouseholdId).
 //
+// An invitation is addressed to an e-mail, never resolved to an account when
+// it is sent: the answer to "Convidar membro" is the same whether or not that
+// e-mail has an account, so it cannot be used to find out who is registered.
+// The invitee is whoever signs in with that e-mail (lowercased on both sides).
+//
 // household_invitations has RLS with no policy, so every read and write goes
 // through the service role. Callers check the session (and, for creating or
 // cancelling, the admin role) before calling in; each statement here is still
-// scoped by the invitee or the household it was authorized for.
+// scoped by the invitee's e-mail or the household it was authorized for.
+
+export function normalizeInviteEmail(email: string | null | undefined) {
+	return (email ?? '').trim().toLowerCase();
+}
+
+// Enough to refuse typos and pasted junk; delivery is never attempted.
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function isInviteEmail(email: string): boolean {
+	return email.length <= 254 && EMAIL.test(email);
+}
 
 export type ReceivedInvitation = {
 	id: string;
@@ -29,12 +45,14 @@ function householdName(joined: HouseholdJoin): string {
 }
 
 export async function loadReceivedInvitations(
-	userId: string
+	userEmail: string | null | undefined
 ): Promise<ReceivedInvitation[]> {
+	const email = normalizeInviteEmail(userEmail);
+	if (!email) return [];
 	const { data, error } = await supabaseAdmin
 		.from('household_invitations')
 		.select('id, invited_by_user_id, created_at, households ( name )')
-		.eq('user_id', userId)
+		.eq('email', email)
 		.order('created_at', { ascending: true });
 	if (error) {
 		console.error('[household-invitations] received', error);
@@ -93,14 +111,12 @@ export async function loadSentInvitations(
 
 export async function createInvitation(invitation: {
 	householdId: string;
-	userId: string;
 	email: string;
 	invitedByUserId: string;
 }): Promise<'created' | 'duplicate' | 'error'> {
 	const { error } = await supabaseAdmin.from('household_invitations').insert({
 		household_id: invitation.householdId,
-		user_id: invitation.userId,
-		email: invitation.email,
+		email: normalizeInviteEmail(invitation.email),
 		invited_by_user_id: invitation.invitedByUserId
 	});
 	if (!error) return 'created';
@@ -110,16 +126,19 @@ export async function createInvitation(invitation: {
 }
 
 // Turns the invitee's own invitation into a membership. The lookup is scoped
-// by the invitee, so an invitation id addressed to someone else is not found.
+// by the invitee's e-mail, so an invitation id addressed to someone else is
+// not found.
 export async function acceptInvitation(
 	invitationId: string,
-	userId: string
+	user: { id: string; email?: string | null }
 ): Promise<'accepted' | 'not_found' | 'error'> {
+	const email = normalizeInviteEmail(user.email);
+	if (!email) return 'not_found';
 	const { data: invitation, error } = await supabaseAdmin
 		.from('household_invitations')
 		.select('id, household_id')
 		.eq('id', invitationId)
-		.eq('user_id', userId)
+		.eq('email', email)
 		.maybeSingle();
 	if (error) {
 		console.error('[household-invitations] accept lookup', error);
@@ -131,7 +150,7 @@ export async function acceptInvitation(
 		.from('household_members')
 		.insert({
 			household_id: invitation.household_id,
-			user_id: userId,
+			user_id: user.id,
 			role: 'member'
 		});
 	// Already a member (accepted twice, or added before invitations existed):
@@ -141,22 +160,22 @@ export async function acceptInvitation(
 		return 'error';
 	}
 
-	await deleteInvitation({ id: invitation.id, userId });
+	await deleteInvitation({ id: invitation.id, email });
 	return 'accepted';
 }
 
 // Declining is scoped by the invitee; cancelling by the household its admin
 // was checked against.
 export async function deleteInvitation(
-	scope: { id: string } & ({ userId: string } | { householdId: string })
+	scope: { id: string } & ({ email: string } | { householdId: string })
 ): Promise<boolean> {
 	let query = supabaseAdmin
 		.from('household_invitations')
 		.delete()
 		.eq('id', scope.id);
 	query =
-		'userId' in scope
-			? query.eq('user_id', scope.userId)
+		'email' in scope
+			? query.eq('email', normalizeInviteEmail(scope.email))
 			: query.eq('household_id', scope.householdId);
 	const { error } = await query;
 	if (error) console.error('[household-invitations] delete', error);

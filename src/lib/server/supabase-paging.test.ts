@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+	PARALLEL_PAGES,
 	SUPABASE_PAGE_SIZE,
 	selectAll,
 	selectAllStrict
@@ -26,7 +27,27 @@ describe('selectAll', () => {
 
 		expect(rows).toHaveLength(SUPABASE_PAGE_SIZE * 2 + 144);
 		expect(rows).toEqual(table.all);
-		expect(table.calls).toHaveLength(3);
+		// First page alone, then one parallel batch that reaches the end.
+		expect(table.calls).toHaveLength(1 + PARALLEL_PAGES);
+	});
+
+	it('requests the pages after a full first one in parallel', async () => {
+		const total = SUPABASE_PAGE_SIZE * 6 + 7;
+		const all = Array.from({ length: total }, (_, index) => ({ id: index }));
+		let inFlight = 0;
+		let peak = 0;
+		const page = async (from: number, to: number) => {
+			inFlight += 1;
+			peak = Math.max(peak, inFlight);
+			await new Promise((resolve) => setTimeout(resolve, 1));
+			inFlight -= 1;
+			return { data: all.slice(from, to + 1), error: null };
+		};
+
+		const rows = await selectAllStrict('quotes', page);
+
+		expect(rows).toEqual(all);
+		expect(peak).toBe(PARALLEL_PAGES);
 	});
 
 	it('stops after one call when the first page is short', async () => {
@@ -46,7 +67,10 @@ describe('selectAll', () => {
 		const rows = await selectAll('quotes', table.page);
 
 		expect(rows).toHaveLength(SUPABASE_PAGE_SIZE);
-		expect(table.calls).toHaveLength(2);
+		expect(table.calls[1]).toEqual([
+			SUPABASE_PAGE_SIZE,
+			SUPABASE_PAGE_SIZE * 2 - 1
+		]);
 	});
 
 	it('reports a failed page instead of returning a short read quietly', async () => {
