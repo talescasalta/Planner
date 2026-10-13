@@ -95,8 +95,8 @@ INSERT INTO public.fx_daily_rates (currency, rate_date, rate) VALUES
 
 -- Convite pendente de B para o household A. Tabela interna deny-all: nem o
 -- admin que convidou nem a pessoa convidada leem pela API; só o servidor.
-INSERT INTO public.household_invitations (id, household_id, user_id, email, invited_by_user_id) VALUES
-	('aaaaaaaa-0000-0000-0000-00000000000f', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222222', 'user-b@rls.test', '11111111-1111-1111-1111-111111111111');
+INSERT INTO public.household_invitations (id, household_id, email, invited_by_user_id) VALUES
+	('aaaaaaaa-0000-0000-0000-00000000000f', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'user-b@rls.test', '11111111-1111-1111-1111-111111111111');
 
 -- Tabela interna deny-all: linhas existem, mas nenhuma role da API pode vê-las.
 INSERT INTO public.classification_rate_limits (user_id) VALUES
@@ -233,8 +233,8 @@ SELECT throws_ok(
 );
 
 SELECT throws_ok(
-	$$INSERT INTO public.household_invitations (household_id, user_id, email)
-	  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222222', 'user-b@rls.test')$$,
+	$$INSERT INTO public.household_invitations (household_id, email)
+	  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'user-b@rls.test')$$,
 	'42501',
 	NULL,
 	'A não cria convite pela API (só o servidor)'

@@ -714,6 +714,32 @@ export const load: PageServerLoad = async ({
 	const { page, from } = paginationFromUrl(url);
 	const requestedMonth = url.searchParams.get('month') ?? '';
 	const filters = readFilters(url);
+	// Independent of which month is shown, so it runs while the transactions
+	// are being read instead of after them.
+	const lookups = Promise.all([
+		supabaseAdmin
+			.from('categories')
+			.select(
+				'id, name, parent_id, created_by_user_id, is_default, financial_treatment, created_at, household_id'
+			)
+			.eq('household_id', householdId)
+			.order('name'),
+		supabaseAdmin
+			.from('financial_profiles')
+			.select('id, household_id, user_id, name, type, created_at')
+			.eq('household_id', householdId)
+			.order('type', { ascending: false })
+			.order('name'),
+		supabaseAdmin
+			.from('households')
+			.select('id, name')
+			.eq('id', householdId)
+			.single(),
+		loadUserCategoryExclusions(supabaseAdmin, householdId, user.id)
+	]);
+	// Awaited below; this only keeps an early failure from being unhandled.
+	lookups.catch(() => {});
+
 	const monthRows = await selectAllStrict<{
 		id: string;
 		reference_month: string | null;
@@ -771,27 +797,7 @@ export const load: PageServerLoad = async ({
 		{ data: profiles },
 		{ data: household },
 		excludedCategoryIds
-	] = await Promise.all([
-		supabaseAdmin
-			.from('categories')
-			.select(
-				'id, name, parent_id, created_by_user_id, is_default, financial_treatment, created_at, household_id'
-			)
-			.eq('household_id', householdId)
-			.order('name'),
-		supabaseAdmin
-			.from('financial_profiles')
-			.select('id, household_id, user_id, name, type, created_at')
-			.eq('household_id', householdId)
-			.order('type', { ascending: false })
-			.order('name'),
-		supabaseAdmin
-			.from('households')
-			.select('id, name')
-			.eq('id', householdId)
-			.single(),
-		loadUserCategoryExclusions(supabaseAdmin, householdId, user.id)
-	]);
+	] = await lookups;
 
 	const categoryRows = (categories ?? []) as unknown as Array<{
 		id: string;

@@ -708,14 +708,10 @@ async function loadDashboardRows(
 	userId: string,
 	householdId: string
 ) {
-	const rows = await fetchVisibleRows(supabase, userId, householdId);
-	const categoriesData = await loadCategoriesForUser(
-		supabaseAdmin,
-		householdId,
-		userId,
-		[],
-		true
-	);
+	const [rows, categoriesData] = await Promise.all([
+		fetchVisibleRows(supabase, userId, householdId),
+		loadCategoriesForUser(supabaseAdmin, householdId, userId, [], true)
+	]);
 	const categoryMap = buildCategoryMap(categoriesData);
 	const transactions: TransactionRow[] = rows.map((row) => ({
 		...row,
@@ -891,13 +887,14 @@ export const load: PageServerLoad = async ({
 		filteredVisibleAllMonths,
 		filters
 	} = selectDashboardRows(transactions, url);
-	const payerNameById = await loadPayerNames(filtered);
-
-	const { data: profilesData } = await supabaseAdmin
-		.from('financial_profiles')
-		.select('id, name')
-		.eq('household_id', householdId)
-		.order('name');
+	const [payerNameById, { data: profilesData }] = await Promise.all([
+		loadPayerNames(filtered),
+		supabaseAdmin
+			.from('financial_profiles')
+			.select('id, name')
+			.eq('household_id', householdId)
+			.order('name')
+	]);
 
 	const hierarchy = buildHierarchy(filtered, categoryMap);
 	const categoryMonthTotals = buildCategoryMonthTotals(

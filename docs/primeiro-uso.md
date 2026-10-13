@@ -6,7 +6,9 @@ Este guia parte de uma instância já no ar, seja na sua máquina ([setup-local.
 
 1. Na tela de login, crie a sua conta.
 2. Em **Grupos**, clique em **Criar grupo**. O grupo, chamado de _household_ no código, é a casa: transações, categorias e regras pertencem a ele. Quem cria o grupo é o administrador.
-3. As outras pessoas da casa criam as próprias contas, **sem criar um grupo**. Em seguida, você as convida em **Grupos → Convidar membro**, com o e-mail de cada uma. Cada pessoa entra no grupo quando aceita o convite, que aparece no topo da tela **Grupos** dela.
+3. Convide as outras pessoas da casa em **Grupos → Convidar membro**, com o e-mail de cada uma. O convite pode ser feito antes ou depois de a pessoa ter conta. Cada uma cria a própria conta com esse mesmo e-mail, **sem criar um grupo**, e aceita o convite que aparece no topo da tela **Grupos**.
+
+   Só o administrador do grupo edita as rendas mensais e os nomes usados para sugerir transferências entre contas.
 
    Se alguém criou um grupo por engano antes de aceitar o convite, o app continua mostrando o grupo mais antigo dessa pessoa. Nesse caso, remova a pessoa do grupo errado no Studio do Supabase (tabela `household_members`).
 

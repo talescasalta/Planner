@@ -17,6 +17,8 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
 	weak_password:
 		'Senha fraca ou já exposta em vazamentos. Escolha outra senha.',
 	same_password: 'A nova senha precisa ser diferente da atual.',
+	reauthentication_needed:
+		'Por segurança, entre de novo ou use o link de recuperação antes de trocar a senha.',
 	signup_disabled: 'O cadastro está desativado nesta instância.',
 	over_email_send_rate_limit:
 		'Muitas tentativas. Aguarde alguns minutos e tente de novo.',

@@ -28,7 +28,22 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	);
 
-	event.locals.safeGetSession = async () => {
+	// The layout and the page both ask for the session on every navigation;
+	// each call costs a round trip to Supabase Auth plus a profile query, so
+	// the first result is shared for the rest of the request. A sign-in,
+	// sign-out or password change during the request (form actions) drops it.
+	let sessionPromise: ReturnType<App.Locals['safeGetSession']> | null = null;
+	event.locals.supabase.auth.onAuthStateChange((authEvent) => {
+		if (
+			authEvent === 'SIGNED_IN' ||
+			authEvent === 'SIGNED_OUT' ||
+			authEvent === 'USER_UPDATED'
+		) {
+			sessionPromise = null;
+		}
+	});
+
+	const loadSession = async () => {
 		// getUser authenticates the JWT against the Supabase Auth server, which
 		// is the only safe source of identity on the server. We avoid getSession
 		// here because it returns unverified cookie data and triggers a noisy
@@ -54,6 +69,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		} as unknown as import('@supabase/supabase-js').Session;
 		return { session, user, profile };
 	};
+	event.locals.safeGetSession = () => (sessionPromise ??= loadSession());
 
 	const response = await resolve(event, {
 		filterSerializedResponseHeaders(name) {

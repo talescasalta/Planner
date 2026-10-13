@@ -31,10 +31,35 @@ export async function attachPayerProfiles<
 	}));
 }
 
-export async function getUserHouseholdId(
-	_supabase: SupabaseClient<Database>,
+// One lookup per request: the layout, the page and helpers they call all ask
+// for it. Keyed by the request's own Supabase client so nothing outlives the
+// request; only a found household is reused, so a group created or joined in
+// a form action is seen by the loads that follow it.
+const householdLookups = new WeakMap<
+	object,
+	Map<string, Promise<string | null>>
+>();
+
+export function getUserHouseholdId(
+	supabase: SupabaseClient<Database>,
 	userId: string
 ): Promise<string | null> {
+	if (typeof supabase !== 'object' || supabase === null) {
+		return lookupUserHouseholdId(userId);
+	}
+	const perRequest = householdLookups.get(supabase) ?? new Map();
+	householdLookups.set(supabase, perRequest);
+	const cached = perRequest.get(userId);
+	if (cached) return cached;
+	const pending = lookupUserHouseholdId(userId).then((householdId) => {
+		if (!householdId) perRequest.delete(userId);
+		return householdId;
+	});
+	perRequest.set(userId, pending);
+	return pending;
+}
+
+async function lookupUserHouseholdId(userId: string): Promise<string | null> {
 	// Use admin client: we already validated the user via safeGetSession upstream;
 	// this is just a lookup of "which household does this user_id belong to" and
 	// must not depend on per-request RLS context.

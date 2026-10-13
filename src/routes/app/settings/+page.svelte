@@ -56,6 +56,7 @@
 				name="own_names"
 				rows="4"
 				placeholder={NAMES_PLACEHOLDER}
+				disabled={!data.isAdmin}
 				class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
 				>{ownNames}</textarea
 			>
@@ -73,13 +74,19 @@
 				{form.message}
 			</p>
 		{/if}
-		<button
-			type="submit"
-			disabled={saving}
-			class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-indigo-300"
-		>
-			{saving ? 'Salvando...' : 'Salvar nomes'}
-		</button>
+		{#if data.isAdmin}
+			<button
+				type="submit"
+				disabled={saving}
+				class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-indigo-300"
+			>
+				{saving ? 'Salvando...' : 'Salvar nomes'}
+			</button>
+		{:else}
+			<p class="text-xs text-gray-500">
+				Só administradores do grupo alteram estes nomes.
+			</p>
+		{/if}
 	</form>
 
 	<div class="bg-surface p-6 rounded-lg shadow space-y-4">
