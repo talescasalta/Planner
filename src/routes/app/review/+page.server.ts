@@ -1,6 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import { getUserHouseholdId, attachPayerProfiles } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
+import { logInternalError } from '$lib/server/errors';
 import {
 	READABLE_ACCESS_EMBED,
 	canEditTransaction,
@@ -156,7 +157,10 @@ export const actions: Actions = {
 		);
 
 		if (updateError) {
-			return fail(500, { success: false, message: updateError.message });
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/review', updateError)
+			});
 		}
 
 		await learnFromTransactionAdjustment(supabaseAdmin, {

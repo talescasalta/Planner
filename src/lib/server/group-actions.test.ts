@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { INTERNAL_ERROR_MESSAGE } from '$lib/server/errors';
 import { actions } from '../../routes/app/groups/+page.server';
 import { supabaseAdmin } from '$lib/server/supabase';
 import {
@@ -7,6 +8,11 @@ import {
 } from '$lib/server/household';
 import { canEditTransaction, isHouseholdAdmin } from '$lib/server/access';
 import { findAuthUserByEmail } from '$lib/server/auth-admin';
+import {
+	acceptInvitation,
+	createInvitation,
+	deleteInvitation
+} from '$lib/server/household-invitations';
 
 vi.mock('@sveltejs/kit', () => ({
 	fail: (status: number, data: Record<string, unknown>) => ({
@@ -26,6 +32,13 @@ vi.mock('$lib/server/access', () => ({
 	isHouseholdAdmin: vi.fn()
 }));
 vi.mock('$lib/server/auth-admin', () => ({ findAuthUserByEmail: vi.fn() }));
+vi.mock('$lib/server/household-invitations', () => ({
+	acceptInvitation: vi.fn(),
+	createInvitation: vi.fn(),
+	deleteInvitation: vi.fn(),
+	loadReceivedInvitations: vi.fn(),
+	loadSentInvitations: vi.fn()
+}));
 
 type QueryResult = { data?: unknown; error?: { message: string } | null };
 class QueryMock {
@@ -104,6 +117,11 @@ beforeEach(() => {
 	vi.mocked(seedDefaultCategories).mockResolvedValue(undefined);
 	vi.mocked(seedDefaultFinancialProfiles).mockResolvedValue(undefined);
 	vi.mocked(findAuthUserByEmail).mockResolvedValue(null);
+	vi.mocked(acceptInvitation).mockReset();
+	vi.mocked(createInvitation).mockReset();
+	vi.mocked(deleteInvitation).mockReset();
+	vi.mocked(createInvitation).mockResolvedValue('created');
+	vi.mocked(deleteInvitation).mockResolvedValue(true);
 });
 
 describe('group actions', () => {
@@ -184,7 +202,7 @@ describe('group actions', () => {
 
 		expect(result).toMatchObject({
 			status: 500,
-			message: 'income update failed'
+			message: INTERNAL_ERROR_MESSAGE
 		});
 		for (const query of [updateA, updateB]) {
 			expect(query.calls).toContainEqual({
@@ -232,7 +250,7 @@ describe('group actions', () => {
 
 		expect(result).toMatchObject({
 			status: 500,
-			message: 'split update failed'
+			message: INTERNAL_ERROR_MESSAGE
 		});
 		expect(update.calls).toContainEqual({ method: 'eq', args: ['id', 'tx-a'] });
 		expect(update.calls).toContainEqual({
@@ -254,7 +272,7 @@ describe('group actions', () => {
 
 		expect(result).toMatchObject({
 			status: 500,
-			message: 'member insert failed'
+			message: INTERNAL_ERROR_MESSAGE
 		});
 		expect(cleanup.calls).toContainEqual({ method: 'delete', args: [] });
 		expect(cleanup.calls).toContainEqual({
@@ -281,13 +299,9 @@ describe('group actions', () => {
 		expect(mockedFrom).not.toHaveBeenCalled();
 	});
 
-	it('surfaces member insert failures after admin and duplicate checks', async () => {
+	it('invites instead of adding the member directly', async () => {
 		vi.mocked(findAuthUserByEmail).mockResolvedValue({ id: 'user-b' } as never);
 		const existing = new QueryMock({ data: null, error: null });
-		const insertion = new QueryMock({
-			error: { message: 'member add failed' }
-		});
-		mockedFrom.mockReturnValue(insertion as never);
 
 		const result = await actions.add_member(
 			event(
@@ -299,10 +313,77 @@ describe('group actions', () => {
 			)
 		);
 
-		expect(result).toMatchObject({ status: 500, message: 'member add failed' });
-		expect(insertion.calls).toContainEqual({
-			method: 'insert',
-			args: [{ household_id: 'group-a', user_id: 'user-b', role: 'member' }]
+		expect(result).toMatchObject({ success: true });
+		expect(createInvitation).toHaveBeenCalledWith({
+			householdId: 'group-a',
+			userId: 'user-b',
+			email: 'member@example.com',
+			invitedByUserId: 'user-a'
+		});
+		// No membership is written: the invitee joins only by accepting.
+		expect(mockedFrom).not.toHaveBeenCalled();
+	});
+
+	it('reports a pending invitation and a failed one without the raw error', async () => {
+		vi.mocked(findAuthUserByEmail).mockResolvedValue({ id: 'user-b' } as never);
+		const existing = new QueryMock({ data: null, error: null });
+		const invite = () =>
+			actions.add_member(
+				event(
+					requestWith({ group_id: 'group-a', email: 'member@example.com' }),
+					{ from: () => existing }
+				)
+			);
+
+		vi.mocked(createInvitation).mockResolvedValue('duplicate');
+		expect(await invite()).toMatchObject({ status: 400 });
+
+		vi.mocked(createInvitation).mockResolvedValue('error');
+		expect(await invite()).toMatchObject({
+			status: 500,
+			message: 'Não foi possível enviar o convite. Tente novamente.'
+		});
+	});
+
+	it('accepts only the invitee’s own invitation', async () => {
+		vi.mocked(acceptInvitation).mockResolvedValue('not_found');
+
+		const result = await actions.accept_invitation(
+			event(requestWith({ invitation_id: 'invite-1' }))
+		);
+
+		expect(acceptInvitation).toHaveBeenCalledWith('invite-1', 'user-a');
+		expect(result).toMatchObject({ status: 404 });
+	});
+
+	it('scopes a declined invitation to the invitee', async () => {
+		const result = await actions.decline_invitation(
+			event(requestWith({ invitation_id: 'invite-1' }))
+		);
+
+		expect(result).toMatchObject({ success: true });
+		expect(deleteInvitation).toHaveBeenCalledWith({
+			id: 'invite-1',
+			userId: 'user-a'
+		});
+	});
+
+	it('lets only admins cancel an invitation, scoped to their group', async () => {
+		vi.mocked(isHouseholdAdmin).mockResolvedValue(false);
+		const denied = await actions.cancel_invitation(
+			event(requestWith({ group_id: 'group-a', invitation_id: 'invite-1' }))
+		);
+		expect(denied).toMatchObject({ status: 403 });
+		expect(deleteInvitation).not.toHaveBeenCalled();
+
+		vi.mocked(isHouseholdAdmin).mockResolvedValue(true);
+		const allowed = await actions.cancel_invitation(
+			event(requestWith({ group_id: 'group-a', invitation_id: 'invite-1' }))
+		);
+		expect(allowed).toMatchObject({ success: true });
+		expect(deleteInvitation).toHaveBeenCalledWith({
+			id: 'invite-1',
+			householdId: 'group-a'
 		});
 	});
 
@@ -323,7 +404,7 @@ describe('group actions', () => {
 
 		expect(result).toMatchObject({
 			status: 500,
-			message: 'member remove failed'
+			message: INTERNAL_ERROR_MESSAGE
 		});
 		expect(deletion.calls).toContainEqual({
 			method: 'eq',

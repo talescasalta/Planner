@@ -93,6 +93,11 @@ INSERT INTO public.cdi_daily_rates (rate_date, rate) VALUES
 INSERT INTO public.fx_daily_rates (currency, rate_date, rate) VALUES
 	('USD', '2026-08-03', 5.4321);
 
+-- Convite pendente de B para o household A. Tabela interna deny-all: nem o
+-- admin que convidou nem a pessoa convidada leem pela API; só o servidor.
+INSERT INTO public.household_invitations (id, household_id, user_id, email, invited_by_user_id) VALUES
+	('aaaaaaaa-0000-0000-0000-00000000000f', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222222', 'user-b@rls.test', '11111111-1111-1111-1111-111111111111');
+
 -- Tabela interna deny-all: linhas existem, mas nenhuma role da API pode vê-las.
 INSERT INTO public.classification_rate_limits (user_id) VALUES
 	('11111111-1111-1111-1111-111111111111'),
@@ -106,7 +111,7 @@ INSERT INTO public.classification_rate_limits (user_id) VALUES
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
 
-SELECT plan(63);
+SELECT plan(68);
 
 -- ============================================================
 -- 1. anon não lê nada (todas as 18 tabelas públicas)
@@ -134,6 +139,7 @@ SELECT is_empty('SELECT id FROM public.investment_quotes', 'anon não lê invest
 SELECT is_empty('SELECT id FROM public.investment_darf_status', 'anon não lê investment_darf_status');
 SELECT is_empty('SELECT rate_date FROM public.cdi_daily_rates', 'anon não lê cdi_daily_rates');
 SELECT is_empty('SELECT rate_date FROM public.fx_daily_rates', 'anon não lê fx_daily_rates');
+SELECT is_empty('SELECT id FROM public.household_invitations', 'anon não lê household_invitations');
 
 SELECT throws_ok(
 	$$INSERT INTO public.transactions (household_id, date, description, amount, created_by_user_id)
@@ -165,6 +171,7 @@ SELECT results_eq('SELECT id FROM public.classification_jobs', ARRAY['aaaaaaaa-0
 SELECT results_eq('SELECT id FROM public.audit_events', ARRAY['aaaaaaaa-0000-0000-0000-000000000008'::uuid], 'A vê só audit_events do household A');
 SELECT results_eq('SELECT id FROM public.user_category_exclusions', ARRAY['aaaaaaaa-0000-0000-0000-000000000009'::uuid], 'A vê só as próprias exclusões');
 SELECT is_empty('SELECT id FROM public.classification_rate_limits', 'classification_rate_limits nega até membros (deny-all)');
+SELECT is_empty('SELECT id FROM public.household_invitations', 'household_invitations nega até quem convidou (deny-all)');
 SELECT results_eq('SELECT id FROM public.investment_assets', ARRAY['aaaaaaaa-0000-0000-0000-00000000000a'::uuid], 'A vê só ativos do household A');
 SELECT results_eq('SELECT id FROM public.investment_snapshots', ARRAY['aaaaaaaa-0000-0000-0000-00000000000b'::uuid], 'A vê só snapshots do household A');
 SELECT results_eq('SELECT id FROM public.investment_events', ARRAY['aaaaaaaa-0000-0000-0000-00000000000c'::uuid], 'A vê só eventos do household A');
@@ -216,6 +223,23 @@ SELECT is_empty(
 	'A não enxerga o household B nem por id'
 );
 
+-- A pode editar a própria transação, mas não movê-la para o household B.
+SELECT throws_ok(
+	$$UPDATE public.transactions SET household_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+	  WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001'$$,
+	'42501',
+	NULL,
+	'A não move a própria transação para o household B'
+);
+
+SELECT throws_ok(
+	$$INSERT INTO public.household_invitations (household_id, user_id, email)
+	  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222222', 'user-b@rls.test')$$,
+	'42501',
+	NULL,
+	'A não cria convite pela API (só o servidor)'
+);
+
 RESET ROLE;
 
 -- Verificação (como superusuário) de que as escritas cruzadas não tiveram efeito
@@ -232,6 +256,11 @@ SELECT is(
 	(SELECT name FROM public.households WHERE id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'),
 	'Household B',
 	'update cruzado de A não renomeou o household B'
+);
+SELECT is(
+	(SELECT household_id FROM public.transactions WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+	'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid,
+	'a transação de A continua no household A'
 );
 
 -- ============================================================

@@ -2,6 +2,7 @@ import { redirect } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import type { Actions, PageServerLoad } from './$types';
 import { publicUrl } from '$lib/server/public-url';
+import { authErrorMessage } from '$lib/server/errors';
 
 // A public instance can close sign-up once the household has its accounts.
 // Supabase Auth's own "Allow new users to sign up" switch is what also stops
@@ -31,7 +32,14 @@ export const actions: Actions = {
 			});
 
 			if (error) {
-				return { success: false, message: error.message };
+				return {
+					success: false,
+					message: authErrorMessage(
+						'login/google',
+						error,
+						'Não foi possível iniciar o login com Google.'
+					)
+				};
 			}
 
 			if (data.url) {
@@ -68,7 +76,14 @@ export const actions: Actions = {
 			});
 
 			if (error) {
-				return { success: false, message: error.message };
+				return {
+					success: false,
+					message: authErrorMessage(
+						'login/signup',
+						error,
+						'Não foi possível concluir o cadastro. Se você já tem conta, entre ou redefina a senha.'
+					)
+				};
 			}
 
 			return {
@@ -83,7 +98,14 @@ export const actions: Actions = {
 		});
 
 		if (error) {
-			return { success: false, message: error.message };
+			return {
+				success: false,
+				message: authErrorMessage(
+					'login/password',
+					error,
+					'Não foi possível entrar. Tente novamente.'
+				)
+			};
 		}
 
 		redirect(303, '/app');

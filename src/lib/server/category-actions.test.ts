@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { INTERNAL_ERROR_MESSAGE } from '$lib/server/errors';
 import { actions } from '../../routes/app/categories/+page.server';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { getUserHouseholdId } from '$lib/server/household';
@@ -99,7 +100,10 @@ describe('category actions', () => {
 			event(requestWith({ name: '  Viagens  ' }))
 		);
 
-		expect(result).toMatchObject({ status: 500, message: 'insert failed' });
+		expect(result).toMatchObject({
+			status: 500,
+			message: INTERNAL_ERROR_MESSAGE
+		});
 		expect(insertion.calls).toContainEqual({
 			method: 'insert',
 			args: [
@@ -177,7 +181,10 @@ describe('category actions', () => {
 			event(requestWith({ category_id: 'category-a' }))
 		);
 
-		expect(result).toMatchObject({ status: 500, message: 'restore failed' });
+		expect(result).toMatchObject({
+			status: 500,
+			message: INTERNAL_ERROR_MESSAGE
+		});
 		expect(deletion.calls).toContainEqual({
 			method: 'eq',
 			args: ['household_id', 'household-a']

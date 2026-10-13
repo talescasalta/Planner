@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { INTERNAL_ERROR_MESSAGE } from '$lib/server/errors';
 import { actions as ruleActions } from '../../routes/app/rules/+page.server';
 import { actions as reviewActions } from '../../routes/app/review/+page.server';
 import { getUserHouseholdId } from '$lib/server/household';
@@ -136,7 +137,7 @@ describe('rule actions', () => {
 
 		expect(result).toMatchObject({
 			status: 500,
-			message: 'rule insert failed'
+			message: INTERNAL_ERROR_MESSAGE
 		});
 		expect(insertion.calls[0]).toEqual({
 			method: 'insert',
@@ -160,7 +161,10 @@ describe('rule actions', () => {
 			event(requestWith({ rule_id: 'rule-a', active: 'false' }))
 		);
 
-		expect(result).toMatchObject({ status: 500, message: 'toggle failed' });
+		expect(result).toMatchObject({
+			status: 500,
+			message: INTERNAL_ERROR_MESSAGE
+		});
 		expect(updateRuleActiveForHousehold).toHaveBeenCalledWith(
 			expect.anything(),
 			'household-a',
@@ -209,7 +213,10 @@ describe('review action', () => {
 
 		const result = await reviewActions.default(event(requestWith(fields)));
 
-		expect(result).toMatchObject({ status: 500, message: 'update failed' });
+		expect(result).toMatchObject({
+			status: 500,
+			message: INTERNAL_ERROR_MESSAGE
+		});
 		expect(learnFromTransactionAdjustment).not.toHaveBeenCalled();
 	});
 

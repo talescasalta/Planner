@@ -8,6 +8,7 @@ import { validateTransactionRelations } from '$lib/server/access';
 import { learnFromTransactionAdjustment } from '$lib/server/learning';
 import { loadCategoriesForUser } from '$lib/server/categories';
 import { supabaseAdmin } from '$lib/server/supabase';
+import { logInternalError } from '$lib/server/errors';
 import { fail, redirect } from '@sveltejs/kit';
 
 type DraftTransactionRow = {
@@ -359,7 +360,11 @@ export const actions: Actions = {
 			.from('transaction_access')
 			.insert(accessRows);
 		if (accessError) {
-			return fail(500, { success: false, message: accessError.message, rows });
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/transactions/new', accessError),
+				rows
+			});
 		}
 
 		await Promise.all(

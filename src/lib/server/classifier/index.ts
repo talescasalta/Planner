@@ -323,7 +323,7 @@ ${txDescriptions}`;
 				classification_suggestion: {
 					type: 'error',
 					error: 'llm_error',
-					message: String(e)
+					message: 'Falha na classificação automática.'
 				}
 			}
 		}));

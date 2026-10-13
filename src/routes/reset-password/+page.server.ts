@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
+import { authErrorMessage } from '$lib/server/errors';
 
 export const load: PageServerLoad = async ({ locals: { safeGetSession } }) => {
 	const { session, user, profile } = await safeGetSession();
@@ -37,7 +38,14 @@ export const actions: Actions = {
 
 		const { error } = await supabase.auth.updateUser({ password });
 		if (error) {
-			return { success: false, message: error.message };
+			return {
+				success: false,
+				message: authErrorMessage(
+					'reset-password',
+					error,
+					'Não foi possível atualizar a senha. Tente novamente.'
+				)
+			};
 		}
 
 		return {

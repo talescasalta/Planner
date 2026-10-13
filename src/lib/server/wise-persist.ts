@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '$lib/server/supabase';
+import { logInternalError } from '$lib/server/errors';
 import {
 	fxOn,
 	isForeignCurrency,
@@ -42,7 +43,10 @@ async function resolveWiseAssets(
 		.eq('household_id', householdId)
 		.eq('owner_user_id', ownerUserId)
 		.in('product_key', keys);
-	if (error) return { errorMessage: error.message };
+	if (error)
+		return {
+			errorMessage: logInternalError('investments/wise-persist', error)
+		};
 
 	const byIsin = new Map<string, string>(
 		(existing ?? []).map((row) => [row.isin as string, row.id as string])
@@ -67,7 +71,10 @@ async function resolveWiseAssets(
 				}))
 			)
 			.select('id, isin');
-		if (insertError) return { errorMessage: insertError.message };
+		if (insertError)
+			return {
+				errorMessage: logInternalError('investments/wise-persist', insertError)
+			};
 		for (const row of inserted ?? [])
 			byIsin.set(row.isin as string, row.id as string);
 	}
@@ -123,7 +130,12 @@ async function createImport(
 		.select('id')
 		.single();
 	if (error || !data)
-		return { errorMessage: error?.message ?? 'Falha ao registrar o import.' };
+		return {
+			errorMessage: logInternalError(
+				'investments/wise-persist',
+				error ?? 'import insert returned no row'
+			)
+		};
 	return data.id as string;
 }
 
@@ -168,7 +180,10 @@ async function writeTrades(
 			{ onConflict: 'household_id,dedup_key', ignoreDuplicates: true }
 		)
 		.select('id');
-	if (error) return { errorMessage: error.message };
+	if (error)
+		return {
+			errorMessage: logInternalError('investments/wise-persist', error)
+		};
 
 	// The last trade of each day per fund: the quota Wise itself used.
 	const anchors = new Map<string, PricedTrade>();
@@ -187,7 +202,10 @@ async function writeTrades(
 			})),
 			{ onConflict: 'asset_id,quote_date' }
 		);
-	if (quoteError) return { errorMessage: quoteError.message };
+	if (quoteError)
+		return {
+			errorMessage: logInternalError('investments/wise-persist', quoteError)
+		};
 	return data?.length ?? 0;
 }
 
@@ -291,7 +309,10 @@ async function heldUnits(
 		.select('event_date, direction, quantity')
 		.eq('household_id', householdId)
 		.eq('asset_id', assetId);
-	if (error) return { errorMessage: error.message };
+	if (error)
+		return {
+			errorMessage: logInternalError('investments/wise-persist', error)
+		};
 	const units = unitsOn(data ?? [], date);
 	return units > 0
 		? units

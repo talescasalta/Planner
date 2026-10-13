@@ -81,7 +81,7 @@ Depois do deploy, confira em **Settings → Cron Jobs** se os dois aparecem.
 ## 6. Criar as contas e fechar o cadastro
 
 1. Abra o app, cadastre a sua conta e crie o grupo da casa (veja [primeiro-uso.md](primeiro-uso.md)).
-2. As outras pessoas da casa criam as contas delas, sem criar grupo, e você as adiciona em **Grupos → Adicionar membro**.
+2. As outras pessoas da casa criam as contas delas, sem criar grupo, e você as convida em **Grupos → Convidar membro**. Cada uma aceita o convite na própria tela **Grupos**.
 3. **Depois que todos tiverem conta, feche o cadastro.** Do contrário, qualquer pessoa que descobrir a URL pode criar uma conta e gastar os seus créditos de LLM. Os dados ficariam separados pelo RLS, mas a conta de LLM é sua.
    - No Supabase, em **Authentication → Sign In / Providers**, desligue **Allow new users to sign up**. Isso bloqueia também contas novas pelo Google.
    - Na Vercel, mude `SIGNUP_ENABLED` para `false` e faça um redeploy. Isso esconde o botão "Cadastrar" na tela de login.

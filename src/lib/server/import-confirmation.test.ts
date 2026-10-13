@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { INTERNAL_ERROR_MESSAGE } from '$lib/server/errors';
 import { actions } from '../../routes/app/imports/+page.server';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { getHouseholdMembers, getUserHouseholdId } from '$lib/server/household';
@@ -525,7 +526,7 @@ describe('import confirmation', () => {
 
 		expect(result).toMatchObject({
 			status: 500,
-			message: 'constraint failure'
+			message: INTERNAL_ERROR_MESSAGE
 		});
 		expect(failedImport.calls).toContainEqual({
 			method: 'update',
@@ -610,7 +611,10 @@ describe('import confirmation', () => {
 			}
 		} as never);
 
-		expect(result).toMatchObject({ status: 500, message: 'access denied' });
+		expect(result).toMatchObject({
+			status: 500,
+			message: INTERNAL_ERROR_MESSAGE
+		});
 		expect(failedImport.calls).toContainEqual({
 			method: 'update',
 			args: [{ status: 'failed' }]
@@ -761,7 +765,7 @@ describe('import access repair', () => {
 
 		expect(result).toMatchObject({
 			status: 500,
-			message: 'repair insert failed'
+			message: INTERNAL_ERROR_MESSAGE
 		});
 		expect(insertion.calls).toContainEqual({
 			method: 'insert',

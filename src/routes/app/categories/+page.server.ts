@@ -2,6 +2,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
 import { getUserHouseholdId } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
+import { logInternalError } from '$lib/server/errors';
 import {
 	loadCategorySettingsForUser,
 	loadCategoriesForUser
@@ -124,7 +125,11 @@ export const actions: Actions = {
 			financial_treatment: financialTreatment
 		});
 
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/categories', error)
+			});
 		return { success: true, message: 'Categoria criada' };
 	},
 
@@ -181,7 +186,11 @@ export const actions: Actions = {
 			financial_treatment: readTreatment(formData.get('financial_treatment'))
 		});
 
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/categories', error)
+			});
 		return { success: true, message: 'Subcategoria criada' };
 	},
 
@@ -223,7 +232,11 @@ export const actions: Actions = {
 			.update({ financial_treatment: rawTreatment || null })
 			.eq('id', categoryId)
 			.eq('household_id', householdId);
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/categories', error)
+			});
 		return { success: true, message: 'Tratamento financeiro atualizado' };
 	},
 
@@ -260,7 +273,11 @@ export const actions: Actions = {
 				user.id,
 				categoryId
 			);
-			if (error) return fail(500, { success: false, message: error.message });
+			if (error)
+				return fail(500, {
+					success: false,
+					message: logInternalError('app/categories', error)
+				});
 			return { success: true, message: 'Sugestão removida do seu gabarito' };
 		}
 
@@ -278,7 +295,11 @@ export const actions: Actions = {
 			.delete()
 			.eq('id', categoryId)
 			.eq('created_by_user_id', user.id);
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/categories', error)
+			});
 		return { success: true, message: 'Item removido do gabarito pessoal' };
 	},
 
@@ -305,7 +326,11 @@ export const actions: Actions = {
 			.eq('user_id', user.id)
 			.eq('category_id', categoryId);
 
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/categories', error)
+			});
 		return { success: true, message: 'Sugestão restaurada no seu gabarito' };
 	}
 };

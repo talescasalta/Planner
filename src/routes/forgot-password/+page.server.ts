@@ -1,5 +1,6 @@
 import type { Actions } from './$types';
 import { publicUrl } from '$lib/server/public-url';
+import { authErrorMessage } from '$lib/server/errors';
 
 export const actions: Actions = {
 	default: async ({ request, url, locals: { supabase } }) => {
@@ -15,7 +16,14 @@ export const actions: Actions = {
 		});
 
 		if (error) {
-			return { success: false, message: error.message };
+			return {
+				success: false,
+				message: authErrorMessage(
+					'forgot-password',
+					error,
+					'Não foi possível enviar o link agora. Tente novamente.'
+				)
+			};
 		}
 
 		return {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { INTERNAL_ERROR_MESSAGE } from '$lib/server/errors';
 import { actions as newTransactionActions } from '../../routes/app/transactions/new/+page.server';
 import { actions as transactionActions } from '../../routes/app/transactions/[id]/+page.server';
 import { supabaseAdmin } from '$lib/server/supabase';
@@ -178,7 +179,7 @@ describe('new transaction action', () => {
 
 		expect(result).toMatchObject({
 			status: 500,
-			message: 'access insert failed'
+			message: INTERNAL_ERROR_MESSAGE
 		});
 		expect(accessInsert.calls).toContainEqual({
 			method: 'insert',
@@ -217,7 +218,7 @@ describe('transaction detail actions', () => {
 
 		expect(result).toMatchObject({
 			status: 500,
-			message: 'detail update failed'
+			message: INTERNAL_ERROR_MESSAGE
 		});
 		expect(updateTransactionForHousehold).toHaveBeenCalledWith(
 			expect.anything(),
@@ -239,7 +240,10 @@ describe('transaction detail actions', () => {
 
 		const result = await transactionActions.delete(event(updateRequest()));
 
-		expect(result).toMatchObject({ status: 500, message: 'delete failed' });
+		expect(result).toMatchObject({
+			status: 500,
+			message: INTERNAL_ERROR_MESSAGE
+		});
 		expect(deletion.calls).toContainEqual({
 			method: 'eq',
 			args: ['id', 'tx-a']

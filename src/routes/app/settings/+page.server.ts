@@ -3,6 +3,7 @@ import { fail } from '@sveltejs/kit';
 import { getUserHouseholdId } from '$lib/server/household';
 import { parseOwnNames } from '$lib/server/own-names';
 import { supabaseAdmin } from '$lib/server/supabase';
+import { logInternalError } from '$lib/server/errors';
 
 export const load: PageServerLoad = async ({
 	locals: { supabase, safeGetSession }
@@ -46,7 +47,11 @@ export const actions: Actions = {
 			.from('households')
 			.update({ own_account_names: parsed.names })
 			.eq('id', householdId);
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/settings', error)
+			});
 
 		return {
 			success: true,
