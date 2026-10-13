@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database';
 import { getUserHouseholdId, attachPayerProfiles } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
+import { logInternalError } from '$lib/server/errors';
 import {
 	READABLE_ACCESS_EMBED,
 	filterByReadableAccess,
@@ -324,7 +325,11 @@ async function updateOwnTransaction(
 		.eq('id', transactionId)
 		.eq('household_id', householdId);
 
-	if (error) return fail(500, { success: false, message: error.message });
+	if (error)
+		return fail(500, {
+			success: false,
+			message: logInternalError('app/transactions', error)
+		});
 	return { success: true };
 }
 
@@ -937,7 +942,11 @@ export const actions: Actions = {
 				.eq('id', transactionId)
 				.eq('household_id', householdId);
 
-			if (error) return fail(500, { success: false, message: error.message });
+			if (error)
+				return fail(500, {
+					success: false,
+					message: logInternalError('app/transactions', error)
+				});
 
 			await learnFromTransactionAdjustment(supabaseAdmin, {
 				householdId,
@@ -989,7 +998,11 @@ export const actions: Actions = {
 			.select('category_id, subcategory_id, owner_profile_id')
 			.maybeSingle();
 
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/transactions', error)
+			});
 
 		// Confirming a suggested classification endorses it: reinforce (or
 		// create) the user's rule so this merchant stops asking for review
@@ -1110,7 +1123,10 @@ export const actions: Actions = {
 			.eq('household_id', householdId);
 
 		if (updateError)
-			return fail(500, { success: false, message: updateError.message });
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/transactions', updateError)
+			});
 
 		await learnFromTransactionAdjustment(supabaseAdmin, {
 			householdId,
@@ -1220,7 +1236,11 @@ export const actions: Actions = {
 				.eq('id', transactionId)
 				.eq('household_id', householdId);
 
-			if (error) return fail(500, { success: false, message: error.message });
+			if (error)
+				return fail(500, {
+					success: false,
+					message: logInternalError('app/transactions', error)
+				});
 
 			await learnFromTransactionAdjustment(supabaseAdmin, {
 				householdId,
@@ -1317,7 +1337,11 @@ export const actions: Actions = {
 				.update(patch)
 				.eq('id', transactionId)
 				.eq('household_id', householdId);
-			if (error) return fail(500, { success: false, message: error.message });
+			if (error)
+				return fail(500, {
+					success: false,
+					message: logInternalError('app/transactions', error)
+				});
 
 			await learnBulkAdjustment(
 				selection,
@@ -1382,7 +1406,11 @@ export const actions: Actions = {
 			.delete()
 			.eq('household_id', householdId)
 			.in('id', transactionIds);
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/transactions', error)
+			});
 
 		const params = new URLSearchParams();
 		if (month) params.set('month', month);
@@ -1415,7 +1443,10 @@ export const actions: Actions = {
 			.eq('household_id', householdId)
 			.eq('reference_month', referenceMonth);
 		if (loadError)
-			return fail(500, { success: false, message: loadError.message });
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/transactions', loadError)
+			});
 
 		const transactionIds = (rows ?? []).map((row) => row.id);
 		if (transactionIds.length === 0)
@@ -1441,7 +1472,11 @@ export const actions: Actions = {
 			.delete()
 			.eq('household_id', householdId)
 			.eq('reference_month', referenceMonth);
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/transactions', error)
+			});
 
 		const params = new URLSearchParams();
 		appendFilters(params, formData);

@@ -1,5 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
 import { supabaseAdmin } from '$lib/server/supabase';
+import { logInternalError } from '$lib/server/errors';
 import {
 	seedDefaultCategories,
 	seedDefaultFinancialProfiles
@@ -11,6 +12,13 @@ import {
 	isHouseholdAdmin
 } from '$lib/server/access';
 import { findAuthUserByEmail } from '$lib/server/auth-admin';
+import {
+	acceptInvitation,
+	createInvitation,
+	deleteInvitation,
+	loadReceivedInvitations,
+	loadSentInvitations
+} from '$lib/server/household-invitations';
 import { loadCategoriesForUser } from '$lib/server/categories';
 import { selectAllStrict } from '$lib/server/supabase-paging';
 import {
@@ -531,17 +539,21 @@ async function loadGroupDetails(
 	const displayNames = new Map(
 		(profiles ?? []).map((profile) => [profile.user_id, profile.display_name])
 	);
-	const activity = await loadGroupActivity(
-		group.id,
-		(sharedProfiles ?? []).map((profile) => profile.id),
-		members,
-		displayNames,
-		currentUserId,
-		currentUserName,
-		url
-	);
+	const [activity, pendingInvitations] = await Promise.all([
+		loadGroupActivity(
+			group.id,
+			(sharedProfiles ?? []).map((profile) => profile.id),
+			members,
+			displayNames,
+			currentUserId,
+			currentUserName,
+			url
+		),
+		group.role === 'admin' ? loadSentInvitations(group.id) : []
+	]);
 	return {
 		...group,
+		pendingInvitations,
 		members: formatGroupMembers(
 			members,
 			displayNames,
@@ -655,13 +667,16 @@ export const load: PageServerLoad = async ({
 	});
 
 	const currentUserName = profile?.display_name ?? user.email ?? 'Você';
-	const groupsWithMembers = await Promise.all(
-		groups.map((group) =>
-			loadGroupDetails(group, user.id, currentUserName, url)
-		)
-	);
+	const [groupsWithMembers, invitations] = await Promise.all([
+		Promise.all(
+			groups.map((group) =>
+				loadGroupDetails(group, user.id, currentUserName, url)
+			)
+		),
+		loadReceivedInvitations(user.id)
+	]);
 
-	return { groups: groupsWithMembers, user };
+	return { groups: groupsWithMembers, invitations, user };
 };
 
 export const actions: Actions = {
@@ -693,7 +708,10 @@ export const actions: Actions = {
 			.select('user_id')
 			.eq('household_id', groupId);
 		if (membersError)
-			return fail(500, { success: false, message: membersError.message });
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/groups', membersError)
+			});
 
 		const groupMemberIds = new Set(
 			(groupMembers ?? []).map((member) => member.user_id)
@@ -724,7 +742,10 @@ export const actions: Actions = {
 		);
 		const incomeError = incomeResults.find((result) => result.error)?.error;
 		if (incomeError)
-			return fail(500, { success: false, message: incomeError.message });
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/groups', incomeError)
+			});
 
 		return { success: true, message: 'Rendas atualizadas' };
 	},
@@ -767,7 +788,10 @@ export const actions: Actions = {
 			.maybeSingle();
 
 		if (transactionError)
-			return fail(500, { success: false, message: transactionError.message });
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/groups', transactionError)
+			});
 		if (!transaction)
 			return fail(404, { success: false, message: 'Transação não encontrada' });
 
@@ -793,7 +817,11 @@ export const actions: Actions = {
 			.eq('id', transactionId)
 			.eq('household_id', groupId);
 
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/groups', error)
+			});
 		return { success: true, message: 'Divisão atualizada' };
 	},
 
@@ -818,7 +846,10 @@ export const actions: Actions = {
 		if (hError || !household) {
 			return fail(500, {
 				success: false,
-				message: hError?.message ?? 'Erro ao criar grupo'
+				message: logInternalError(
+					'app/groups',
+					hError ?? 'household insert returned no row'
+				)
 			});
 		}
 
@@ -828,7 +859,10 @@ export const actions: Actions = {
 
 		if (mError) {
 			await supabaseAdmin.from('households').delete().eq('id', household.id);
-			return fail(500, { success: false, message: mError.message });
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/groups', mError)
+			});
 		}
 
 		try {
@@ -875,7 +909,10 @@ export const actions: Actions = {
 		try {
 			targetUser = await findAuthUserByEmail(supabaseAdmin, email);
 		} catch (e) {
-			return fail(500, { success: false, message: String(e) });
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/groups', e)
+			});
 		}
 
 		if (!targetUser) {
@@ -899,17 +936,104 @@ export const actions: Actions = {
 			});
 		}
 
-		const { error } = await supabaseAdmin.from('household_members').insert({
-			household_id: groupId,
-			user_id: targetUser.id,
-			role: 'member'
+		// The person joins only by accepting; see household-invitations.ts.
+		const created = await createInvitation({
+			householdId: groupId,
+			userId: targetUser.id,
+			email,
+			invitedByUserId: user.id
 		});
-
-		if (error) {
-			return fail(500, { success: false, message: error.message });
+		if (created === 'duplicate') {
+			return fail(400, {
+				success: false,
+				message: 'Já existe um convite pendente para este e-mail'
+			});
+		}
+		if (created === 'error') {
+			return fail(500, {
+				success: false,
+				message: 'Não foi possível enviar o convite. Tente novamente.'
+			});
 		}
 
-		return { success: true, message: `${email} adicionado ao grupo` };
+		return {
+			success: true,
+			message: `Convite enviado para ${email}. A pessoa entra no grupo quando aceitar em Grupos.`
+		};
+	},
+
+	accept_invitation: async ({ request, locals: { safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const formData = await request.formData();
+		const invitationId = String(formData.get('invitation_id') ?? '').trim();
+		if (!invitationId)
+			return fail(400, { success: false, message: 'Convite inválido' });
+
+		const result = await acceptInvitation(invitationId, user.id);
+		if (result === 'not_found')
+			return fail(404, { success: false, message: 'Convite não encontrado' });
+		if (result === 'error')
+			return fail(500, {
+				success: false,
+				message: 'Não foi possível aceitar o convite. Tente novamente.'
+			});
+		return { success: true, message: 'Você entrou no grupo' };
+	},
+
+	decline_invitation: async ({ request, locals: { safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const formData = await request.formData();
+		const invitationId = String(formData.get('invitation_id') ?? '').trim();
+		if (!invitationId)
+			return fail(400, { success: false, message: 'Convite inválido' });
+
+		const deleted = await deleteInvitation({
+			id: invitationId,
+			userId: user.id
+		});
+		if (!deleted)
+			return fail(500, {
+				success: false,
+				message: 'Não foi possível recusar o convite. Tente novamente.'
+			});
+		return { success: true, message: 'Convite recusado' };
+	},
+
+	cancel_invitation: async ({
+		request,
+		locals: { supabase, safeGetSession }
+	}) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const formData = await request.formData();
+		const groupId = String(formData.get('group_id') ?? '').trim();
+		const invitationId = String(formData.get('invitation_id') ?? '').trim();
+		if (!groupId || !invitationId)
+			return fail(400, { success: false, message: 'Dados incompletos' });
+
+		const isAdmin = await isHouseholdAdmin(supabase, groupId, user.id);
+		if (!isAdmin) {
+			return fail(403, {
+				success: false,
+				message: 'Apenas administradores podem cancelar convites'
+			});
+		}
+
+		const deleted = await deleteInvitation({
+			id: invitationId,
+			householdId: groupId
+		});
+		if (!deleted)
+			return fail(500, {
+				success: false,
+				message: 'Não foi possível cancelar o convite. Tente novamente.'
+			});
+		return { success: true, message: 'Convite cancelado' };
 	},
 
 	remove_member: async ({ request, locals: { supabase, safeGetSession } }) => {
@@ -947,7 +1071,10 @@ export const actions: Actions = {
 			.eq('user_id', userId);
 
 		if (error) {
-			return fail(500, { success: false, message: error.message });
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/groups', error)
+			});
 		}
 
 		return { success: true, message: 'Membro removido' };

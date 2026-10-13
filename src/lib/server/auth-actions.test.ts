@@ -122,7 +122,7 @@ describe('authentication actions', () => {
 
 		expect(result).toMatchObject({
 			success: false,
-			message: 'invalid credentials'
+			message: 'Não foi possível entrar. Tente novamente.'
 		});
 		expect(redirectMock).not.toHaveBeenCalled();
 	});
@@ -156,7 +156,7 @@ describe('authentication actions', () => {
 
 		expect(result).toMatchObject({
 			success: false,
-			message: 'mail unavailable'
+			message: 'Não foi possível enviar o link agora. Tente novamente.'
 		});
 		expect(auth.resetPasswordForEmail).toHaveBeenCalledWith('a@example.com', {
 			redirectTo: 'https://planner.test/auth/confirm?next=/reset-password'
@@ -202,7 +202,7 @@ describe('authentication actions', () => {
 
 		expect(result).toMatchObject({
 			success: false,
-			message: 'update unavailable'
+			message: 'Não foi possível atualizar a senha. Tente novamente.'
 		});
 		expect(auth.updateUser).toHaveBeenCalledWith({ password: 'password123' });
 	});

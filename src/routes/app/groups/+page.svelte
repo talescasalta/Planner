@@ -9,6 +9,7 @@
 		ArrowUpDown,
 		Banknote,
 		HandCoins,
+		Mail,
 		Plus,
 		Search,
 		Users,
@@ -20,6 +21,7 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let groups = $derived(data.groups ?? []);
+	let invitations = $derived(data.invitations ?? []);
 	let showCreateForm = $state(false);
 	let openAddMemberFor = $state<string | null>(null);
 	let sortMode = $state<Record<string, 'paid_desc' | 'paid_asc' | 'name'>>({});
@@ -132,6 +134,40 @@
 		</p>
 	{/if}
 
+	{#each invitations as invitation (invitation.id)}
+		<div
+			class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-4"
+		>
+			<p class="flex items-center gap-2 text-sm text-indigo-900">
+				<Mail class="h-4 w-4 shrink-0" />
+				<span>
+					{invitation.invited_by_name ?? 'Alguém'} convidou você para o grupo
+					<span class="font-semibold">{invitation.household_name}</span>. Ao
+					aceitar, os membros passam a ver os investimentos, categorias e regras
+					do grupo.
+				</span>
+			</p>
+			<div class="flex gap-2">
+				<form method="POST" action="?/decline_invitation" use:enhance>
+					<input type="hidden" name="invitation_id" value={invitation.id} />
+					<button
+						type="submit"
+						class="rounded-md border border-gray-300 bg-surface px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+						>Recusar</button
+					>
+				</form>
+				<form method="POST" action="?/accept_invitation" use:enhance>
+					<input type="hidden" name="invitation_id" value={invitation.id} />
+					<button
+						type="submit"
+						class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-hover"
+						>Aceitar</button
+					>
+				</form>
+			</div>
+		</div>
+	{/each}
+
 	{#if showCreateForm}
 		<form
 			method="POST"
@@ -160,11 +196,11 @@
 		</form>
 	{/if}
 
-	{#if groups.length === 0 && !showCreateForm}
+	{#if groups.length === 0 && invitations.length === 0 && !showCreateForm}
 		<EmptyState
 			icon={Users}
 			title="Você ainda não está num grupo"
-			description="O grupo é a casa: transações, categorias e regras ficam nele. Crie o seu, ou peça para quem já tem um grupo adicionar você pelo seu e-mail."
+			description="O grupo é a casa: transações, categorias e regras ficam nele. Crie o seu, ou peça para quem já tem um grupo convidar você pelo seu e-mail. O convite aparece aqui para você aceitar."
 		>
 			{#snippet actions()}
 				<Button onclick={() => (showCreateForm = true)}
@@ -426,7 +462,7 @@
 							{#if openAddMemberFor === group.id}
 								<X class="h-3.5 w-3.5" /> Cancelar
 							{:else}
-								<Plus class="h-3.5 w-3.5" /> Adicionar membro
+								<Plus class="h-3.5 w-3.5" /> Convidar membro
 							{/if}
 						</button>
 					{/if}
@@ -450,7 +486,7 @@
 						<button
 							type="submit"
 							class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary-hover"
-							>Adicionar</button
+							>Convidar</button
 						>
 					</form>
 				{/if}
@@ -489,6 +525,34 @@
 									</button>
 								</form>
 							{/if}
+						</li>
+					{/each}
+					{#each group.pendingInvitations as invitation (invitation.id)}
+						<li
+							class="inline-flex items-center gap-1.5 rounded-full border border-dashed border-gray-300 px-3 py-1 text-xs"
+						>
+							<span class="text-gray-700">{invitation.email}</span>
+							<span class="text-gray-500">· Convite pendente</span>
+							<form
+								method="POST"
+								action="?/cancel_invitation"
+								use:enhance
+								class="inline"
+							>
+								<input type="hidden" name="group_id" value={group.id} />
+								<input
+									type="hidden"
+									name="invitation_id"
+									value={invitation.id}
+								/>
+								<button
+									type="submit"
+									class="rounded-full p-0.5 text-gray-400 hover:bg-red-100 hover:text-red-700"
+									title="Cancelar convite"
+								>
+									<X class="h-3 w-3" />
+								</button>
+							</form>
 						</li>
 					{/each}
 				</ul>

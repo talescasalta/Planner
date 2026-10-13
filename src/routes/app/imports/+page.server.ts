@@ -323,6 +323,7 @@ async function resolveImportInput(
 import { getUserHouseholdId, getHouseholdMembers } from '$lib/server/household';
 import { classifyTransactions } from '$lib/server/classifier';
 import { supabaseAdmin } from '$lib/server/supabase';
+import { INTERNAL_ERROR_MESSAGE, logInternalError } from '$lib/server/errors';
 import { isHouseholdAdmin } from '$lib/server/access';
 import { fail, redirect } from '@sveltejs/kit';
 
@@ -513,7 +514,7 @@ async function importAndClassifyRows(
 			importId,
 			`transactions insert failed: ${persisted.errorMessage}`
 		);
-		return { errorMessage: persisted.errorMessage };
+		return { errorMessage: INTERNAL_ERROR_MESSAGE };
 	}
 	const insertedTransactions = persisted.insertedTransactions;
 	const accessError = await grantImportedTransactionAccess(
@@ -525,7 +526,7 @@ async function importAndClassifyRows(
 			importId,
 			`transaction_access insert failed: ${accessError}`
 		);
-		return { errorMessage: accessError };
+		return { errorMessage: INTERNAL_ERROR_MESSAGE };
 	}
 	const insertedIds = insertedTransactions.map((transaction) => transaction.id);
 	if (insertedIds.length === 0) return { insertedCount: 0 };
@@ -761,7 +762,10 @@ export const actions: Actions = {
 		if (importError || !importRecord) {
 			return fail(500, {
 				success: false,
-				message: importError?.message ?? 'Erro ao registrar importação'
+				message: logInternalError(
+					'app/imports',
+					importError ?? 'import insert returned no row'
+				)
 			});
 		}
 
@@ -817,7 +821,11 @@ export const actions: Actions = {
 				'id, created_by_user_id, owner_profile:financial_profiles!transactions_owner_profile_id_fkey ( type, user_id )'
 			)
 			.eq('household_id', householdId);
-		if (txErr) return fail(500, { success: false, message: txErr.message });
+		if (txErr)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/imports', txErr)
+			});
 
 		const txIds = (txs ?? []).map((t) => t.id);
 		if (txIds.length === 0) {
@@ -850,7 +858,11 @@ export const actions: Actions = {
 		const { error: insErr } = await supabaseAdmin
 			.from('transaction_access')
 			.insert(toInsert);
-		if (insErr) return fail(500, { success: false, message: insErr.message });
+		if (insErr)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/imports', insErr)
+			});
 
 		return {
 			success: true,

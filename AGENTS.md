@@ -89,7 +89,7 @@ Prefira as CLIs aos painéis. O passo a passo para pessoas está em [docs/deploy
 
 4. **Verificação.** Rode `curl -s -H "Authorization: Bearer $CRON_SECRET" https://<app>.vercel.app/api/health/supabase`. O esperado é `"ok":true` e `llm.modelExplicitlyConfigured: true`. Os dois crons do `vercel.json` são registrados sozinhos no deploy de produção; peça à pessoa para conferi-los em **Settings → Cron Jobs** na Vercel.
 
-5. **Contas da casa.** Cada pessoa cria a própria conta em `/login`. Uma delas cria o grupo em **Grupos**, e as outras são adicionadas pelo e-mail, sem criarem grupos próprios ([docs/primeiro-uso.md](docs/primeiro-uso.md)).
+5. **Contas da casa.** Cada pessoa cria a própria conta em `/login`. Uma delas cria o grupo em **Grupos**, e convida as outras pelo e-mail; cada uma aceita o convite em **Grupos**, sem criar grupo próprio ([docs/primeiro-uso.md](docs/primeiro-uso.md)).
 
 6. **Fechar o cadastro.** Quando todos tiverem conta:
    - `PATCH .../config/auth` com `{"disable_signup":true}`, o que bloqueia também contas novas pelo Google;

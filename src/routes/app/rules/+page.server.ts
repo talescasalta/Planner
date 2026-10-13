@@ -1,5 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
 import { getUserHouseholdId } from '$lib/server/household';
+import { logInternalError } from '$lib/server/errors';
 import { validateTransactionRelations } from '$lib/server/access';
 import { loadCategoriesForUser } from '$lib/server/categories';
 import {
@@ -111,7 +112,11 @@ export const actions: Actions = {
 			active: true
 		});
 
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/rules', error)
+			});
 		return { success: true };
 	},
 
@@ -135,7 +140,11 @@ export const actions: Actions = {
 			ruleId,
 			active
 		);
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/rules', error)
+			});
 		return { success: true };
 	},
 
@@ -157,7 +166,11 @@ export const actions: Actions = {
 			householdId,
 			ruleId
 		);
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/rules', error)
+			});
 		return { success: true };
 	}
 };

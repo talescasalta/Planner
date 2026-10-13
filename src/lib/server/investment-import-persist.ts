@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '$lib/server/supabase';
+import { logInternalError } from '$lib/server/errors';
 import type {
 	ParsedB3File,
 	ParsedEvent,
@@ -84,7 +85,10 @@ async function resolveAssets(
 		.eq('household_id', householdId)
 		.eq('owner_user_id', ownerUserId)
 		.in('product_key', keys);
-	if (selectError) return { errorMessage: selectError.message };
+	if (selectError)
+		return {
+			errorMessage: logInternalError('investments/import-persist', selectError)
+		};
 
 	const byKey = new Map<string, string>(
 		(existing ?? []).map((row: AssetRef) => [row.product_key, row.id])
@@ -119,7 +123,10 @@ async function resolveAssets(
 				})
 			)
 			.select('id, product_key');
-		if (error) return { errorMessage: error.message };
+		if (error)
+			return {
+				errorMessage: logInternalError('investments/import-persist', error)
+			};
 		for (const row of (inserted ?? []) as AssetRef[])
 			byKey.set(row.product_key, row.id);
 	}
@@ -241,8 +248,14 @@ async function persistPositions(
 			.in('asset_id', assetIds)
 			.lte('event_date', snapshotDate)
 	]);
-	if (snapError) return { errorMessage: snapError.message };
-	if (eventsError) return { errorMessage: eventsError.message };
+	if (snapError)
+		return {
+			errorMessage: logInternalError('investments/import-persist', snapError)
+		};
+	if (eventsError)
+		return {
+			errorMessage: logInternalError('investments/import-persist', eventsError)
+		};
 
 	const reconciliation = reconcile(
 		positions.map((p) => ({
@@ -275,7 +288,10 @@ async function persistPositions(
 			}
 		)
 		.select('id');
-	if (error) return { errorMessage: error.message };
+	if (error)
+		return {
+			errorMessage: logInternalError('investments/import-persist', error)
+		};
 
 	// Snapshot prices double as quotes so valuation works before the cron ever
 	// runs (and forever, for renda fixa nothing public quotes).
@@ -295,7 +311,10 @@ async function persistPositions(
 				onConflict: 'asset_id,quote_date',
 				ignoreDuplicates: true
 			});
-		if (quoteError) return { errorMessage: quoteError.message };
+		if (quoteError)
+			return {
+				errorMessage: logInternalError('investments/import-persist', quoteError)
+			};
 	}
 
 	return { inserted: data?.length ?? 0, reconciliation };
@@ -329,7 +348,10 @@ async function persistEvents(
 			{ onConflict: 'household_id,dedup_key', ignoreDuplicates: true }
 		)
 		.select('id');
-	if (error) return { errorMessage: error.message };
+	if (error)
+		return {
+			errorMessage: logInternalError('investments/import-persist', error)
+		};
 	return { inserted: data?.length ?? 0 };
 }
 
@@ -361,7 +383,10 @@ export async function persistParsedB3File(
 			inserted: 0,
 			skippedDuplicates: 0,
 			reconciliation: [],
-			errorMessage: importError?.message ?? 'Falha ao registrar o import.'
+			errorMessage: logInternalError(
+				'investments/import-persist',
+				importError ?? 'import insert returned no row'
+			)
 		};
 	}
 	const importId = importRow.id as string;

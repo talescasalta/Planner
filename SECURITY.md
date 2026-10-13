@@ -87,7 +87,7 @@ Funções `SECURITY DEFINER` no schema `public` são expostas em `/rest/v1/rpc/*
 - [ ] Uso de `supabaseAdmin` é precedido de checagem de autorização com o client do usuário?
 - [ ] Action que recebe arquivo aplica `uploadTooLarge`; action que dispara LLM aplica `checkPersistentRateLimit` e limita o texto enviado?
 - [ ] Datas, meses e enums vindos do formulário são validados no servidor (`isIsoDate`/`isIsoMonth`/whitelist) antes de chegar ao banco?
-- [ ] Erros internos (Supabase, LLM) são logados no servidor e o browser recebe uma mensagem genérica?
+- [ ] Erros internos (Supabase, LLM) são logados no servidor e o browser recebe uma mensagem genérica (`logInternalError`/`authErrorMessage` em `src/lib/server/errors.ts`)?
 - [ ] Nenhum segredo novo em código, log ou variável `PUBLIC_*`?
 - [ ] Input externo (form, query string, CSV, resposta de LLM) é validado/limitado antes de usar?
 
@@ -121,4 +121,5 @@ Periodicamente (e sempre após mudanças de schema):
 ## Histórico de correções relevantes
 
 - **2026-06-11** — `apply_transaction_classification_updates` (SECURITY DEFINER) era executável por `anon` e `authenticated` via REST e aceitava `household_id` nulo, permitindo a qualquer usuário autenticado alterar transações de qualquer household, contornando o RLS. Corrigido em `20260611120000_lock_down_classification_rpcs.sql` (REVOKE + `household_id` obrigatório) com o RPC movido para o client service-role no servidor. Na mesma data: sanitização do redirect `next` em `/auth/confirm`, CSP + cabeçalhos de segurança, senha mínima de 8 caracteres.
+- **2026-10-12** — Entrar num grupo passou a exigir aceite: antes, qualquer usuário criava um grupo e adicionava outra conta pelo e-mail direto em `household_members`. Como o app usa a participação mais antiga da pessoa, uma conta recém-criada podia ser puxada para o grupo de um estranho antes de criar o próprio, e o que ela importasse caía lá. Agora o admin cria um convite (`household_invitations`, sem policy, só service role) e a pessoa aceita em **Grupos**. Na mesma migration (`20261012130000_household_invitations_and_transaction_update_check.sql`), a policy `transactions_update_with_edit` ganhou `WITH CHECK`: sem ela, quem podia editar uma transação também podia trocar o `household_id` dela pela API REST e movê-la para outro household. Também na mesma data, as mensagens de erro do Supabase e do Supabase Auth deixaram de chegar ao browser (`src/lib/server/errors.ts`).
 - **Migrations 010/011** — endurecimento das policies de RLS e movimentação dos helpers para o schema `private`, com REVOKE das funções públicas.

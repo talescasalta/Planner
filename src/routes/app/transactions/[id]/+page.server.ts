@@ -8,6 +8,7 @@ import {
 } from '$lib/server/access';
 import { getUserHouseholdId, attachPayerProfiles } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
+import { logInternalError } from '$lib/server/errors';
 import { learnFromTransactionAdjustment } from '$lib/server/learning';
 import { loadCategoriesForUser } from '$lib/server/categories';
 import { fail, redirect } from '@sveltejs/kit';
@@ -172,7 +173,10 @@ export const actions: Actions = {
 		);
 
 		if (error) {
-			return fail(500, { success: false, message: error.message });
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/transactions/[id]', error)
+			});
 		}
 
 		await learnFromTransactionAdjustment(supabaseAdmin, {
@@ -220,7 +224,11 @@ export const actions: Actions = {
 			.eq('id', params.id)
 			.eq('household_id', householdId);
 
-		if (error) return fail(500, { success: false, message: error.message });
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/transactions/[id]', error)
+			});
 
 		const query = tx?.reference_month
 			? `?month=${encodeURIComponent(tx.reference_month)}`
