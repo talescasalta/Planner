@@ -31,6 +31,13 @@
 	font-variant-numeric: tabular-nums;
 }
 
+/* Privacy mode (static/privacy.js marks the amounts, src/lib/privacy.ts
+   flips the class): amounts blur so people nearby cannot read them. */
+html.privacy [data-private] {
+	filter: blur(6px);
+	user-select: none;
+}
+
 /* Dark theme: the grays are remapped so every existing gray-* utility
    flips; fixed literals (not var()) because a remapped step must not read
    another remapped step. Filled buttons keep their own colors. */

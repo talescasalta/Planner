@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { Menu } from 'lucide-svelte';
 	import Button from '$lib/components/ui/Button.svelte';
+	import PrivacyToggle from '$lib/components/ui/PrivacyToggle.svelte';
 	import Sheet from '$lib/components/ui/Sheet.svelte';
 	import Toaster from '$lib/components/ui/Toaster.svelte';
 	import {
@@ -113,7 +114,8 @@
 				</div>
 			{/each}
 		</nav>
-		<div class="border-t border-border p-3">
+		<div class="space-y-1 border-t border-border p-3">
+			<PrivacyToggle />
 			{@render logout('')}
 		</div>
 	</aside>
@@ -152,6 +154,7 @@
 					<Menu class="h-4 w-4" /> Mais
 				</button>
 			</nav>
+			<PrivacyToggle compact />
 		</div>
 	</header>
 
@@ -222,6 +225,7 @@
 		</ul>
 	{/each}
 	<div class="mt-3 border-t border-gray-100 pt-2">
+		<PrivacyToggle />
 		{@render logout('')}
 	</div>
 </Sheet>
