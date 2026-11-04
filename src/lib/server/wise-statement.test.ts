@@ -60,6 +60,22 @@ describe('parseWiseStatement', () => {
 		]);
 	});
 
+	it('reads quotas sold to pay a transfer out or the monthly fee', () => {
+		const sale = (id: string, date: string, type: string, units: string) =>
+			`"${id}",${date},"${date} 10:00:00.000",-100.00,USD,"Saída",,900.00,,,,,,,,,,,,0.00,,DEBIT,${type},100.00,USD,1.00000,100.00,USD,SELL,ISIN,${ISIN},${units}`;
+		const statement = parseWiseStatement(
+			csv(
+				sale('ACCRUAL_CHECKOUT-1', '02-10-2026', 'ACCRUAL_CHARGE', '0.03'),
+				sale('TRANSFER-2', '26-10-2026', 'TRANSFER', '65')
+			)
+		);
+		expect(statement.warnings).toEqual([]);
+		expect(statement.trades.map((t) => [t.id, t.side, t.units])).toEqual([
+			['ACCRUAL_CHECKOUT-1', 'SELL', 0.03],
+			['TRANSFER-2', 'SELL', 65]
+		]);
+	});
+
 	it('reads every CSV of the zip and does not double a repeated trade', () => {
 		const zip = zipSync({
 			'statement_1_USD.csv': csv(trade('a', '01-09-2026', 'BUY', '100', '1')),

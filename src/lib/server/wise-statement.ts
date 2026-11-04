@@ -6,11 +6,13 @@ import { isForeignCurrency, type ForeignCurrency } from './fx-rates';
 // the zip with one CSV per currency balance.
 //
 // Only the Rende+ trades matter here. Wise turns the balance into quotas of a
-// money-market fund and writes each movement as an INVESTMENT_TRADE_ORDER row
-// carrying the ISIN, the side, the quotas and the quota price. Everything else
-// in the statement — card spending, transfers, the money that arrives before
-// being invested — is deliberately ignored: the holding is what is tracked,
-// not where the money came from.
+// money-market fund and every row that moves quotas carries the ISIN, the side,
+// the quotas and the quota price. The row type alone does not say so: money
+// going in is an INVESTMENT_TRADE_ORDER, but a transfer out or the monthly fee
+// is a TRANSFER or an ACCRUAL_CHARGE with the same trade columns filled in.
+// Everything else in the statement — card spending, plain transfers, the money
+// that arrives before being invested — is deliberately ignored: the holding is
+// what is tracked, not where the money came from.
 
 export interface WiseTrade {
 	id: string;
@@ -107,7 +109,10 @@ function isReadable(fields: TradeFields): fields is TradeFields & {
 function readTrade(
 	row: Record<string, string>
 ): WiseTrade | { warning: string } | null {
-	if (cell(row, 'Transaction Details Type') !== TRADE_TYPE) return null;
+	const movesQuotas =
+		cell(row, 'Transaction Details Type') === TRADE_TYPE ||
+		cell(row, 'Trade Side-0') !== '';
+	if (!movesQuotas) return null;
 	const fields = tradeFields(row);
 	if (!isReadable(fields)) {
 		return {
