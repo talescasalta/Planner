@@ -17,9 +17,12 @@
 	} from 'lucide-svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import { ConfirmSubmit } from '$lib/confirm-submit.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+	const confirmer = new ConfirmSubmit();
 	let groups = $derived(data.groups ?? []);
 	let invitations = $derived(data.invitations ?? []);
 	let showCreateForm = $state(false);
@@ -184,6 +187,7 @@
 					name="name"
 					type="text"
 					required
+					maxlength="80"
 					placeholder="Ex: Minha Casa"
 					class="flex-1 rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
 				/>
@@ -514,6 +518,25 @@
 									class="rounded-full bg-indigo-100 px-1.5 text-[10px] font-semibold text-indigo-700"
 									>Você</span
 								>
+								{#if group.role !== 'admin'}
+									<form
+										method="POST"
+										action="?/leave_group"
+										class="inline"
+										onsubmit={(event) =>
+											confirmer.ask(event, {
+												title: 'Sair do grupo?',
+												message: `Você deixa de ver as transações de "${group.name}". Para voltar, um administrador precisa convidar você de novo.`
+											})}
+									>
+										<input type="hidden" name="group_id" value={group.id} />
+										<button
+											type="submit"
+											class="rounded-full px-1.5 text-[10px] font-medium text-gray-500 hover:bg-red-100 hover:text-red-700"
+											>Sair</button
+										>
+									</form>
+								{/if}
 							{:else if group.role === 'admin'}
 								<form
 									method="POST"
@@ -754,3 +777,12 @@
 		</section>
 	{/each}
 </div>
+
+<ConfirmDialog
+	open={confirmer.pending !== null}
+	title={confirmer.pending?.title ?? ''}
+	message={confirmer.pending?.message ?? ''}
+	confirmLabel="Sair"
+	onConfirm={() => confirmer.confirm()}
+	onCancel={() => confirmer.cancel()}
+/>

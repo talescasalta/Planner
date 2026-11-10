@@ -14,6 +14,12 @@ import { loadCategoriesForUser } from '$lib/server/categories';
 import { selectAllStrict } from '$lib/server/supabase-paging';
 import type { FinancialTreatment } from '$lib/types/app';
 import { callLlm } from '$lib/server/llm';
+import { checkPersistentRateLimit } from '$lib/server/rate-limit';
+import {
+	LLM_RATE_LIMIT,
+	LLM_RATE_LIMIT_MESSAGE,
+	isIsoMonth
+} from '$lib/server/request-guards';
 import {
 	dashboardFlowKind,
 	investmentFlowTotals,
@@ -994,6 +1000,19 @@ function findNewMerchants(
 		.slice(0, 5);
 }
 
+// Same per-user LLM budget as every other entry point (SECURITY.md).
+async function insightsRefusal(month: string, userId: string) {
+	if (!isIsoMonth(month)) {
+		return fail(400, { success: false, message: 'Mês inválido' });
+	}
+	if (
+		!(await checkPersistentRateLimit(supabaseAdmin, userId, LLM_RATE_LIMIT))
+	) {
+		return fail(429, { success: false, message: LLM_RATE_LIMIT_MESSAGE });
+	}
+	return null;
+}
+
 export const actions: Actions = {
 	insights: async ({ request, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
@@ -1001,9 +1020,8 @@ export const actions: Actions = {
 
 		const formData = await request.formData();
 		const month = String(formData.get('month') ?? '').trim();
-		if (!/^\d{4}-\d{2}$/.test(month)) {
-			return fail(400, { success: false, message: 'Mês inválido' });
-		}
+		const refused = await insightsRefusal(month, user.id);
+		if (refused) return refused;
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
 		if (!householdId)

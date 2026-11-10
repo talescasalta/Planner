@@ -4,6 +4,7 @@ import { supabaseAdmin } from '$lib/server/supabase';
 import { getUserHouseholdId } from '$lib/server/household';
 import { loadCategoriesForUser } from '$lib/server/categories';
 import { callLlm } from '$lib/server/llm';
+import { checkPersistentRateLimit } from '$lib/server/rate-limit';
 
 vi.mock('@sveltejs/kit', () => ({
 	fail: (status: number, data: Record<string, unknown>) => ({ status, ...data })
@@ -12,6 +13,9 @@ vi.mock('$lib/server/supabase', () => ({ supabaseAdmin: { from: vi.fn() } }));
 vi.mock('$lib/server/household', () => ({ getUserHouseholdId: vi.fn() }));
 vi.mock('$lib/server/categories', () => ({ loadCategoriesForUser: vi.fn() }));
 vi.mock('$lib/server/llm', () => ({ callLlm: vi.fn() }));
+vi.mock('$lib/server/rate-limit', () => ({
+	checkPersistentRateLimit: vi.fn()
+}));
 
 type QueryResult = { data?: unknown; error?: { message: string } | null };
 class QueryMock {
@@ -65,6 +69,8 @@ beforeEach(() => {
 	vi.mocked(getUserHouseholdId).mockReset();
 	vi.mocked(loadCategoriesForUser).mockReset();
 	vi.mocked(callLlm).mockReset();
+	vi.mocked(checkPersistentRateLimit).mockReset();
+	vi.mocked(checkPersistentRateLimit).mockResolvedValue(true);
 	vi.mocked(getUserHouseholdId).mockResolvedValue('household-a');
 	vi.mocked(loadCategoriesForUser).mockResolvedValue([]);
 	vi.mocked(supabaseAdmin.from).mockReturnValue(
@@ -277,5 +283,19 @@ describe('dashboard insights action', () => {
 
 		expect(result).toMatchObject({ status: 500, success: false });
 		expect(callLlm).toHaveBeenCalledOnce();
+	});
+
+	it('refuses insights past the shared LLM budget without calling the provider', async () => {
+		vi.mocked(checkPersistentRateLimit).mockResolvedValue(false);
+
+		const result = await actions.insights(event(requestForMonth('2026-07')));
+
+		expect(result).toMatchObject({ status: 429, success: false });
+		expect(checkPersistentRateLimit).toHaveBeenCalledWith(
+			supabaseAdmin,
+			expect.any(String),
+			{ windowMs: 60_000, maxRequests: 10 }
+		);
+		expect(callLlm).not.toHaveBeenCalled();
 	});
 });
