@@ -67,7 +67,7 @@ export const actions: Actions = {
 				};
 			}
 
-			const { error } = await supabase.auth.signUp({
+			const { data, error } = await supabase.auth.signUp({
 				email,
 				password,
 				options: {
@@ -84,6 +84,12 @@ export const actions: Actions = {
 						'Não foi possível concluir o cadastro. Se você já tem conta, entre ou redefina a senha.'
 					)
 				};
+			}
+
+			// With e-mail confirmation off (mailer_autoconfirm, the default in
+			// AGENTS.md) the account is already signed in: no e-mail is coming.
+			if (data.session) {
+				redirect(303, '/app');
 			}
 
 			return {

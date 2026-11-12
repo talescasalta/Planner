@@ -18,6 +18,8 @@ vi.mock('$lib/server/household', () => ({
 	attachPayerProfiles: vi.fn()
 }));
 vi.mock('$lib/server/access', () => ({
+	READABLE_ACCESS_EMBED: 'transaction_access!inner(user_id)',
+	filterByReadableAccess: <T>(query: T) => query,
 	getReadableTransactionIds: vi.fn(),
 	validateTransactionRelations: vi.fn()
 }));
@@ -30,7 +32,11 @@ vi.mock('$lib/server/categories', () => ({
 	loadUserCategoryExclusions: vi.fn()
 }));
 
-type QueryResult = { data?: unknown; error?: { message: string } | null };
+type QueryResult = {
+	data?: unknown;
+	count?: number | null;
+	error?: { message: string } | null;
+};
 
 class QueryMock {
 	calls: Array<{ method: string; args: unknown[] }> = [];
@@ -332,28 +338,56 @@ describe('transaction delete action', () => {
 	it('does not delete a month unless every row in it is editable', async () => {
 		const formData = new FormData();
 		formData.set('reference_month', '2026-05');
-		const monthRows = new QueryMock({
-			data: [{ id: 'tx-a' }, { id: 'tx-b' }],
-			error: null
-		});
-		const access = new QueryMock({
-			data: [{ transaction_id: 'tx-a' }],
-			error: null
-		});
+		const monthRows = new QueryMock({ count: 2, error: null });
+		const editable = new QueryMock({ count: 1, error: null });
+		const userFrom = vi.fn().mockReturnValue(editable);
 		mockedAdminFrom.mockReturnValue(monthRows as never);
 
 		const result = await actions.delete_month({
 			request: { formData: async () => formData } as never,
 			locals: {
-				supabase: { from: () => access } as never,
+				supabase: { from: userFrom } as never,
 				safeGetSession: async () => ({ user: { id: 'user-a' } })
 			}
 		} as never);
 
 		expect(result).toMatchObject({ status: 403 });
-		expect(mockedAdminFrom).toHaveBeenCalledTimes(1);
+		expect(userFrom).toHaveBeenCalledTimes(1);
 		expect(monthRows.calls.some((call) => call.method === 'delete')).toBe(
 			false
 		);
+		expect(editable.calls.some((call) => call.method === 'delete')).toBe(false);
+	});
+
+	it('deletes a fully editable month through the user client, by count not ids', async () => {
+		const formData = new FormData();
+		formData.set('reference_month', '2026-05');
+		const monthRows = new QueryMock({ count: 700, error: null });
+		const editable = new QueryMock({ count: 700, error: null });
+		const deletion = new QueryMock({ data: null, error: null });
+		const userFrom = vi
+			.fn()
+			.mockReturnValueOnce(editable)
+			.mockReturnValueOnce(deletion);
+		mockedAdminFrom.mockReturnValue(monthRows as never);
+
+		await actions.delete_month({
+			request: { formData: async () => formData } as never,
+			locals: {
+				supabase: { from: userFrom } as never,
+				safeGetSession: async () => ({ user: { id: 'user-a' } })
+			}
+		} as never);
+
+		expect(editable.calls.some((call) => call.method === 'in')).toBe(false);
+		expect(deletion.calls).toContainEqual({ method: 'delete', args: [] });
+		expect(deletion.calls).toContainEqual({
+			method: 'eq',
+			args: ['household_id', 'household-a']
+		});
+		expect(deletion.calls).toContainEqual({
+			method: 'eq',
+			args: ['reference_month', '2026-05']
+		});
 	});
 });

@@ -41,7 +41,11 @@ vi.mock('$lib/server/household-invitations', async (importOriginal) => ({
 	loadSentInvitations: vi.fn()
 }));
 
-type QueryResult = { data?: unknown; error?: { message: string } | null };
+type QueryResult = {
+	data?: unknown;
+	count?: number | null;
+	error?: { message: string } | null;
+};
 class QueryMock {
 	calls: Array<{ method: string; args: unknown[] }> = [];
 	constructor(
@@ -263,7 +267,8 @@ describe('group actions', () => {
 			error: { message: 'member insert failed' }
 		});
 		const cleanup = new QueryMock({ error: null });
-		const queries = [household, member, cleanup];
+		const adminCount = new QueryMock({ count: 0, error: null });
+		const queries = [adminCount, household, member, cleanup];
 		mockedFrom.mockImplementation(() => queries.shift() as never);
 
 		const result = await actions.create(event(requestWith({ name: 'Casa' })));
@@ -276,6 +281,30 @@ describe('group actions', () => {
 		expect(cleanup.calls).toContainEqual({
 			method: 'eq',
 			args: ['id', 'group-a']
+		});
+		expect(seedDefaultCategories).not.toHaveBeenCalled();
+	});
+
+	it('refuses group names that are too long', async () => {
+		const result = await actions.create(
+			event(requestWith({ name: 'x'.repeat(81) }))
+		);
+
+		expect(result).toMatchObject({ status: 400 });
+		expect(mockedFrom).not.toHaveBeenCalled();
+	});
+
+	it('caps how many groups one person administers', async () => {
+		const adminCount = new QueryMock({ count: 5, error: null });
+		mockedFrom.mockReturnValue(adminCount as never);
+
+		const result = await actions.create(event(requestWith({ name: 'Casa' })));
+
+		expect(result).toMatchObject({ status: 400 });
+		expect(mockedFrom).toHaveBeenCalledTimes(1);
+		expect(adminCount.calls).toContainEqual({
+			method: 'eq',
+			args: ['user_id', 'user-a']
 		});
 		expect(seedDefaultCategories).not.toHaveBeenCalled();
 	});
@@ -430,5 +459,49 @@ describe('group actions', () => {
 			method: 'eq',
 			args: ['user_id', 'user-b']
 		});
+	});
+
+	it('lets a member leave, deleting only their own membership', async () => {
+		const membership = new QueryMock({ data: { role: 'member' }, error: null });
+		const deletion = new QueryMock({ error: null });
+		mockedFrom.mockReturnValue(deletion as never);
+
+		const result = await actions.leave_group(
+			event(requestWith({ group_id: 'group-a' }), {
+				from: () => membership
+			})
+		);
+
+		expect(result).toMatchObject({ success: true });
+		expect(membership.calls).toContainEqual({
+			method: 'eq',
+			args: ['user_id', 'user-a']
+		});
+		expect(deletion.calls).toContainEqual({ method: 'delete', args: [] });
+		expect(deletion.calls).toContainEqual({
+			method: 'eq',
+			args: ['household_id', 'group-a']
+		});
+		expect(deletion.calls).toContainEqual({
+			method: 'eq',
+			args: ['user_id', 'user-a']
+		});
+	});
+
+	it('does not let an admin leave or someone leave a group they are not in', async () => {
+		const asAdmin = await actions.leave_group(
+			event(requestWith({ group_id: 'group-a' }), {
+				from: () => new QueryMock({ data: { role: 'admin' }, error: null })
+			})
+		);
+		const notMember = await actions.leave_group(
+			event(requestWith({ group_id: 'group-b' }), {
+				from: () => new QueryMock({ data: null, error: null })
+			})
+		);
+
+		expect(asAdmin).toMatchObject({ status: 400 });
+		expect(notMember).toMatchObject({ status: 404 });
+		expect(mockedFrom).not.toHaveBeenCalled();
 	});
 });

@@ -29,7 +29,9 @@ function authClient(overrides: Record<string, unknown> = {}) {
 		signInWithOAuth: vi
 			.fn()
 			.mockResolvedValue({ data: { url: null }, error: null }),
-		signUp: vi.fn().mockResolvedValue({ error: null }),
+		signUp: vi
+			.fn()
+			.mockResolvedValue({ data: { session: null, user: null }, error: null }),
 		signInWithPassword: vi.fn().mockResolvedValue({ error: null }),
 		resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
 		updateUser: vi.fn().mockResolvedValue({ error: null }),
@@ -102,6 +104,45 @@ describe('authentication actions', () => {
 		expect(await loadLogin(loginLoadEvent())).toMatchObject({
 			signupEnabled: true
 		});
+	});
+
+	it('enters the app right away when sign-up needs no e-mail confirmation', async () => {
+		const auth = authClient({
+			signUp: vi.fn().mockResolvedValue({
+				data: { session: { access_token: 'token' }, user: { id: 'u' } },
+				error: null
+			})
+		});
+		await loginActions.default({
+			request: requestWith({
+				action: 'signup',
+				email: 'a@example.com',
+				password: 'long-enough-password'
+			}),
+			url: new URL('https://planner.test/login'),
+			locals: { supabase: { auth } }
+		} as never);
+
+		expect(redirectMock).toHaveBeenCalledWith(303, '/app');
+	});
+
+	it('asks to check the e-mail when sign-up still needs confirmation', async () => {
+		const auth = authClient();
+		const result = await loginActions.default({
+			request: requestWith({
+				action: 'signup',
+				email: 'a@example.com',
+				password: 'long-enough-password'
+			}),
+			url: new URL('https://planner.test/login'),
+			locals: { supabase: { auth } }
+		} as never);
+
+		expect(result).toMatchObject({
+			success: true,
+			message: 'Verifique seu email para confirmar o cadastro.'
+		});
+		expect(redirectMock).not.toHaveBeenCalled();
 	});
 
 	it('returns password login failures without redirecting', async () => {

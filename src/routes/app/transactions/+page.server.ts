@@ -16,6 +16,7 @@ import {
 	loadUserCategoryExclusions
 } from '$lib/server/categories';
 import { selectAllStrict } from '$lib/server/supabase-paging';
+import { isIsoMonth } from '$lib/server/request-guards';
 import { loadAccountNames } from '$lib/server/accounts';
 import {
 	SPENDING_FLOW_FILTER,
@@ -1432,7 +1433,7 @@ export const actions: Actions = {
 
 		const formData = await request.formData();
 		const referenceMonth = String(formData.get('reference_month') ?? '').trim();
-		if (!/^\d{4}-\d{2}$/.test(referenceMonth)) {
+		if (!isIsoMonth(referenceMonth)) {
 			return fail(400, { success: false, message: 'Mês inválido' });
 		}
 
@@ -1443,37 +1444,52 @@ export const actions: Actions = {
 				message: 'Usuário não pertence a um grupo'
 			});
 
-		const { data: rows, error: loadError } = await supabaseAdmin
-			.from('transactions')
-			.select('id')
-			.eq('household_id', householdId)
-			.eq('reference_month', referenceMonth);
-		if (loadError)
+		// Counted instead of listed: sending every id of a busy month in the
+		// URL is what took the transaction pages down past ~600 rows (see
+		// filterByReadableAccess). The editable count goes through the user's
+		// own client, so RLS and the access join both apply.
+		const [total, editable] = await Promise.all([
+			supabaseAdmin
+				.from('transactions')
+				.select('id', { count: 'exact', head: true })
+				.eq('household_id', householdId)
+				.eq('reference_month', referenceMonth),
+			filterByReadableAccess(
+				supabase
+					.from('transactions')
+					.select(`id, ${READABLE_ACCESS_EMBED}`, {
+						count: 'exact',
+						head: true
+					})
+					.eq('household_id', householdId)
+					.eq('reference_month', referenceMonth),
+				user.id,
+				{ canEdit: true }
+			)
+		]);
+		const countError = total.error ?? editable.error;
+		if (countError)
 			return fail(500, {
 				success: false,
-				message: logInternalError('app/transactions', loadError)
+				message: logInternalError('app/transactions', countError)
 			});
 
-		const transactionIds = (rows ?? []).map((row) => row.id);
-		if (transactionIds.length === 0)
+		if (!total.count)
 			return fail(404, {
 				success: false,
 				message: 'Nenhuma transação nesse mês'
 			});
 
-		const editableSet = await getEditableTransactionIds(
-			supabase,
-			user.id,
-			transactionIds
-		);
-		if (editableSet.size !== transactionIds.length) {
+		if (editable.count !== total.count) {
 			return fail(403, {
 				success: false,
 				message: 'Sem permissão para apagar todas as transações desse mês'
 			});
 		}
 
-		const { error } = await supabaseAdmin
+		// Deleted with the user's client: a row added to the month after the
+		// count is still subject to the delete policy (edit access).
+		const { error } = await supabase
 			.from('transactions')
 			.delete()
 			.eq('household_id', householdId)

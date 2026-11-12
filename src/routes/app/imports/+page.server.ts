@@ -594,6 +594,24 @@ function missingAccessRows(
 	return rows;
 }
 
+// Checked before anything is read or written. Confirming classifies the new
+// rows with the LLM, and without a valid preview token it extracts the upload
+// again, so it spends the same budget as preview.
+async function confirmRefusal(referenceMonth: string, userId: string) {
+	if (!isIsoMonth(referenceMonth)) {
+		return fail(400, {
+			success: false,
+			message: 'Mês de referência inválido'
+		});
+	}
+	if (
+		!(await checkPersistentRateLimit(supabaseAdmin, userId, LLM_RATE_LIMIT))
+	) {
+		return fail(429, { success: false, message: LLM_RATE_LIMIT_MESSAGE });
+	}
+	return null;
+}
+
 export const load: PageServerLoad = async ({
 	locals: { supabase, safeGetSession }
 }) => {
@@ -715,14 +733,10 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const referenceMonth = formData.get('reference_month') as string;
+		const referenceMonth = formData.get('reference_month')?.toString() ?? '';
 
-		if (!referenceMonth) {
-			return fail(400, {
-				success: false,
-				message: 'Mês de referência não informado'
-			});
-		}
+		const refused = await confirmRefusal(referenceMonth, user.id);
+		if (refused) return refused;
 
 		const householdId = await getUserHouseholdId(supabase, user.id);
 		if (!householdId) {
