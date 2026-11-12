@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { brl, dateShort, formatMonthLong, money } from '$lib/format';
 	import { ConfirmSubmit } from '$lib/confirm-submit.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
+	import Spinner from '$lib/components/ui/Spinner.svelte';
 	import { toast } from '$lib/toast.svelte';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
@@ -68,6 +70,10 @@
 	let bulkOpen = $state(false);
 	let menuOpen = $state(false);
 	const confirmer = new ConfirmSubmit();
+	const submits = new SubmitState();
+	let deletingMonth = $derived(submits.isPending('delete_month'));
+	const togglingTransfer = (id: string) =>
+		submits.isPending(`toggle_transfer:${id}`);
 	let canDeleteMonth = $derived(
 		!!selectedMonth && selectedMonth !== 'all' && summary.count > 0
 	);
@@ -280,7 +286,7 @@
 	let bulkSubcategoryId = $state('');
 	let bulkOwnerId = $state(KEEP);
 	let bulkTreatment = $state(KEEP);
-	let bulkApplying = $state(false);
+	let bulkApplying = $derived(submits.isPending('bulk_apply'));
 	let bulkCategoryRealId = $derived(
 		bulkCategoryId !== KEEP && bulkCategoryId !== '' ? bulkCategoryId : ''
 	);
@@ -627,9 +633,8 @@
 		};
 	}
 
-	function bulkApplyEnhance() {
+	function bulkApplySubmit() {
 		const scrollY = window.scrollY;
-		bulkApplying = true;
 
 		return async ({
 			result,
@@ -639,7 +644,6 @@
 			update: () => Promise<void>;
 		}) => {
 			await update();
-			bulkApplying = false;
 			if (result.type === 'failure') {
 				toast.error('Não foi possível aplicar a classificação.');
 			}
@@ -700,13 +704,19 @@
 			{#if canDeleteMonth}
 				<button
 					type="button"
-					aria-label="Mais ações"
+					aria-label={deletingMonth ? 'Excluindo o mês...' : 'Mais ações'}
 					aria-haspopup="menu"
 					aria-expanded={menuOpen}
+					aria-busy={deletingMonth}
+					disabled={deletingMonth}
 					onclick={() => (menuOpen = !menuOpen)}
-					class="inline-flex min-h-11 min-w-11 items-center justify-center rounded border border-border bg-surface text-neutral-flow hover:bg-canvas md:min-h-10 md:min-w-10"
+					class="inline-flex min-h-11 min-w-11 items-center justify-center rounded border border-border bg-surface text-neutral-flow hover:bg-canvas disabled:cursor-wait md:min-h-10 md:min-w-10"
 				>
-					<MoreHorizontal class="h-5 w-5" />
+					{#if deletingMonth}
+						<Spinner class="h-5 w-5 text-danger" />
+					{:else}
+						<MoreHorizontal class="h-5 w-5" />
+					{/if}
 				</button>
 				{#if menuOpen}
 					<button
@@ -738,10 +748,13 @@
 			id="delete-month-form"
 			method="POST"
 			action="?/delete_month"
-			use:enhance={(input) => {
-				askDeleteMonth(input);
-				return deleteEnhance('Mês excluído');
-			}}
+			use:enhance={submits.enhance({
+				key: 'delete_month',
+				submit: (input) => {
+					askDeleteMonth(input);
+					return deleteEnhance('Mês excluído');
+				}
+			})}
 		>
 			<input type="hidden" name="reference_month" value={selectedMonth} />
 			<input
@@ -949,10 +962,13 @@
 			id="transactions-delete-selected-form"
 			method="POST"
 			action="?/delete_selected"
-			use:enhance={(input) => {
-				askDeleteSelected(input);
-				return deleteEnhance('Transações excluídas');
-			}}
+			use:enhance={submits.enhance({
+				key: 'delete_selected',
+				submit: (input) => {
+					askDeleteSelected(input);
+					return deleteEnhance('Transações excluídas');
+				}
+			})}
 		>
 			{#each selectedForDelete as id (id)}
 				<input type="hidden" name="transaction_id" value={id} />
@@ -992,7 +1008,10 @@
 						<form
 							method="POST"
 							action="?/bulk_apply_classification"
-							use:enhance={bulkApplyEnhance}
+							use:enhance={submits.enhance({
+								key: 'bulk_apply',
+								submit: bulkApplySubmit
+							})}
 							data-sveltekit-noscroll
 							class="flex max-h-[50vh] flex-col gap-2 overflow-y-auto border-b border-border p-3 sm:flex-row sm:flex-wrap sm:items-end"
 						>
@@ -1056,11 +1075,13 @@
 									{/each}
 								</select>
 							</label>
-							<Button type="submit" disabled={!bulkHasChange || bulkApplying}>
-								{bulkApplying
-									? 'Aplicando...'
-									: `Aplicar a ${selectedForDelete.length}`}
-							</Button>
+							<Button
+								type="submit"
+								disabled={!bulkHasChange}
+								loading={bulkApplying}
+								loadingLabel="Aplicando..."
+								>Aplicar a {selectedForDelete.length}</Button
+							>
 						</form>
 					{/if}
 					<div class="flex flex-wrap items-center gap-2 p-3">
@@ -1077,7 +1098,8 @@
 							size="sm"
 							variant="danger"
 							type="submit"
-							form="transactions-delete-selected-form">Excluir</Button
+							form="transactions-delete-selected-form"
+							loading={submits.isPending('delete_selected')}>Excluir</Button
 						>
 						<Button
 							size="sm"
@@ -1187,7 +1209,10 @@
 								<form
 									method="POST"
 									action="?/toggle_transfer"
-									use:enhance
+									use:enhance={submits.enhance({
+										key: `toggle_transfer:${tx.id}`
+									})}
+									aria-busy={togglingTransfer(tx.id)}
 									data-sveltekit-noscroll
 									class="mt-1"
 								>
@@ -1199,14 +1224,20 @@
 									/>
 									<button
 										type="submit"
-										class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium {tx.is_transfer
+										disabled={togglingTransfer(tx.id)}
+										aria-busy={togglingTransfer(tx.id)}
+										class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium disabled:cursor-wait disabled:opacity-70 {tx.is_transfer
 											? 'bg-sky-100 text-sky-800 hover:bg-sky-200'
 											: 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}"
 										title={tx.is_transfer
 											? 'Deixar de tratar como transferência entre contas próprias'
 											: 'Marcar como transferência entre contas próprias (fica fora dos totais)'}
 									>
-										<ArrowLeftRight class="h-3 w-3" />
+										{#if togglingTransfer(tx.id)}
+											<Spinner class="h-3 w-3" />
+										{:else}
+											<ArrowLeftRight class="h-3 w-3" />
+										{/if}
 										{tx.is_transfer ? 'Transferência' : 'Marcar transferência'}
 									</button>
 								</form>

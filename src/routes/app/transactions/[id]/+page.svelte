@@ -6,8 +6,13 @@
 	import { TREATMENT_OPTIONS } from '$lib/financial-labels';
 	import { ConfirmSubmit } from '$lib/confirm-submit.svelte';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import Button from '$lib/components/ui/Button.svelte';
+	import Spinner from '$lib/components/ui/Spinner.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 
 	const confirmer = new ConfirmSubmit();
+	const submits = new SubmitState();
+	let deleting = $derived(submits.isPending('delete'));
 
 	let { data, form }: { data: TransactionDetailPageData; form: ActionData } =
 		$props();
@@ -57,7 +62,7 @@
 
 	<form
 		method="POST"
-		use:enhance
+		use:enhance={submits.enhance({ key: 'save' })}
 		class="space-y-4 bg-surface p-6 rounded-lg shadow"
 	>
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -285,14 +290,18 @@
 				<button
 					type="submit"
 					form="delete-transaction-form"
-					class="px-4 py-2 border border-red-200 rounded-md shadow-sm text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100"
+					disabled={submits.pending}
+					aria-busy={deleting}
+					class="inline-flex items-center gap-2 px-4 py-2 border border-red-200 rounded-md shadow-sm text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 aria-busy:cursor-wait"
 				>
-					Excluir transação
+					{#if deleting}<Spinner />Excluindo...{:else}Excluir transação{/if}
 				</button>
-				<button
+				<Button
 					type="submit"
-					class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-hover"
-					>Salvar alterações</button
+					class="shadow-sm"
+					disabled={submits.pending}
+					loading={submits.isPending('save')}
+					loadingLabel="Salvando...">Salvar alterações</Button
 				>
 			</div>
 		{/if}
@@ -307,11 +316,14 @@
 			id="delete-transaction-form"
 			method="POST"
 			action="?/delete"
-			onsubmit={(event) =>
-				confirmer.ask(event, {
-					title: 'Excluir esta transação?',
-					message: `"${tx.description}" será removida e não há como desfazer.`
-				})}
+			use:enhance={submits.enhance({
+				key: 'delete',
+				submit: ({ cancel, formElement }) =>
+					confirmer.guard(cancel, formElement, {
+						title: 'Excluir esta transação?',
+						message: `"${tx.description}" será removida e não há como desfazer.`
+					})
+			})}
 		></form>
 	{/if}
 </div>

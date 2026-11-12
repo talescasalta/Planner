@@ -3,6 +3,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { Ban, Check, Undo2 } from 'lucide-svelte';
 	import type { Transaction } from '$lib/types/app';
+	import Spinner from '$lib/components/ui/Spinner.svelte';
 
 	type Status = Transaction['review_status'];
 	type ActionKey = 'confirm' | 'ignore' | 'restore';
@@ -67,6 +68,13 @@
 		touch: 'min-h-11 gap-1.5 rounded-md px-3 text-sm font-medium'
 	};
 
+	// The row is busy as a whole; remember which button started it so only
+	// that one shows the spinner.
+	let clicked = $state<ActionKey | null>(null);
+	$effect(() => {
+		if (!busy) clicked = null;
+	});
+
 	const badge = $derived(BADGES[tx.review_status]);
 	const keys = $derived(BUTTONS_BY_STATUS[tx.review_status] ?? []);
 </script>
@@ -89,11 +97,17 @@
 			<button
 				type="submit"
 				disabled={busy}
+				aria-busy={busy && clicked === key}
+				onclick={() => (clicked = key)}
 				class="{BUTTON_BASE} {SIZE_CLASS[size]} {item.color}"
 				title={item.title}
 				aria-label={size === 'compact' ? item.title : undefined}
 			>
-				<Icon class="h-4 w-4" />
+				{#if busy && clicked === key}
+					<Spinner />
+				{:else}
+					<Icon class="h-4 w-4" />
+				{/if}
 				{#if size === 'touch'}{item.label}{/if}
 			</button>
 		</form>

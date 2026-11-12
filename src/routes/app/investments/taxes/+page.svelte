@@ -2,6 +2,8 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import type { PageData, ActionData } from './$types';
+	import TextButton from '$lib/components/ui/TextButton.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -22,6 +24,7 @@
 	);
 	let monthsDesc = $derived([...data.months].reverse());
 	let overrideAssetId = $state('');
+	const submits = new SubmitState();
 </script>
 
 <svelte:head>
@@ -120,7 +123,13 @@
 							<td class="px-3 py-2 whitespace-nowrap">{taxMonth.dueDate}</td>
 							<td class="px-3 py-2">
 								{#if taxMonth.darfAmount > 0}
-									<form method="POST" action="?/mark_paid" use:enhance>
+									<form
+										method="POST"
+										action="?/mark_paid"
+										use:enhance={submits.enhance({
+											key: `mark_paid:${taxMonth.month}`
+										})}
+									>
 										<input type="hidden" name="month" value={taxMonth.month} />
 										<input
 											type="hidden"
@@ -132,8 +141,8 @@
 											name="paid"
 											value={paidByMonth.get(taxMonth.month) ? 'false' : 'true'}
 										/>
-										<button
-											type="submit"
+										<TextButton
+											loading={submits.isPending(`mark_paid:${taxMonth.month}`)}
 											class={paidByMonth.get(taxMonth.month)
 												? 'rounded bg-emerald-100 px-2 py-1 text-xs text-emerald-800'
 												: 'rounded bg-amber-100 px-2 py-1 text-xs text-amber-800 hover:bg-amber-200'}
@@ -141,7 +150,7 @@
 											{paidByMonth.get(taxMonth.month)
 												? '✓ pago'
 												: 'marcar pago'}
-										</button>
+										</TextButton>
 									</form>
 								{:else}
 									<span class="text-xs text-gray-400">—</span>
@@ -177,7 +186,7 @@
 		<form
 			method="POST"
 			action="?/set_override"
-			use:enhance
+			use:enhance={submits.enhance({ key: 'set_override' })}
 			class="mt-3 flex flex-wrap items-end gap-3"
 		>
 			<label class="text-xs text-gray-600">
@@ -226,12 +235,14 @@
 					class="mt-1 block rounded border border-gray-300 px-2 py-1 text-sm"
 				/>
 			</label>
-			<button
-				type="submit"
+			<TextButton
 				class="rounded bg-primary px-3 py-1.5 text-sm text-white hover:bg-primary-hover"
+				spinnerClass="h-3.5 w-3.5"
+				loading={submits.isPending('set_override')}
+				loadingLabel="Salvando..."
 			>
 				Salvar
-			</button>
+			</TextButton>
 		</form>
 	</div>
 </div>

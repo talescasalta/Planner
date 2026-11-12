@@ -7,6 +7,7 @@
 	import PrivacyToggle from '$lib/components/ui/PrivacyToggle.svelte';
 	import Sheet from '$lib/components/ui/Sheet.svelte';
 	import Toaster from '$lib/components/ui/Toaster.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 	import {
 		BOTTOM_BAR_ITEMS,
 		NAV_ITEMS,
@@ -16,6 +17,7 @@
 	} from '$lib/navigation';
 
 	let { data, children } = $props();
+	const logoutSubmit = new SubmitState();
 
 	const REVIEW_HREF = '/app/review';
 	const BADGE_CAP = 99;
@@ -66,9 +68,19 @@
 {/snippet}
 
 {#snippet logout(classes: string)}
-	<form method="POST" action="/logout" use:enhance class={classes}>
-		<Button type="submit" variant="ghost" size="sm" class="w-full justify-start"
-			>Sair</Button
+	<form
+		method="POST"
+		action="/logout"
+		use:enhance={logoutSubmit.enhance()}
+		class={classes}
+	>
+		<Button
+			type="submit"
+			variant="ghost"
+			size="sm"
+			class="w-full justify-start"
+			loading={logoutSubmit.pending}
+			loadingLabel="Saindo...">Sair</Button
 		>
 	</form>
 {/snippet}

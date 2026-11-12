@@ -3,6 +3,10 @@
 	import { resolve } from '$app/paths';
 	import type { Category } from '$lib/types/app';
 	import { TREATMENT_OPTIONS } from '$lib/financial-labels';
+	import Button from '$lib/components/ui/Button.svelte';
+	import Spinner from '$lib/components/ui/Spinner.svelte';
+	import TextButton from '$lib/components/ui/TextButton.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 
 	type Variant = 'cell' | 'chip' | 'touch';
 	const SELECT_CLASS: Record<Variant, string> = {
@@ -23,6 +27,7 @@
 		data: { categories: Category[]; hiddenCategories: Category[] };
 		form?: { success?: boolean; message?: string };
 	} = $props();
+	const submits = new SubmitState();
 	let categories = $derived(data.categories ?? []);
 	let hiddenCategories = $derived(data.hiddenCategories ?? []);
 	let parentCategories = $derived(
@@ -61,7 +66,7 @@
 		<form
 			method="POST"
 			action="?/create_category"
-			use:enhance
+			use:enhance={submits.enhance({ key: 'create_category' })}
 			class="bg-surface p-4 rounded-lg shadow space-y-3"
 		>
 			<h3 class="text-sm font-semibold text-gray-900">
@@ -98,10 +103,10 @@
 				</select>
 			</div>
 			<div class="flex justify-end">
-				<button
+				<Button
 					type="submit"
-					class="px-4 py-2 text-sm font-medium text-white bg-primary rounded hover:bg-primary-hover"
-					>Criar categoria</button
+					loading={submits.isPending('create_category')}
+					loadingLabel="Criando...">Criar categoria</Button
 				>
 			</div>
 		</form>
@@ -109,7 +114,7 @@
 		<form
 			method="POST"
 			action="?/create_subcategory"
-			use:enhance
+			use:enhance={submits.enhance({ key: 'create_subcategory' })}
 			class="bg-surface p-4 rounded-lg shadow space-y-3"
 		>
 			<h3 class="text-sm font-semibold text-gray-900">
@@ -147,10 +152,10 @@
 				</div>
 			</div>
 			<div class="flex justify-end">
-				<button
+				<Button
 					type="submit"
-					class="px-4 py-2 text-sm font-medium text-white bg-primary rounded hover:bg-primary-hover"
-					>Criar subcategoria</button
+					loading={submits.isPending('create_subcategory')}
+					loadingLabel="Criando...">Criar subcategoria</Button
 				>
 			</div>
 		</form>
@@ -273,14 +278,16 @@
 								<form
 									method="POST"
 									action="?/restore"
-									use:enhance
+									use:enhance={submits.enhance({
+										key: `restore:${category.id}`
+									})}
 									class="inline"
 								>
 									<input type="hidden" name="category_id" value={category.id} />
-									<button
-										type="submit"
+									<TextButton
 										class="text-sm text-indigo-600 hover:text-indigo-800"
-										>Restaurar</button
+										loading={submits.isPending(`restore:${category.id}`)}
+										loadingLabel="Restaurando...">Restaurar</TextButton
 									>
 								</form>
 							</td>
@@ -296,18 +303,20 @@
 	<form
 		method="POST"
 		action="?/update_treatment"
-		use:enhance
+		use:enhance={submits.enhance({ key: `treatment:${category.id}` })}
+		aria-busy={submits.isPending(`treatment:${category.id}`)}
 		class={variant === 'touch'
 			? 'flex'
 			: variant === 'chip'
-				? 'inline-flex'
-				: 'mt-1 inline-flex'}
+				? 'inline-flex items-center gap-1'
+				: 'mt-1 inline-flex items-center gap-1'}
 	>
 		<input type="hidden" name="category_id" value={category.id} />
 		<select
 			name="financial_treatment"
-			class={SELECT_CLASS[variant]}
+			class={`${SELECT_CLASS[variant]} disabled:cursor-wait disabled:opacity-60`}
 			aria-label="Tratamento de {category.name}"
+			disabled={submits.isPending(`treatment:${category.id}`)}
 			onchange={(event) => event.currentTarget.form?.requestSubmit()}
 		>
 			<option value="" selected={!category.financial_treatment}
@@ -321,12 +330,24 @@
 				>
 			{/each}
 		</select>
+		{#if submits.isPending(`treatment:${category.id}`)}
+			<Spinner class="h-3.5 w-3.5 text-gray-500" />
+		{/if}
 	</form>
 {/snippet}
 
 {#snippet deleteForm(category: Category, variant: Variant)}
-	<form method="POST" action="?/delete" use:enhance class="inline">
+	<form
+		method="POST"
+		action="?/delete"
+		use:enhance={submits.enhance({ key: `delete:${category.id}` })}
+		class="inline"
+	>
 		<input type="hidden" name="category_id" value={category.id} />
-		<button type="submit" class={DELETE_CLASS[variant]}>Excluir</button>
+		<TextButton
+			class={DELETE_CLASS[variant]}
+			loading={submits.isPending(`delete:${category.id}`)}
+			loadingLabel="Excluindo...">Excluir</TextButton
+		>
 	</form>
 {/snippet}

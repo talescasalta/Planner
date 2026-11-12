@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { brl, dateBr } from '$lib/format';
+	import { SubmitState } from '$lib/submit-state.svelte';
+	import TextButton from '$lib/components/ui/TextButton.svelte';
 
 	// Bank-issued paper (LCA, LCI, CDB) has no published quote. B3 restates its
 	// accrued price on every position export and then says nothing until the
@@ -31,6 +33,7 @@
 	// Which paper's form is open. One at a time keeps the card compact.
 	let editing = $state<string | null>(null);
 	let indexType = $state('cdi');
+	const submits = new SubmitState();
 
 	function open(position: CarryPosition) {
 		editing = position.assetId;
@@ -112,12 +115,14 @@
 						<form
 							method="POST"
 							action="?/set_carry_rate"
-							use:enhance={() => {
+							use:enhance={submits.enhance(() => {
+								// Keep the form open, with the spinner on Salvar, until the
+								// server answers.
 								return async ({ update }) => {
-									editing = null;
 									await update();
+									editing = null;
 								};
-							}}
+							})}
 							class="mt-2 flex flex-wrap items-end gap-2 rounded bg-gray-50 p-2"
 						>
 							<input type="hidden" name="asset_id" value={position.assetId} />
@@ -156,12 +161,13 @@
 									/>
 								</label>
 							{/if}
-							<button
-								type="submit"
+							<TextButton
 								class="rounded bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-hover"
+								loading={submits.pending}
+								loadingLabel="Salvando..."
 							>
 								Salvar
-							</button>
+							</TextButton>
 							<button
 								type="button"
 								class="px-2 py-1.5 text-xs text-gray-600 hover:text-gray-900"

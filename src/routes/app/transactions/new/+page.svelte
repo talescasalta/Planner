@@ -3,6 +3,8 @@
 	import { resolve } from '$app/paths';
 	import type { TransactionNewPageData } from '$lib/types/page-data';
 	import type { ActionData } from './$types';
+	import Button from '$lib/components/ui/Button.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 	import ManualEntryFields, {
 		type DraftRow
 	} from '$lib/components/transactions/ManualEntryFields.svelte';
@@ -15,6 +17,7 @@
 	let { data, form }: { data: TransactionNewPageData; form?: BatchFormState } =
 		$props();
 
+	const submits = new SubmitState();
 	let categories = $derived(data.categories ?? []);
 	let profiles = $derived(data.profiles ?? []);
 	let members = $derived(data.members ?? []);
@@ -105,7 +108,7 @@
 		</p>
 	</div>
 
-	<form method="POST" use:enhance class="space-y-4">
+	<form method="POST" use:enhance={submits.enhance()} class="space-y-4">
 		<div
 			class="overflow-hidden rounded-2xl border border-gray-200 bg-surface shadow-sm"
 		>
@@ -221,12 +224,14 @@
 				href={resolve('/app/transactions')}
 				class="text-sm text-gray-600 hover:text-gray-900">Cancelar</a
 			>
-			<button
+			<Button
 				type="submit"
-				class="min-h-11 rounded-md border border-transparent bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-hover sm:min-h-0"
+				class="shadow-sm"
+				loading={submits.pending}
+				loadingLabel="Registrando..."
 			>
 				Registrar transações
-			</button>
+			</Button>
 		</div>
 
 		<div class="h-16 sm:hidden" aria-hidden="true"></div>

@@ -2,10 +2,13 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import type { ActionData } from './$types';
+	import Button from '$lib/components/ui/Button.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 
 	let { form }: { form: ActionData } = $props();
 
-	let asking = $state(false);
+	const submits = new SubmitState();
+	let asking = $derived(submits.pending);
 	let question = $state('');
 
 	let history = $derived(form?.history ?? []);
@@ -126,14 +129,10 @@
 	<form
 		method="POST"
 		action="?/ask"
-		use:enhance={() => {
-			asking = true;
-			return async ({ update }) => {
-				asking = false;
-				question = '';
-				await update({ reset: false });
-			};
-		}}
+		use:enhance={submits.enhance(() => async ({ update }) => {
+			question = '';
+			await update({ reset: false });
+		})}
 		class="rounded-lg border border-gray-200 bg-surface p-3"
 	>
 		<input type="hidden" name="history" value={JSON.stringify(history)} />
@@ -146,13 +145,9 @@
 			class="block w-full rounded border border-gray-300 px-2 py-1 text-sm"
 		></textarea>
 		<div class="mt-2 flex items-center justify-end">
-			<button
-				type="submit"
-				disabled={asking}
-				class="rounded bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
+			<Button type="submit" loading={asking} loadingLabel="Pensando…"
+				>Enviar</Button
 			>
-				{asking ? 'Pensando…' : 'Enviar'}
-			</button>
 		</div>
 	</form>
 </div>

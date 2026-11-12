@@ -117,6 +117,20 @@
 					<Button href={resolve('/dev/mobile') + '?view=ui'}>Link</Button>
 				</div>
 			</Card>
+			<Card
+				title="Enviando"
+				subtitle="prop loading: spinner, aria-busy e a mesma largura"
+			>
+				<div class="flex flex-wrap gap-2">
+					<Button loading>Salvar alterações</Button>
+					<Button loading loadingLabel="Salvando...">Salvar alterações</Button>
+					<Button variant="secondary" loading>Secundário</Button>
+					<Button variant="danger" size="sm" loading>Excluir</Button>
+					<Button variant="success" loading loadingLabel="Processando..."
+						>Confirmar importação</Button
+					>
+				</div>
+			</Card>
 			<div class="grid grid-cols-2 gap-3 md:grid-cols-4">
 				<StatTile label="Despesas" value={brl(4321.5)} tone="expense">
 					{#snippet hint()}12% a mais que o mês anterior{/snippet}

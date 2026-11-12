@@ -17,9 +17,14 @@
 	} from 'lucide-svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import Spinner from '$lib/components/ui/Spinner.svelte';
+	import TextButton from '$lib/components/ui/TextButton.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+	const submits = new SubmitState();
+	const busy = (key: string) => submits.isPending(key);
 	let groups = $derived(data.groups ?? []);
 	let invitations = $derived(data.invitations ?? []);
 	let showCreateForm = $state(false);
@@ -148,20 +153,30 @@
 				</span>
 			</p>
 			<div class="flex gap-2">
-				<form method="POST" action="?/decline_invitation" use:enhance>
+				<form
+					method="POST"
+					action="?/decline_invitation"
+					use:enhance={submits.enhance({ key: `decline:${invitation.id}` })}
+				>
 					<input type="hidden" name="invitation_id" value={invitation.id} />
-					<button
-						type="submit"
+					<TextButton
 						class="rounded-md border border-gray-300 bg-surface px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-						>Recusar</button
+						spinnerClass="h-3.5 w-3.5"
+						disabled={busy(`accept:${invitation.id}`)}
+						loading={busy(`decline:${invitation.id}`)}>Recusar</TextButton
 					>
 				</form>
-				<form method="POST" action="?/accept_invitation" use:enhance>
+				<form
+					method="POST"
+					action="?/accept_invitation"
+					use:enhance={submits.enhance({ key: `accept:${invitation.id}` })}
+				>
 					<input type="hidden" name="invitation_id" value={invitation.id} />
-					<button
-						type="submit"
+					<TextButton
 						class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-hover"
-						>Aceitar</button
+						spinnerClass="h-3.5 w-3.5"
+						disabled={busy(`decline:${invitation.id}`)}
+						loading={busy(`accept:${invitation.id}`)}>Aceitar</TextButton
 					>
 				</form>
 			</div>
@@ -172,7 +187,7 @@
 		<form
 			method="POST"
 			action="?/create"
-			use:enhance
+			use:enhance={submits.enhance({ key: 'create' })}
 			class="rounded-lg bg-surface p-5 shadow"
 		>
 			<label for="group_name" class="block text-sm font-medium text-gray-700"
@@ -187,10 +202,11 @@
 					placeholder="Ex: Minha Casa"
 					class="flex-1 rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
 				/>
-				<button
-					type="submit"
+				<TextButton
 					class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-					>Criar</button
+					spinnerClass="h-4 w-4"
+					loading={busy('create')}
+					loadingLabel="Criando...">Criar</TextButton
 				>
 			</div>
 		</form>
@@ -303,7 +319,7 @@
 				<form
 					method="POST"
 					action="?/update_incomes"
-					use:enhance
+					use:enhance={submits.enhance({ key: `incomes:${group.id}` })}
 					class="mt-3 space-y-3 rounded-md border border-gray-100 bg-gray-50 p-3"
 				>
 					<input type="hidden" name="group_id" value={group.id} />
@@ -328,10 +344,11 @@
 					</div>
 					{#if group.role === 'admin'}
 						<div class="flex justify-end">
-							<button
-								type="submit"
+							<TextButton
 								class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700"
-								>Salvar rendas</button
+								spinnerClass="h-4 w-4"
+								loading={busy(`incomes:${group.id}`)}
+								loadingLabel="Salvando...">Salvar rendas</TextButton
 							>
 						</div>
 					{:else}
@@ -479,7 +496,7 @@
 					<form
 						method="POST"
 						action="?/add_member"
-						use:enhance
+						use:enhance={submits.enhance({ key: `add_member:${group.id}` })}
 						class="mt-3 flex gap-2"
 					>
 						<input type="hidden" name="group_id" value={group.id} />
@@ -490,10 +507,11 @@
 							placeholder="email@exemplo.com"
 							class="flex-1 rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
 						/>
-						<button
-							type="submit"
+						<TextButton
 							class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary-hover"
-							>Convidar</button
+							spinnerClass="h-4 w-4"
+							loading={busy(`add_member:${group.id}`)}
+							loadingLabel="Convidando...">Convidar</TextButton
 						>
 					</form>
 				{/if}
@@ -518,18 +536,24 @@
 								<form
 									method="POST"
 									action="?/remove_member"
-									use:enhance
+									use:enhance={submits.enhance({
+										key: `remove_member:${group.id}:${member.user_id}`
+									})}
 									class="inline"
 								>
 									<input type="hidden" name="group_id" value={group.id} />
 									<input type="hidden" name="user_id" value={member.user_id} />
-									<button
-										type="submit"
+									<TextButton
 										class="rounded-full p-0.5 text-gray-400 hover:bg-red-100 hover:text-red-700"
 										title="Remover"
+										loading={busy(
+											`remove_member:${group.id}:${member.user_id}`
+										)}
 									>
-										<X class="h-3 w-3" />
-									</button>
+										{#if !busy(`remove_member:${group.id}:${member.user_id}`)}<X
+												class="h-3 w-3"
+											/>{/if}
+									</TextButton>
 								</form>
 							{/if}
 						</li>
@@ -543,7 +567,9 @@
 							<form
 								method="POST"
 								action="?/cancel_invitation"
-								use:enhance
+								use:enhance={submits.enhance({
+									key: `cancel_invitation:${invitation.id}`
+								})}
 								class="inline"
 							>
 								<input type="hidden" name="group_id" value={group.id} />
@@ -552,13 +578,15 @@
 									name="invitation_id"
 									value={invitation.id}
 								/>
-								<button
-									type="submit"
+								<TextButton
 									class="rounded-full p-0.5 text-gray-400 hover:bg-red-100 hover:text-red-700"
 									title="Cancelar convite"
+									loading={busy(`cancel_invitation:${invitation.id}`)}
 								>
-									<X class="h-3 w-3" />
-								</button>
+									{#if !busy(`cancel_invitation:${invitation.id}`)}<X
+											class="h-3 w-3"
+										/>{/if}
+								</TextButton>
 							</form>
 						</li>
 					{/each}
@@ -700,7 +728,10 @@
 													<form
 														method="POST"
 														action="?/update_split_method"
-														use:enhance
+														use:enhance={submits.enhance({
+															key: `split:${tx.id}`
+														})}
+														class="inline-flex items-center gap-1"
 													>
 														<input
 															type="hidden"
@@ -714,7 +745,8 @@
 														/>
 														<select
 															name="split_method"
-															class="rounded-md border-gray-300 py-1 pl-2 pr-7 text-xs shadow-sm"
+															class="rounded-md border-gray-300 py-1 pl-2 pr-7 text-xs shadow-sm disabled:cursor-wait disabled:opacity-60"
+															disabled={busy(`split:${tx.id}`)}
 															aria-label="Regra de divisão de {tx.description}"
 															onchange={(event) =>
 																event.currentTarget.form?.requestSubmit()}
@@ -733,6 +765,9 @@
 																>{splitMethodLabel('equal')}</option
 															>
 														</select>
+														{#if busy(`split:${tx.id}`)}
+															<Spinner class="h-3.5 w-3.5 text-gray-500" />
+														{/if}
 													</form>
 												{:else}
 													<span class="text-gray-400">-</span>

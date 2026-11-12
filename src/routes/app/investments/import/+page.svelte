@@ -2,11 +2,22 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import type { ActionData } from './$types';
+	import Button from '$lib/components/ui/Button.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 
 	let { form }: { form: ActionData } = $props();
 
 	let selectedFiles: File[] = $state([]);
-	let isSubmitting = $state(false);
+	// Both forms share one flag: neither accepts a submit while the other runs.
+	const submits = new SubmitState();
+	const keepFields =
+		() =>
+		async ({
+			update
+		}: {
+			update: (opts: { reset: boolean }) => Promise<void>;
+		}) =>
+			update({ reset: false });
 	let confirmFileInput: HTMLInputElement | null = $state(null);
 	let snapshotDate = $state('');
 
@@ -66,13 +77,7 @@
 		method="POST"
 		action="?/preview"
 		enctype="multipart/form-data"
-		use:enhance={() => {
-			isSubmitting = true;
-			return async ({ update }) => {
-				isSubmitting = false;
-				await update({ reset: false });
-			};
-		}}
+		use:enhance={submits.enhance({ key: 'preview', submit: keepFields })}
 		class="space-y-4 rounded-lg border border-gray-200 bg-surface p-4"
 	>
 		<div>
@@ -108,13 +113,12 @@
 				Se vazio, a data é lida do nome do arquivo (posicao-AAAA-MM-DD-...).
 			</p>
 		</div>
-		<button
+		<Button
 			type="submit"
-			disabled={isSubmitting}
-			class="rounded bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
+			disabled={submits.pending}
+			loading={submits.isPending('preview')}
+			loadingLabel="Analisando…">Analisar arquivos</Button
 		>
-			{isSubmitting ? 'Analisando…' : 'Analisar arquivos'}
-		</button>
 	</form>
 
 	{#if form && form.success === false}
@@ -222,13 +226,7 @@
 				method="POST"
 				action="?/confirm"
 				enctype="multipart/form-data"
-				use:enhance={() => {
-					isSubmitting = true;
-					return async ({ update }) => {
-						isSubmitting = false;
-						await update({ reset: false });
-					};
-				}}
+				use:enhance={submits.enhance({ key: 'confirm', submit: keepFields })}
 			>
 				<input
 					bind:this={confirmFileInput}
@@ -240,15 +238,14 @@
 					tabindex="-1"
 				/>
 				<input type="hidden" name="snapshot_date" value={snapshotDate} />
-				<button
+				<Button
 					type="submit"
-					disabled={isSubmitting}
-					class="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+					variant="success"
+					disabled={submits.pending}
+					loading={submits.isPending('confirm')}
+					loadingLabel="Importando…"
+					>Confirmar importação ({form.total} linhas)</Button
 				>
-					{isSubmitting
-						? 'Importando…'
-						: `Confirmar importação (${form.total} linhas)`}
-				</button>
 			</form>
 		</div>
 	{/if}
