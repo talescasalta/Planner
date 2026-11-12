@@ -8,11 +8,13 @@
 	import { CLASS_COLORS, classColor } from '$lib/investments/classes';
 	import { brl, dateBr } from '$lib/format';
 	import type { PageData, ActionData } from './$types';
+	import { SubmitState } from '$lib/submit-state.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let ownerFilter: 'todos' | 'meus' = $state('todos');
-	let refreshing = $state(false);
+	const submits = new SubmitState();
+	let refreshing = $derived(submits.isPending('refresh_quotes'));
 	let positions = $derived(
 		ownerFilter === 'todos'
 			? data.positions
@@ -215,19 +217,14 @@
 				<form
 					method="POST"
 					action="?/refresh_quotes"
-					use:enhance={() => {
-						refreshing = true;
-						return async ({ update }) => {
-							await update();
-							refreshing = false;
-						};
-					}}
+					use:enhance={submits.enhance({ key: 'refresh_quotes' })}
 				>
 					<button
 						type="submit"
 						disabled={refreshing}
+						aria-busy={refreshing}
 						title="Busca agora as cotações da bolsa e do Tesouro Direto e recalcula CDB, LCA e LCI na curva. Fundos seguem com a cota diária da CVM."
-						class="inline-flex items-center gap-1.5 rounded border border-gray-300 bg-surface px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+						class="inline-flex items-center gap-1.5 rounded border border-gray-300 bg-surface px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60"
 					>
 						<svg
 							class={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`}

@@ -2,10 +2,12 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import type { PageData, ActionData } from './$types';
+	import Button from '$lib/components/ui/Button.svelte';
+	import TextButton from '$lib/components/ui/TextButton.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
-	let submitting = $state(false);
-	let reading = $state(false);
+	const submits = new SubmitState();
 
 	let extracted = $derived(form?.extracted ?? []);
 
@@ -95,13 +97,13 @@
 			method="POST"
 			action="?/read_screenshot"
 			enctype="multipart/form-data"
-			use:enhance={() => {
-				reading = true;
-				return async ({ update }) => {
-					reading = false;
-					await update({ reset: false });
-				};
-			}}
+			use:enhance={submits.enhance({
+				key: 'read_screenshot',
+				submit:
+					() =>
+					async ({ update }) =>
+						update({ reset: false })
+			})}
 			class="mt-3 flex flex-wrap items-center gap-3"
 		>
 			<input
@@ -111,13 +113,12 @@
 				required
 				class="block text-sm text-gray-700 file:mr-3 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-sm"
 			/>
-			<button
-				type="submit"
-				disabled={reading}
-				class="rounded bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+			<TextButton
+				class="rounded bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-900"
+				spinnerClass="h-4 w-4"
+				loading={submits.isPending('read_screenshot')}
+				loadingLabel="Lendo…">Ler print</TextButton
 			>
-				{reading ? 'Lendo…' : 'Ler print'}
-			</button>
 		</form>
 
 		{#if extracted.length > 0}
@@ -201,13 +202,7 @@
 		<form
 			method="POST"
 			action="?/add"
-			use:enhance={() => {
-				submitting = true;
-				return async ({ update }) => {
-					submitting = false;
-					await update();
-				};
-			}}
+			use:enhance={submits.enhance({ key: 'add' })}
 			class="mt-3 grid gap-3 sm:grid-cols-2"
 		>
 			<label class="text-xs text-gray-600">
@@ -294,13 +289,11 @@
 				</span>
 			</label>
 			<div class="sm:col-span-2">
-				<button
+				<Button
 					type="submit"
-					disabled={submitting}
-					class="rounded bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
+					loading={submits.isPending('add')}
+					loadingLabel="Buscando cota na CVM…">Cadastrar</Button
 				>
-					{submitting ? 'Buscando cota na CVM…' : 'Cadastrar'}
-				</button>
 			</div>
 		</form>
 	</div>
@@ -365,12 +358,16 @@
 										: brl.format(fund.invested)}</td
 								>
 								<td class="py-1 text-right">
-									<form method="POST" action="?/remove" use:enhance>
+									<form
+										method="POST"
+										action="?/remove"
+										use:enhance={submits.enhance({ key: `remove:${fund.id}` })}
+									>
 										<input type="hidden" name="asset_id" value={fund.id} />
-										<button
-											type="submit"
+										<TextButton
 											class="text-xs text-red-600 hover:text-red-800"
-											>remover</button
+											loading={submits.isPending(`remove:${fund.id}`)}
+											loadingLabel="removendo…">remover</TextButton
 										>
 									</form>
 								</td>

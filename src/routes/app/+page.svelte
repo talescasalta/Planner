@@ -21,6 +21,7 @@
 	import Card from '$lib/components/ui/Card.svelte';
 	import Sheet from '$lib/components/ui/Sheet.svelte';
 	import StatTile from '$lib/components/ui/StatTile.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 	import type { TreemapSelection } from '$lib/components/charts/CategoryTreemap.svelte';
 	import MonthlyTrendChart from '$lib/components/charts/MonthlyTrendChart.svelte';
 	import CategoryTrendChart from '$lib/components/charts/CategoryTrendChart.svelte';
@@ -115,24 +116,17 @@
 		Math.max(1, ...installmentForecast.months.map((m) => m.total))
 	);
 
-	let generatingInsights = $state(false);
+	const submits = new SubmitState();
+	let generatingInsights = $derived(submits.pending);
 	let insights = $derived(
 		form?.insights && form?.insightsMonth === selectedMonth
 			? form.insights
 			: null
 	);
 
-	function insightsEnhance() {
-		generatingInsights = true;
-		return async ({
-			update
-		}: {
-			update: (opts?: { reset?: boolean }) => Promise<void>;
-		}) => {
-			await update({ reset: false });
-			generatingInsights = false;
-		};
-	}
+	const insightsEnhance = submits.enhance(() => async ({ update }) => {
+		await update({ reset: false });
+	});
 
 	const UNCATEGORIZED_ID = '__uncategorized__';
 	const UNSPECIFIED_SUB_ID = '__unspecified__';
@@ -656,18 +650,12 @@
 						<Button
 							type="submit"
 							size="sm"
-							disabled={generatingInsights || !selectedMonth}
+							disabled={!selectedMonth}
+							loading={generatingInsights}
+							loadingLabel="Gerando..."
 						>
-							{#if generatingInsights}
-								<span
-									class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white"
-									aria-hidden="true"
-								></span>
-								Gerando...
-							{:else}
-								<Sparkles class="h-3.5 w-3.5" />
-								{insights ? 'Gerar novamente' : 'Gerar insights'}
-							{/if}
+							<Sparkles class="h-3.5 w-3.5" />
+							{insights ? 'Gerar novamente' : 'Gerar insights'}
 						</Button>
 					</form>
 				{/snippet}

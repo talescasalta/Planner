@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { dateShort, money } from '$lib/format';
 	import { enhance } from '$app/forms';
+	import TextButton from '$lib/components/ui/TextButton.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 	import type { Transaction, Category, FinancialProfile } from '$lib/types/app';
 
 	let {
@@ -14,6 +16,7 @@
 		};
 		form?: { success?: boolean; message?: string };
 	} = $props();
+	const submits = new SubmitState();
 	let transactions = $derived(data.transactions ?? []);
 	let categories = $derived(data.categories ?? []);
 	let profiles = $derived(data.profiles ?? []);
@@ -57,7 +60,8 @@
 			{#each transactions as tx (tx.id)}
 				<form
 					method="POST"
-					use:enhance
+					use:enhance={submits.enhance({ key: tx.id })}
+					aria-busy={submits.isPending(tx.id)}
 					class="bg-surface p-4 rounded-lg shadow space-y-3"
 				>
 					<input type="hidden" name="transaction_id" value={tx.id} />
@@ -142,10 +146,11 @@
 						</div>
 
 						<div class="flex items-end gap-3">
-							<button
-								type="submit"
+							<TextButton
 								class="ml-auto px-3 py-1.5 text-sm font-medium text-white bg-primary rounded hover:bg-primary-hover"
-								>Confirmar</button
+								spinnerClass="h-3.5 w-3.5"
+								loading={submits.isPending(tx.id)}
+								loadingLabel="Salvando...">Confirmar</TextButton
 							>
 						</div>
 					</div>

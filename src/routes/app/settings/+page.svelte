@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import Button from '$lib/components/ui/Button.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 
 	let { data, form } = $props();
 	let user = $derived(data.user);
 	let profile = $derived(data.profile);
 	let ownNames = $derived((data.ownNames ?? []).join('\n'));
-	let saving = $state(false);
+	const submits = new SubmitState();
 	const NAMES_PLACEHOLDER = 'Maria Souza\nMaria S';
 </script>
 
@@ -30,13 +32,9 @@
 	<form
 		method="POST"
 		action="?/update_own_names"
-		use:enhance={() => {
-			saving = true;
-			return async ({ update }) => {
-				await update({ reset: false });
-				saving = false;
-			};
-		}}
+		use:enhance={submits.enhance(() => async ({ update }) => {
+			await update({ reset: false });
+		})}
 		class="bg-surface p-6 rounded-lg shadow space-y-3"
 	>
 		<h3 class="text-sm font-semibold text-gray-900">
@@ -75,13 +73,9 @@
 			</p>
 		{/if}
 		{#if data.isAdmin}
-			<button
-				type="submit"
-				disabled={saving}
-				class="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-indigo-300"
+			<Button type="submit" loading={submits.pending} loadingLabel="Salvando..."
+				>Salvar nomes</Button
 			>
-				{saving ? 'Salvando...' : 'Salvar nomes'}
-			</button>
 		{:else}
 			<p class="text-xs text-gray-500">
 				Só administradores do grupo alteram estes nomes.

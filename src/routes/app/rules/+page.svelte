@@ -4,6 +4,8 @@
 	import { WandSparkles } from 'lucide-svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import TextButton from '$lib/components/ui/TextButton.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 	import type {
 		ClassificationRule,
 		Category,
@@ -23,6 +25,7 @@
 		};
 		form?: { success?: boolean; message?: string };
 	} = $props();
+	const submits = new SubmitState();
 	let rules = $derived(data.rules ?? []);
 	let categories = $derived(data.categories ?? []);
 	let profiles = $derived(data.profiles ?? []);
@@ -51,7 +54,7 @@
 	<form
 		method="POST"
 		action="?/create"
-		use:enhance
+		use:enhance={submits.enhance({ key: 'create' })}
 		class="bg-surface p-4 rounded-lg shadow space-y-3"
 	>
 		<h3 class="text-sm font-semibold text-gray-900">Nova regra</h3>
@@ -158,10 +161,10 @@
 			</div>
 		</div>
 		<div class="flex justify-end">
-			<button
+			<Button
 				type="submit"
-				class="px-4 py-2 text-sm font-medium text-white bg-primary rounded hover:bg-primary-hover"
-				>Criar regra</button
+				loading={submits.isPending('create')}
+				loadingLabel="Criando...">Criar regra</Button
 			>
 		</div>
 		{#if form?.success}
@@ -285,24 +288,35 @@
 {/snippet}
 
 {#snippet ruleActions(rule: ClassificationRule, touch: boolean)}
-	<form method="POST" action="?/toggle" use:enhance class="inline">
+	<form
+		method="POST"
+		action="?/toggle"
+		use:enhance={submits.enhance({ key: `toggle:${rule.id}` })}
+		class="inline"
+	>
 		<input type="hidden" name="rule_id" value={rule.id} />
 		<input type="hidden" name="active" value={rule.active ? 'false' : 'true'} />
-		<button
-			type="submit"
+		<TextButton
 			class="{touch
 				? TOUCH_BUTTON
 				: ''} text-xs text-indigo-600 hover:text-indigo-900"
-			>{rule.active ? 'Desativar' : 'Ativar'}</button
+			loading={submits.isPending(`toggle:${rule.id}`)}
+			>{rule.active ? 'Desativar' : 'Ativar'}</TextButton
 		>
 	</form>
-	<form method="POST" action="?/delete" use:enhance class="inline">
+	<form
+		method="POST"
+		action="?/delete"
+		use:enhance={submits.enhance({ key: `delete:${rule.id}` })}
+		class="inline"
+	>
 		<input type="hidden" name="rule_id" value={rule.id} />
-		<button
-			type="submit"
+		<TextButton
 			class="{touch
 				? TOUCH_BUTTON
-				: ''} text-xs text-red-600 hover:text-red-900">Excluir</button
+				: ''} text-xs text-red-600 hover:text-red-900"
+			loading={submits.isPending(`delete:${rule.id}`)}
+			loadingLabel="Excluindo...">Excluir</TextButton
 		>
 	</form>
 {/snippet}

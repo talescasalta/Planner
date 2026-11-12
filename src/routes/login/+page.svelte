@@ -1,11 +1,20 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import Button from '$lib/components/ui/Button.svelte';
+	import Spinner from '$lib/components/ui/Spinner.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let isSignUp = $state(false);
+	const submits = new SubmitState();
+	// The Google form is a plain POST that leaves the page; reset the flag
+	// when the browser restores this page from the back/forward cache.
+	let leavingForGoogle = $state(false);
 </script>
+
+<svelte:window onpageshow={() => (leavingForGoogle = false)} />
 
 <div class="min-h-screen flex items-center justify-center bg-gray-50 px-4">
 	<div class="w-full max-w-sm space-y-6">
@@ -13,7 +22,7 @@
 			{isSignUp ? 'Cadastrar' : 'Entrar'}
 		</h1>
 
-		<form method="POST" use:enhance class="space-y-4">
+		<form method="POST" use:enhance={submits.enhance()} class="space-y-4">
 			{#if isSignUp}
 				<input type="hidden" name="action" value="signup" />
 			{:else}
@@ -47,12 +56,14 @@
 				/>
 			</div>
 
-			<button
+			<Button
 				type="submit"
-				class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+				class="w-full shadow-sm"
+				loading={submits.pending}
+				loadingLabel={isSignUp ? 'Cadastrando...' : 'Entrando...'}
 			>
 				{isSignUp ? 'Cadastrar' : 'Entrar'}
-			</button>
+			</Button>
 		</form>
 
 		{#if form && !form.success}
@@ -72,12 +83,21 @@
 				</div>
 			</div>
 
-			<form method="POST">
+			<form
+				method="POST"
+				onsubmit={(event) => {
+					if (leavingForGoogle) event.preventDefault();
+					leavingForGoogle = true;
+				}}
+			>
 				<input type="hidden" name="action" value="google" />
 				<button
 					type="submit"
-					class="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-surface hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+					disabled={leavingForGoogle}
+					aria-busy={leavingForGoogle}
+					class="w-full flex items-center justify-center gap-2 py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-surface hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:cursor-wait disabled:opacity-80"
 				>
+					{#if leavingForGoogle}<Spinner />{/if}
 					Entrar com Google
 				</button>
 			</form>

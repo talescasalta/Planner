@@ -3,6 +3,9 @@
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import type { ActionData, PageData } from './$types';
+	import Button from '$lib/components/ui/Button.svelte';
+	import TextButton from '$lib/components/ui/TextButton.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let accounts = $derived(data.accounts ?? []);
@@ -27,7 +30,8 @@
 	let selectedFile: File | null = $state(null);
 	let pastedText = $state('');
 	let isDragging = $state(false);
-	let isConfirming = $state(false);
+	const submits = new SubmitState();
+	let isConfirming = $derived(submits.isPending('confirm'));
 	let confirmFileInput: HTMLInputElement | null = $state(null);
 
 	type SourceType =
@@ -232,14 +236,6 @@
 		if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
 		return `${(n / 1024 / 1024).toFixed(1)} MB`;
 	}
-
-	function enhanceConfirm() {
-		isConfirming = true;
-		return async ({ update }: { update: () => Promise<void> }) => {
-			await update();
-			isConfirming = false;
-		};
-	}
 </script>
 
 <svelte:window onpaste={onPaste} />
@@ -247,13 +243,16 @@
 <div class="max-w-3xl mx-auto space-y-6">
 	<div class="flex items-center justify-between">
 		<h2 class="text-xl font-semibold text-gray-900">Importar fatura</h2>
-		<form method="POST" action="?/repair_access" use:enhance>
-			<button
-				type="submit"
-				class="text-xs text-gray-500 hover:text-gray-900 underline"
+		<form
+			method="POST"
+			action="?/repair_access"
+			use:enhance={submits.enhance({ key: 'repair_access' })}
+		>
+			<TextButton
+				class="text-xs text-gray-500 underline hover:text-gray-900"
+				loading={submits.isPending('repair_access')}
+				loadingLabel="Reparando...">Reparar permissões</TextButton
 			>
-				Reparar permissões
-			</button>
 		</form>
 	</div>
 	<p class="text-sm text-gray-600">
@@ -337,7 +336,8 @@
 	<form
 		method="POST"
 		action="?/preview"
-		use:enhance
+		use:enhance={submits.enhance({ key: 'preview' })}
+		aria-busy={submits.isPending('preview')}
 		onsubmit={() => rememberAccount(sourceType, accountName)}
 		enctype="multipart/form-data"
 		class="bg-surface p-6 rounded-lg shadow space-y-4"
@@ -512,11 +512,17 @@
 			</p>
 		</div>
 
-		<button
+		<Button
 			type="submit"
-			class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-hover"
-			>Visualizar</button
+			class="shadow-sm"
+			loading={submits.isPending('preview')}
+			loadingLabel="Lendo o arquivo...">Visualizar</Button
 		>
+		{#if submits.isPending('preview')}
+			<p class="text-sm text-gray-600" role="status">
+				PDFs e prints passam pela IA e podem levar alguns segundos.
+			</p>
+		{/if}
 		{#if form && !form.success}
 			<p class="text-sm text-red-600">{form.message}</p>
 		{/if}
@@ -658,7 +664,7 @@
 			<form
 				method="POST"
 				action="?/confirm"
-				use:enhance={enhanceConfirm}
+				use:enhance={submits.enhance({ key: 'confirm' })}
 				enctype="multipart/form-data"
 				class="pt-4"
 				aria-busy={isConfirming}
@@ -717,24 +723,16 @@
 					>
 						Cancelar
 					</a>
-					<button
+					<Button
 						type="submit"
-						disabled={(!selectedFile &&
+						variant="success"
+						class="min-w-44 shadow-sm"
+						disabled={!selectedFile &&
 							!pastedText.trim() &&
-							!form?.preview_token) ||
-							isConfirming}
-						class="inline-flex min-h-11 min-w-44 items-center justify-center gap-2 rounded-md border border-transparent bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300 sm:min-h-0"
+							!form?.preview_token}
+						loading={isConfirming}
+						loadingLabel="Processando...">Confirmar importação</Button
 					>
-						{#if isConfirming}
-							<span
-								class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
-								aria-hidden="true"
-							></span>
-							Processando...
-						{:else}
-							Confirmar importação
-						{/if}
-					</button>
 				</div>
 				<div class="h-16 sm:hidden" aria-hidden="true"></div>
 			</form>

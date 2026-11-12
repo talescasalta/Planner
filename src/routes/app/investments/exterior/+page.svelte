@@ -3,11 +3,13 @@
 	import { resolve } from '$app/paths';
 	import { brl, dateBr, money } from '$lib/format';
 	import type { PageData, ActionData } from './$types';
+	import TextButton from '$lib/components/ui/TextButton.svelte';
+	import { SubmitState } from '$lib/submit-state.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
-	let importing = $state(false);
-	let reading = $state(false);
-	let saving = $state(false);
+	const submits = new SubmitState();
+	const SLATE_BUTTON =
+		'justify-center rounded bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-900';
 
 	// What the print reader found, bound to the form below so the numbers are
 	// reviewed before anything is saved.
@@ -148,13 +150,7 @@
 			method="POST"
 			action="?/import_statement"
 			enctype="multipart/form-data"
-			use:enhance={() => {
-				importing = true;
-				return async ({ update }) => {
-					importing = false;
-					await update();
-				};
-			}}
+			use:enhance={submits.enhance({ key: 'import_statement' })}
 			class="mt-3 flex flex-wrap items-center gap-3"
 		>
 			<input
@@ -164,13 +160,12 @@
 				required
 				class="block text-sm text-gray-700 file:mr-3 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-sm"
 			/>
-			<button
-				type="submit"
-				disabled={importing}
-				class="rounded bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+			<TextButton
+				class={SLATE_BUTTON}
+				spinnerClass="h-4 w-4"
+				loading={submits.isPending('import_statement')}
+				loadingLabel="Importando…">Importar extrato</TextButton
 			>
-				{importing ? 'Importando…' : 'Importar extrato'}
-			</button>
 		</form>
 	</div>
 
@@ -190,13 +185,13 @@
 				method="POST"
 				action="?/read_print"
 				enctype="multipart/form-data"
-				use:enhance={() => {
-					reading = true;
-					return async ({ update }) => {
-						reading = false;
-						await update({ reset: false });
-					};
-				}}
+				use:enhance={submits.enhance({
+					key: 'read_print',
+					submit:
+						() =>
+						async ({ update }) =>
+							update({ reset: false })
+				})}
 				class="mt-3 flex flex-wrap items-center gap-3"
 			>
 				<input
@@ -206,13 +201,12 @@
 					required
 					class="block text-sm text-gray-700 file:mr-3 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-sm"
 				/>
-				<button
-					type="submit"
-					disabled={reading}
-					class="rounded bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+				<TextButton
+					class={SLATE_BUTTON}
+					spinnerClass="h-4 w-4"
+					loading={submits.isPending('read_print')}
+					loadingLabel="Lendo…">Ler print</TextButton
 				>
-					{reading ? 'Lendo…' : 'Ler print'}
-				</button>
 			</form>
 			{#if form && 'notes' in form && form.notes}
 				<p class="mt-2 text-xs text-amber-700">{form.notes}</p>
@@ -221,13 +215,7 @@
 			<form
 				method="POST"
 				action="?/save_balance"
-				use:enhance={() => {
-					saving = true;
-					return async ({ update }) => {
-						saving = false;
-						await update();
-					};
-				}}
+				use:enhance={submits.enhance({ key: 'save_balance' })}
 				class="mt-4 grid gap-3 sm:grid-cols-4"
 			>
 				<label class="text-xs text-gray-600 sm:col-span-4">
@@ -274,13 +262,12 @@
 					/>
 				</label>
 				<div class="flex items-end">
-					<button
-						type="submit"
-						disabled={saving}
-						class="w-full rounded bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+					<TextButton
+						class={`w-full ${SLATE_BUTTON}`}
+						spinnerClass="h-4 w-4"
+						loading={submits.isPending('save_balance')}
+						loadingLabel="Salvando…">Salvar saldo</TextButton
 					>
-						{saving ? 'Salvando…' : 'Salvar saldo'}
-					</button>
 				</div>
 			</form>
 		{/if}
