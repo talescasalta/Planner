@@ -33,6 +33,16 @@ import { fail, redirect } from '@sveltejs/kit';
 
 type SplitMethod = 'income_proportional' | 'equal';
 
+const MAX_GROUP_NAME_CHARS = 80;
+const MAX_ADMIN_GROUPS_PER_USER = 5;
+
+function groupNameError(name: string): string | null {
+	if (!name) return 'Nome do grupo é obrigatório';
+	if (name.length > MAX_GROUP_NAME_CHARS)
+		return `Nome do grupo com no máximo ${MAX_GROUP_NAME_CHARS} caracteres`;
+	return null;
+}
+
 type MemberContribution = {
 	user_id: string;
 	display_name: string;
@@ -828,11 +838,26 @@ export const actions: Actions = {
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
 
 		const formData = await request.formData();
-		const name = (formData.get('name') as string)?.trim();
-		if (!name)
+		const name = String(formData.get('name') ?? '').trim();
+		const nameError = groupNameError(name);
+		if (nameError) return fail(400, { success: false, message: nameError });
+
+		// Each group seeds categories and profiles; a cap keeps a script with a
+		// session from filling the database with them.
+		const { count: adminOf, error: countError } = await supabaseAdmin
+			.from('household_members')
+			.select('household_id', { count: 'exact', head: true })
+			.eq('user_id', user.id)
+			.eq('role', 'admin');
+		if (countError)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/groups', countError)
+			});
+		if ((adminOf ?? 0) >= MAX_ADMIN_GROUPS_PER_USER)
 			return fail(400, {
 				success: false,
-				message: 'Nome do grupo é obrigatório'
+				message: `Você já administra ${MAX_ADMIN_GROUPS_PER_USER} grupos, o limite por pessoa`
 			});
 
 		const { data: household, error: hError } = await supabaseAdmin
@@ -1006,6 +1031,55 @@ export const actions: Actions = {
 		return { success: true, message: 'Convite cancelado' };
 	},
 
+	leave_group: async ({ request, locals: { supabase, safeGetSession } }) => {
+		const { user } = await safeGetSession();
+		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
+
+		const formData = await request.formData();
+		const groupId = String(formData.get('group_id') ?? '').trim();
+		if (!groupId)
+			return fail(400, { success: false, message: 'Dados incompletos' });
+
+		// Read with the user's own client: only a membership the person really
+		// has is found here.
+		const { data: membership, error: membershipError } = await supabase
+			.from('household_members')
+			.select('role')
+			.eq('household_id', groupId)
+			.eq('user_id', user.id)
+			.maybeSingle();
+		if (membershipError)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/groups', membershipError)
+			});
+		if (!membership)
+			return fail(404, { success: false, message: 'Grupo não encontrado' });
+		// An admin leaving could orphan the group (nobody left to invite,
+		// remove or edit incomes), and there is no way to hand the role over.
+		if (membership.role === 'admin')
+			return fail(400, {
+				success: false,
+				message: 'Administradores não podem sair do grupo'
+			});
+
+		// household_members only lets admins delete; the membership was just
+		// confirmed above. The trigger on household_members also drops the
+		// person's transaction_access in this group.
+		const { error } = await supabaseAdmin
+			.from('household_members')
+			.delete()
+			.eq('household_id', groupId)
+			.eq('user_id', user.id);
+		if (error)
+			return fail(500, {
+				success: false,
+				message: logInternalError('app/groups', error)
+			});
+
+		return { success: true, message: 'Você saiu do grupo' };
+	},
+
 	remove_member: async ({ request, locals: { supabase, safeGetSession } }) => {
 		const { user } = await safeGetSession();
 		if (!user) return fail(401, { success: false, message: 'Não autenticado' });
@@ -1021,8 +1095,7 @@ export const actions: Actions = {
 		if (userId === user.id) {
 			return fail(400, {
 				success: false,
-				message:
-					'Você não pode remover a si mesmo. Delete o grupo se deseja sair.'
+				message: 'Para sair do grupo, use "Sair" ao lado do seu nome.'
 			});
 		}
 

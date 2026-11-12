@@ -22,8 +22,9 @@ Principais riscos, em ordem de impacto:
 
 ## Arquitetura de segurança
 
-### RLS é a fronteira de autorização
+### RLS e o código do servidor são a fronteira de autorização
 
+- O RLS protege tudo o que é acessível pela API REST com o JWT da pessoa (a anon key é pública). A maior parte das leituras e escritas do app, porém, passa pelo `supabaseAdmin`, que ignora o RLS: nesses caminhos a fronteira é o código do servidor, que valida sessão, permissão e escopo por household antes de cada chamada (regras abaixo). As duas camadas precisam estar corretas.
 - Toda tabela em `public` tem RLS habilitado. Tabelas internas (ex.: `classification_rate_limits`) ficam **sem policy nenhuma** de propósito: negação total, acesso só via service role.
 - O escopo padrão de toda policy é o household, via os helpers do schema `private` (`private.is_member_of_household`, `private.user_can_edit_transaction`, etc. — ver `supabase/migrations/011_private_rls_helpers.sql`).
 - Helpers de RLS vivem no schema `private`, nunca no `public` exposto pela API REST.
@@ -74,7 +75,7 @@ Funções `SECURITY DEFINER` no schema `public` são expostas em `/rest/v1/rpc/*
 
 - Descrições, valores e datas de transações são enviados ao provedor configurado (OpenAI ou OpenRouter) para classificação. Use provedores/modelos com política de não-retenção e prefira contas com data training desativado.
 - A chave de LLM nunca vai ao browser; chamadas só em `src/lib/server/llm.ts`.
-- Todo ponto de entrada que dispara LLM (`/api/classify`, preview de importação, leitura de print de fundos, assistente de investimentos) passa por `checkPersistentRateLimit` com o mesmo orçamento por usuário (`LLM_RATE_LIMIT` em `src/lib/server/request-guards.ts`, 10 req/min) e limita o tamanho do texto/arquivo enviado. Endpoint novo com LLM segue o mesmo padrão.
+- Todo ponto de entrada que dispara LLM (`/api/classify`, preview e confirmação de importação, insights do dashboard, leitura de print de fundos e da Wise, assistente de investimentos) passa por `checkPersistentRateLimit` com o mesmo orçamento por usuário (`LLM_RATE_LIMIT` em `src/lib/server/request-guards.ts`, 10 req/min) e limita o tamanho do texto/arquivo enviado. Endpoint novo com LLM segue o mesmo padrão.
 - Uploads passam por `uploadTooLarge` antes de qualquer parser (xlsx, PDF, imagem). Segredos de cron são comparados com `bearerMatches` (tempo constante). Mensagens de erro do Supabase ou do provedor de LLM vão para o log do servidor, nunca para o browser.
 
 ## Checklist de revisão para toda mudança
@@ -83,6 +84,7 @@ Funções `SECURITY DEFINER` no schema `public` são expostas em `/rest/v1/rpc/*
 - [ ] Toda query de escrita é escopada por `household_id` (e `id`) — nunca só pelo `id`?
 - [ ] Migration nova com `SECURITY DEFINER` faz REVOKE/GRANT explícito (regra acima)?
 - [ ] Tabela nova tem RLS habilitado e policies escopadas por household (ou nenhuma policy, se for interna)?
+- [ ] Concessão de acesso nova (linhas como `transaction_access`) é revogada quando a pessoa sai ou é removida do household?
 - [ ] `npm run quality:migrations` passa e a migration aplicada não foi alterada ou removida?
 - [ ] Uso de `supabaseAdmin` é precedido de checagem de autorização com o client do usuário?
 - [ ] Action que recebe arquivo aplica `uploadTooLarge`; action que dispara LLM aplica `checkPersistentRateLimit` e limita o texto enviado?
@@ -120,6 +122,7 @@ Periodicamente (e sempre após mudanças de schema):
 
 ## Histórico de correções relevantes
 
+- **2026-11-10** — Membro removido de um household continuava com as linhas de `transaction_access` daquele grupo e, pela API REST com o próprio JWT, ainda lia e apagava as transações dele (o app só escondia). A migration `20261110120000_revoke_transaction_access_on_member_removal.sql` cria um trigger em `household_members` que apaga esses acessos ao remover ou sair do grupo e limpa os que já tinham ficado para trás; o pgTAP cobre o caso. Na mesma data, os insights do dashboard e a confirmação de importação (que classifica as linhas e pode reextrair o arquivo) passaram a usar o mesmo `LLM_RATE_LIMIT` dos outros pontos com LLM, e a criação de grupos ganhou limite de nome e de grupos administrados por pessoa.
 - **2026-06-11** — `apply_transaction_classification_updates` (SECURITY DEFINER) era executável por `anon` e `authenticated` via REST e aceitava `household_id` nulo, permitindo a qualquer usuário autenticado alterar transações de qualquer household, contornando o RLS. Corrigido em `20260611120000_lock_down_classification_rpcs.sql` (REVOKE + `household_id` obrigatório) com o RPC movido para o client service-role no servidor. Na mesma data: sanitização do redirect `next` em `/auth/confirm`, CSP + cabeçalhos de segurança, senha mínima de 8 caracteres.
 - **2026-10-12 (2)** — O convite passou a ser endereçado ao e-mail, sem procurar a conta na hora (`20261012150000_household_invitations_by_email.sql`): antes, "Convidar membro" respondia diferente para e-mails com e sem conta, e qualquer pessoa que criasse um grupo descobria quem tinha conta na instância. Rendas e nomes de contas próprias passaram a exigir admin do grupo. O `config.toml` e o roteiro do AGENTS.md ligam `secure_password_change` (troca de senha exige login recente), para uma sessão roubada não trocar a senha.
 - **2026-10-12** — Entrar num grupo passou a exigir aceite: antes, qualquer usuário criava um grupo e adicionava outra conta pelo e-mail direto em `household_members`. Como o app usa a participação mais antiga da pessoa, uma conta recém-criada podia ser puxada para o grupo de um estranho antes de criar o próprio, e o que ela importasse caía lá. Agora o admin cria um convite (`household_invitations`, sem policy, só service role) e a pessoa aceita em **Grupos**. Na mesma migration (`20261012130000_household_invitations_and_transaction_update_check.sql`), a policy `transactions_update_with_edit` ganhou `WITH CHECK`: sem ela, quem podia editar uma transação também podia trocar o `household_id` dela pela API REST e movê-la para outro household. Também na mesma data, as mensagens de erro do Supabase e do Supabase Auth deixaram de chegar ao browser (`src/lib/server/errors.ts`).

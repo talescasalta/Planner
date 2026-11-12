@@ -4,10 +4,9 @@ import { classifyTransactions } from '$lib/server/classifier';
 import { getUserHouseholdId } from '$lib/server/household';
 import { supabaseAdmin } from '$lib/server/supabase';
 import { checkPersistentRateLimit } from '$lib/server/rate-limit';
+import { LLM_RATE_LIMIT } from '$lib/server/request-guards';
 
 const MAX_IDS_PER_REQUEST = 200;
-const WINDOW_MS = 60_000;
-const MAX_REQUESTS_PER_WINDOW = 10;
 
 export const POST: RequestHandler = async ({
 	request,
@@ -19,10 +18,7 @@ export const POST: RequestHandler = async ({
 	}
 
 	if (
-		!(await checkPersistentRateLimit(supabaseAdmin, user.id, {
-			windowMs: WINDOW_MS,
-			maxRequests: MAX_REQUESTS_PER_WINDOW
-		}))
+		!(await checkPersistentRateLimit(supabaseAdmin, user.id, LLM_RATE_LIMIT))
 	) {
 		error(429, 'Too many classification requests. Try again in a minute.');
 	}

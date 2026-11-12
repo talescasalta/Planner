@@ -111,7 +111,7 @@ INSERT INTO public.classification_rate_limits (user_id) VALUES
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
 
-SELECT plan(68);
+SELECT plan(70);
 
 -- ============================================================
 -- 1. anon não lê nada (todas as 18 tabelas públicas)
@@ -302,6 +302,35 @@ SELECT throws_ok(
 	'42501',
 	NULL,
 	'authenticated recebe permission denied ao chamar RPC restrita'
+);
+RESET ROLE;
+
+-- ============================================================
+-- 5. Membro removido perde o acesso às transações do household
+-- ============================================================
+-- B entra no household A com acesso de edição à transação de A e depois é
+-- removido: o trigger apaga o transaction_access e a API para de devolver a
+-- transação para B.
+INSERT INTO public.household_members (household_id, user_id, role) VALUES
+	('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222222', 'member');
+INSERT INTO public.transaction_access (transaction_id, user_id, can_read, can_edit) VALUES
+	('aaaaaaaa-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', true, true);
+DELETE FROM public.household_members
+	WHERE household_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+	  AND user_id = '22222222-2222-2222-2222-222222222222';
+
+SELECT is_empty(
+	$$SELECT id FROM public.transaction_access
+	  WHERE transaction_id = 'aaaaaaaa-0000-0000-0000-000000000001'
+	    AND user_id = '22222222-2222-2222-2222-222222222222'$$,
+	'remover membro apaga o transaction_access dele no household'
+);
+
+SELECT set_config('request.jwt.claims', '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+SELECT is_empty(
+	$$SELECT id FROM public.transactions WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001'$$,
+	'membro removido não lê mais transações do household'
 );
 RESET ROLE;
 

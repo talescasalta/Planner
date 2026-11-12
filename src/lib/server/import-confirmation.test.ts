@@ -14,6 +14,7 @@ import {
 } from '$lib/server/import-extract';
 import { verifyPreview } from '$lib/server/import-preview-token';
 import { suggestTransferPairs } from '$lib/server/transfer-pairs';
+import { checkPersistentRateLimit } from '$lib/server/rate-limit';
 
 vi.mock('@sveltejs/kit', () => ({
 	fail: (status: number, data: Record<string, unknown>) => ({
@@ -290,6 +291,38 @@ describe('PDF statement import', () => {
 
 		expect(result.message).toContain('Não foi possível ler o PDF');
 		expect(extractRowsFromText).not.toHaveBeenCalled();
+	});
+});
+
+describe('import confirm guards', () => {
+	function confirmEvent(referenceMonth: string) {
+		const formData = new FormData();
+		formData.set('reference_month', referenceMonth);
+		formData.set('account_name', 'Itaú conta');
+		return {
+			request: { formData: async () => formData },
+			locals: {
+				supabase: { from: () => new QueryMock({ data: [], error: null }) },
+				safeGetSession: async () => ({ user: { id: 'user-a' } })
+			}
+		} as never;
+	}
+
+	it('refuses a malformed reference month before touching the database', async () => {
+		const result = await actions.confirm(confirmEvent('2026-13'));
+
+		expect(result).toMatchObject({ status: 400 });
+		expect(mockedAdminFrom).not.toHaveBeenCalled();
+	});
+
+	it('spends the shared LLM budget, since confirming classifies the rows', async () => {
+		vi.mocked(checkPersistentRateLimit).mockResolvedValueOnce(false);
+
+		const result = await actions.confirm(confirmEvent('2026-07'));
+
+		expect(result).toMatchObject({ status: 429 });
+		expect(mockedAdminFrom).not.toHaveBeenCalled();
+		expect(classifyTransactions).not.toHaveBeenCalled();
 	});
 });
 
