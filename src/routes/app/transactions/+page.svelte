@@ -5,6 +5,7 @@
 	import Spinner from '$lib/components/ui/Spinner.svelte';
 	import { toast } from '$lib/toast.svelte';
 	import { enhance } from '$app/forms';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import {
 		ArrowDown,
@@ -28,6 +29,8 @@
 	import type { TransactionsPageData } from '$lib/types/page-data';
 	import type { ClassificationSuggestion, Transaction } from '$lib/types/app';
 	import { TREATMENT_OPTIONS, flowKindLabel } from '$lib/financial-labels';
+	import { matchesSearch } from '$lib/transaction-search';
+	import { onDestroy } from 'svelte';
 
 	let { data }: { data: TransactionsPageData } = $props();
 	let transactions = $derived(data.transactions ?? []);
@@ -44,7 +47,9 @@
 			subcategoryId: '',
 			status: 'all',
 			direction: 'all',
-			flow: 'all'
+			flow: 'all',
+			sort: '',
+			q: ''
 		}
 	);
 	let summary = $derived(data.summary);
@@ -213,8 +218,51 @@
 	}
 
 	let filtersOpen = $state(false);
+	// The server searches the whole filtered month (the page only holds 100
+	// rows), so the term goes to the URL after a short pause in typing. The
+	// loaded rows are also filtered locally so the list reacts at once.
+	const SEARCH_DEBOUNCE_MS = 350;
 	let searchTerm = $state('');
-	let amountSort = $state<'none' | 'desc' | 'asc'>('none');
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+	// Follow the URL (back/forward, links) unless the user is mid-typing.
+	$effect(() => {
+		const fromUrl = filters.q ?? '';
+		if (searchTimer === undefined) searchTerm = fromUrl;
+	});
+	onDestroy(() => clearTimeout(searchTimer));
+
+	function submitSearch() {
+		clearTimeout(searchTimer);
+		searchTimer = undefined;
+		const q = searchTerm.trim();
+		if (q === (filters.q ?? '')) return;
+		goto(
+			resolve(
+				transactionsHref({ q, page: 0 }) as `/app/transactions?${string}`
+			),
+			{ keepFocus: true, noScroll: true, replaceState: true }
+		);
+	}
+
+	function onSearchInput() {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(submitSearch, SEARCH_DEBOUNCE_MS);
+	}
+
+	function clearSearch() {
+		searchTerm = '';
+		submitSearch();
+	}
+	// The server sorts the whole filtered month before paging, so the order
+	// lives in the URL instead of in local state.
+	type AmountSort = 'none' | 'desc' | 'asc';
+	let amountSort = $derived<AmountSort>(
+		filters.sort === 'amount_desc'
+			? 'desc'
+			: filters.sort === 'amount_asc'
+				? 'asc'
+				: 'none'
+	);
 
 	// Rows edited in place that stopped matching the active filters after the
 	// save (e.g. categorized while filtering by "a revisar", or moved to
@@ -246,6 +294,8 @@
 			filters.status,
 			filters.direction,
 			filters.flow,
+			filters.sort,
+			filters.q,
 			data.page
 		].join('|')
 	);
@@ -300,7 +350,7 @@
 	);
 
 	let visibleTransactions = $derived.by(() => {
-		const term = searchTerm.trim().toLowerCase();
+		const term = searchTerm.trim();
 		let list = transactions;
 		if (retainedRows.length > 0) {
 			const toInsert = retainedRows.filter((r) =>
@@ -312,31 +362,23 @@
 					list.splice(Math.min(r.index, list.length), 0, r.tx);
 			}
 		}
-		if (term) {
-			list = list.filter((tx) => {
-				const desc = (tx.description ?? '').toLowerCase();
-				const clean = (tx.clean_description ?? '').toLowerCase();
-				const cat = (tx.category_display_name ?? '').toLowerCase();
-				const sub = (tx.subcategory_display_name ?? '').toLowerCase();
-				return (
-					desc.includes(term) ||
-					clean.includes(term) ||
-					cat.includes(term) ||
-					sub.includes(term)
-				);
-			});
-		}
-		if (amountSort === 'desc') {
-			list = [...list].sort((a, b) => Number(b.amount) - Number(a.amount));
-		} else if (amountSort === 'asc') {
-			list = [...list].sort((a, b) => Number(a.amount) - Number(b.amount));
-		}
+		if (term) list = list.filter((tx) => matchesSearch(tx, term));
 		return list;
 	});
 
+	function setAmountSort(next: AmountSort) {
+		const sort = next === 'none' ? '' : `amount_${next}`;
+		goto(
+			resolve(
+				transactionsHref({ sort, page: 0 }) as `/app/transactions?${string}`
+			)
+		);
+	}
+
 	function cycleAmountSort() {
-		amountSort =
-			amountSort === 'none' ? 'desc' : amountSort === 'desc' ? 'asc' : 'none';
+		setAmountSort(
+			amountSort === 'none' ? 'desc' : amountSort === 'desc' ? 'asc' : 'none'
+		);
 	}
 
 	$effect(() => {
@@ -372,6 +414,8 @@
 			direction?: string;
 			flow?: string;
 			profileId?: string;
+			sort?: string;
+			q?: string;
 			page?: number;
 		} = {}
 	) {
@@ -387,6 +431,8 @@
 			direction: filters.direction,
 			flow: filters.flow,
 			profileId: filters.profileId,
+			sort: filters.sort,
+			q: filters.q ?? '',
 			page: data.page,
 			...overrides
 		};
@@ -400,6 +446,8 @@
 		setQueryParam(params, 'status', view.status, 'all');
 		setQueryParam(params, 'direction', view.direction, 'all');
 		setQueryParam(params, 'flow', view.flow, 'all');
+		setQueryParam(params, 'sort', view.sort);
+		setQueryParam(params, 'q', view.q);
 		if (view.page > 0) params.set('page', String(view.page));
 
 		const query = params.toString();
@@ -777,6 +825,8 @@
 			<input type="hidden" name="status_filter" value={filters.status} />
 			<input type="hidden" name="direction_filter" value={filters.direction} />
 			<input type="hidden" name="flow_filter" value={filters.flow} />
+			<input type="hidden" name="sort_filter" value={filters.sort} />
+			<input type="hidden" name="q_filter" value={filters.q} />
 		</form>
 	{/if}
 
@@ -821,13 +871,17 @@
 						id="tx-search"
 						type="search"
 						bind:value={searchTerm}
+						oninput={onSearchInput}
+						onkeydown={(event) => {
+							if (event.key === 'Enter') submitSearch();
+						}}
 						placeholder="Descrição, categoria, subcategoria..."
 						class="w-full rounded-md border-gray-300 py-2 pr-8 pl-8 text-sm shadow-sm focus:border-primary focus:ring-primary"
 					/>
 					{#if searchTerm}
 						<button
 							type="button"
-							onclick={() => (searchTerm = '')}
+							onclick={clearSearch}
 							class="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
 							aria-label="Limpar busca"
 						>
@@ -995,6 +1049,8 @@
 			<input type="hidden" name="status_filter" value={filters.status} />
 			<input type="hidden" name="direction_filter" value={filters.direction} />
 			<input type="hidden" name="flow_filter" value={filters.flow} />
+			<input type="hidden" name="sort_filter" value={filters.sort} />
+			<input type="hidden" name="q_filter" value={filters.q} />
 		</form>
 
 		{#if selectedForDelete.length > 0}
@@ -1306,6 +1362,12 @@
 										name="flow_filter"
 										value={filters.flow}
 									/>
+									<input
+										type="hidden"
+										name="sort_filter"
+										value={filters.sort}
+									/>
+									<input type="hidden" name="q_filter" value={filters.q} />
 								</form>
 								{#if editingId === tx.id}
 									<div class="flex flex-col gap-1">
@@ -1491,7 +1553,9 @@
 				<label class="flex items-center gap-2 text-sm text-gray-700">
 					Ordenar
 					<select
-						bind:value={amountSort}
+						value={amountSort}
+						onchange={(event) =>
+							setAmountSort(event.currentTarget.value as AmountSort)}
 						class="rounded-md border-gray-300 px-2 py-2 text-sm shadow-sm"
 					>
 						<option value="none">Data</option>

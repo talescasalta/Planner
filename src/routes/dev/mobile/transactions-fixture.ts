@@ -120,7 +120,9 @@ export const transactionsData: TransactionsPageData = {
 		subcategoryId: '',
 		status: 'all',
 		direction: 'all',
-		flow: 'all'
+		flow: 'all',
+		sort: '',
+		q: ''
 	},
 	page: 0,
 	pageSize: 50,
