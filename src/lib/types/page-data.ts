@@ -25,6 +25,10 @@ export interface TransactionsPageData {
 		direction: string;
 		/** Categorized flow; unlike direction, excludes investment/transfer ambiguity. */
 		flow: string;
+		/** 'amount_desc', 'amount_asc' or '' (date order). Applied before paging. */
+		sort: string;
+		/** Free-text search over description and classification; '' for none. */
+		q: string;
 	};
 	page: number;
 	pageSize: number;

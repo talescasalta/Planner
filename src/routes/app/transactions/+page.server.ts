@@ -29,6 +29,7 @@ import {
 } from '$lib/server/financial-treatment';
 import type { FinancialTreatment } from '$lib/types/app';
 import { fail, redirect } from '@sveltejs/kit';
+import { cleanSearchTerm, matchesSearch } from '$lib/transaction-search';
 
 const PAGE_SIZE = 100;
 const ALL_MONTHS = 'all';
@@ -50,6 +51,9 @@ const VALID_REVIEW_STATUSES = new Set(['needs_review', 'confirmed', 'ignored']);
 // Lets the dashboard's Receitas and Despesas cards link straight to the rows
 // behind the figure, which is otherwise only reachable by scanning the list.
 const VALID_DIRECTIONS = new Set(['in', 'out']);
+// Sorting by amount has to happen before the list is cut into pages; sorting
+// only the loaded page hid large rows that sat on a later page by date.
+const AMOUNT_SORTS = new Set(['amount_desc', 'amount_asc']);
 const VALID_FLOWS = new Set<FlowFilter>([
 	SPENDING_FLOW_FILTER,
 	'expense',
@@ -156,6 +160,7 @@ function readFilters(url: URL) {
 	const status = cleanFilter(url.searchParams.get('status'));
 	const direction = cleanFilter(url.searchParams.get('direction'));
 	const flow = cleanFilter(url.searchParams.get('flow'));
+	const sort = cleanFilter(url.searchParams.get('sort'));
 	return {
 		sourceType: VALID_SOURCE_TYPES.has(sourceType) ? sourceType : ALL_FILTERS,
 		account: cleanFilter(url.searchParams.get('account')) || ALL_FILTERS,
@@ -164,8 +169,23 @@ function readFilters(url: URL) {
 		subcategoryId: cleanFilter(url.searchParams.get('subcategory_id')),
 		status: VALID_REVIEW_STATUSES.has(status) ? status : ALL_FILTERS,
 		direction: VALID_DIRECTIONS.has(direction) ? direction : ALL_FILTERS,
-		flow: isFlowFilter(flow) && VALID_FLOWS.has(flow) ? flow : ALL_FILTERS
+		flow: isFlowFilter(flow) && VALID_FLOWS.has(flow) ? flow : ALL_FILTERS,
+		sort: AMOUNT_SORTS.has(sort) ? sort : '',
+		// Free-text search runs here, over the whole filtered month, so a match
+		// on a later page by date is still found.
+		q: cleanSearchTerm(url.searchParams.get('q'))
 	};
+}
+
+// Array.prototype.sort is stable, so rows with the same amount keep the
+// date order the query returned them in.
+function sortByAmount<T extends { amount: number | string }>(
+	rows: T[],
+	sort: string
+): T[] {
+	if (!AMOUNT_SORTS.has(sort)) return rows;
+	const sign = sort === 'amount_asc' ? 1 : -1;
+	return [...rows].sort((a, b) => sign * (Number(a.amount) - Number(b.amount)));
 }
 
 // Carries the active filters across a redirect so an edit does not drop the
@@ -187,7 +207,9 @@ const FORWARDED_FILTERS: Array<{
 	},
 	{ field: 'status_filter', param: 'status', absent: ALL_FILTERS },
 	{ field: 'direction_filter', param: 'direction', absent: ALL_FILTERS },
-	{ field: 'flow_filter', param: 'flow', absent: ALL_FILTERS }
+	{ field: 'flow_filter', param: 'flow', absent: ALL_FILTERS },
+	{ field: 'sort_filter', param: 'sort', absent: '' },
+	{ field: 'q_filter', param: 'q', absent: '' }
 ];
 
 function appendFilters(params: URLSearchParams, formData: FormData) {
@@ -828,13 +850,19 @@ export const load: PageServerLoad = async ({
 			.flatMap((tx) => [tx.category_id, tx.subcategory_id])
 			.filter((id): id is string => !!id)
 	);
-	const hasMore = filteredByFlow.length > from + PAGE_SIZE;
+	const searchedRows = filters.q
+		? filteredByFlow.filter((transaction) =>
+				matchesSearch(transaction, filters.q)
+			)
+		: filteredByFlow;
+	const sortedRows = sortByAmount(searchedRows, filters.sort);
+	const hasMore = sortedRows.length > from + PAGE_SIZE;
 	const assignmentProfiles = (profiles ?? [])
 		.filter((p) => p.type === 'shared' || !!p.user_id)
 		.map((p) =>
 			p.type === 'shared' ? { ...p, name: household?.name ?? p.name } : p
 		);
-	const flowTotals = summarizeFinancialFlows(filteredByFlow, categoryMap);
+	const flowTotals = summarizeFinancialFlows(searchedRows, categoryMap);
 	const summary = {
 		count: flowTotals.count,
 		expenses: flowTotals.expense - flowTotals.refund,
@@ -853,7 +881,7 @@ export const load: PageServerLoad = async ({
 	};
 
 	return {
-		transactions: filteredByFlow.slice(from, from + PAGE_SIZE),
+		transactions: sortedRows.slice(from, from + PAGE_SIZE),
 		categories: filterCategoriesForUser(
 			categories ?? [],
 			user.id,
